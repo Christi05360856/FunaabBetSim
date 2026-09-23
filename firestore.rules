@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users may read their own profile. All writes happen server-side via
+    // the Firebase Admin SDK — the Admin SDK bypasses these rules entirely,
+    // so denying client writes here does not block legitimate server operations.
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // Wallet is the canonical financial record. Same reasoning: read-only
+    // for the owning user, never client-writable.
+    match /wallets/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // Deny-by-default for everything not explicitly opened above
+    // (matches, markets, bets, etc. arrive in later phases with their own
+    // narrow rules).
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
