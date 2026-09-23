@@ -90,9 +90,12 @@ export async function POST(request: NextRequest) {
 
           tx.update(walletRefsByUid.get(bet.uid)!, {
             balance: newBalance,
+            // A payout that brings the balance back above zero cancels any
+            // in-progress reset cooldown — the wallet isn't empty anymore.
+            resetPendingSince: newBalance > 0 ? null : wallet.resetPendingSince,
             updatedAt: now,
           });
-
+          
           const transactionRef = adminDb.collection("transactions").doc();
           const transaction: Transaction = {
             id: transactionRef.id,
