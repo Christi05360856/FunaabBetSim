@@ -21,3 +21,10 @@ export const matchWinnerMarketSchema = z.object({
   awayOdds: z.number().min(1.01).max(1000),
 });
 export type MatchWinnerMarketInput = z.infer<typeof matchWinnerMarketSchema>;
+export const placeBetSchema = z.object({
+  matchId: z.string().min(1),
+  marketId: z.string().min(1),
+  selectionId: z.string().min(1),
+  stake: z.number().int().positive(),
+});
+export type PlaceBetInput = z.infer<typeof placeBetSchema>;
