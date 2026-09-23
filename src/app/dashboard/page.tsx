@@ -100,7 +100,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-8 px-6 py-16">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-8 px-6 pt-16 pb-28">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-ink-muted">Welcome back</p>
