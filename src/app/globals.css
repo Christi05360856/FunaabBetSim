@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-brand: #1F7A4D;   /* FUNAAB green */
+  --color-accent: #C89B3C;  /* FUNAAB gold */
+  --color-win: #2F9E58;
+  --color-loss: #D14343;
+  --color-bg: #FAFAF9;
+  --color-surface: #FFFFFF;
+  --color-text: #14181B;
+  --color-text-muted: #5B6663;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0E1512;
+    --color-surface: #16201B;
+    --color-text: #F2F4F3;
+    --color-text-muted: #9AA6A1;
+    --color-brand: #3FA873;
+    --color-accent: #D9B45C;
+  }
+}
+
+body {
+  @apply bg-bg text-ink font-body;
+}
