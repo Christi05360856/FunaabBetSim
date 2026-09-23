@@ -30,7 +30,10 @@ export default function DashboardPage() {
         const response = await fetch("/api/wallet", {
           headers: { Authorization: `Bearer ${idToken}` },
         });
-        if (!response.ok) throw new Error("Could not load your wallet.");
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(`Could not load wallet (${response.status}): ${body.error ?? "unknown"}`);
+        }
         const data = (await response.json()) as Wallet;
         if (!cancelled) setWallet(data);
       } catch (err) {
