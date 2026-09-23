@@ -1,15 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import type { Match, Team, Competition, Market } from "@/types/domain";
+import { useAuth } from "@/lib/auth/AuthContext";
+import { MINIMUM_STAKE } from "@/types/domain";
+import type { Match, Team, Competition, Market, Selection } from "@/types/domain";
+
+type PickedSelection = { matchId: string; marketId: string; selection: Selection };
 
 export default function FixturesPage() {
+  const { user } = useAuth();
   const [matches, setMatches] = useState<Match[]>([]);
   const [teams, setTeams] = useState<Record<string, Team>>({});
   const [competitions, setCompetitions] = useState<Record<string, Competition>>({});
   const [marketsByMatch, setMarketsByMatch] = useState<Record<string, Market>>({});
+
+  const [picked, setPicked] = useState<PickedSelection | null>(null);
+  const [stake, setStake] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubMatches = onSnapshot(
@@ -51,8 +62,42 @@ export default function FixturesPage() {
     };
   }, []);
 
-  // Group matches under their competition, in kickoff order, so the page
-  // reads like a real fixture list — league header, then its matches.
+  function togglePick(matchId: string, marketId: string, selection: Selection) {
+    setFeedback(null);
+    setPicked((prev) =>
+      prev?.selection.id === selection.id && prev.matchId === matchId ? null : { matchId, marketId, selection }
+    );
+    setStake("");
+  }
+
+  async function confirmBet() {
+    if (!picked || !user) return;
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch("/api/bets", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          matchId: picked.matchId,
+          marketId: picked.marketId,
+          selectionId: picked.selection.id,
+          stake: Number(stake),
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not place bet");
+      setFeedback(`Bet placed! Potential payout: ₦${body.potentialPayout.toLocaleString("en-NG")}`);
+      setPicked(null);
+      setStake("");
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const groups = new Map<string, Match[]>();
   for (const match of matches) {
     const key = match.competitionId;
@@ -60,8 +105,11 @@ export default function FixturesPage() {
     groups.get(key)!.push(match);
   }
 
+  const stakeNumber = Number(stake);
+  const stakeValid = stake !== "" && stakeNumber >= MINIMUM_STAKE;
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col px-4 py-6">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col px-4 py-6 pb-28">
       <h1 className="mb-4 font-display text-xl font-semibold">Fixtures</h1>
 
       {matches.length === 0 && (
@@ -79,41 +127,93 @@ export default function FixturesPage() {
                 const home = teams[match.homeTeamId];
                 const away = teams[match.awayTeamId];
                 const market = marketsByMatch[match.id];
+                const canBet = match.status === "open" && market;
 
                 return (
-                  <div key={match.id} className="flex items-center gap-3 p-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs text-ink-muted">
-                        {new Date(match.kickoffAt).toLocaleString("en-NG", {
-                          weekday: "short",
-                          day: "numeric",
-                          month: "short",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
-                      <p className="truncate text-sm font-medium">
-                        {home?.shortName ?? "?"} <span className="text-ink-muted">v</span>{" "}
-                        {away?.shortName ?? "?"}
-                      </p>
+                  <div key={match.id} className="flex flex-col p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs text-ink-muted">
+                          {new Date(match.kickoffAt).toLocaleString("en-NG", {
+                            weekday: "short",
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                        <p className="truncate text-sm font-medium">
+                          {home?.shortName ?? "?"} <span className="text-ink-muted">v</span>{" "}
+                          {away?.shortName ?? "?"}
+                        </p>
+                      </div>
+
+                      {market ? (
+                        <div className="flex shrink-0 gap-1.5">
+                          {market.selections.map((selection) => {
+                            const isPicked =
+                              picked?.matchId === match.id && picked.selection.id === selection.id;
+                            return (
+                              <button
+                                key={selection.id}
+                                disabled={!canBet}
+                                onClick={() => togglePick(match.id, market.id, selection)}
+                                className={`flex w-14 flex-col items-center rounded-lg px-1 py-1.5 transition-colors disabled:opacity-40 ${
+                                  isPicked ? "bg-brand text-white" : "bg-brand/10 text-brand"
+                                }`}
+                              >
+                                <span
+                                  className={`text-[10px] ${isPicked ? "text-white/80" : "text-ink-muted"}`}
+                                >
+                                  {selection.label}
+                                </span>
+                                <span className="text-sm font-semibold">
+                                  {selection.odds.toFixed(2)}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span className="shrink-0 text-xs text-ink-muted">Odds soon</span>
+                      )}
                     </div>
 
-                    {market ? (
-                      <div className="flex shrink-0 gap-1.5">
-                        {market.selections.map((selection) => (
-                          <div
-                            key={selection.id}
-                            className="flex w-14 flex-col items-center rounded-lg bg-brand/10 px-1 py-1.5"
-                          >
-                            <span className="text-[10px] text-ink-muted">{selection.label}</span>
-                            <span className="text-sm font-semibold text-brand">
-                              {selection.odds.toFixed(2)}
-                            </span>
-                          </div>
-                        ))}
+                    {picked?.matchId === match.id && (
+                      <div className="mt-3 flex flex-col gap-2 rounded-lg bg-bg p-3">
+                        {!user ? (
+                          <p className="text-sm text-ink-muted">
+                            <Link href="/login" className="text-brand underline">Log in</Link> to place a bet.
+                          </p>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={MINIMUM_STAKE}
+                                placeholder={`Stake (min ₦${MINIMUM_STAKE.toLocaleString("en-NG")})`}
+                                value={stake}
+                                onChange={(e) => setStake(e.target.value)}
+                                className="flex-1 rounded-lg border border-ink-muted bg-transparent px-3 py-2 text-sm text-ink"
+                              />
+                              <button
+                                onClick={confirmBet}
+                                disabled={!stakeValid || submitting}
+                                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                              >
+                                {submitting ? "Placing…" : "Place bet"}
+                              </button>
+                            </div>
+                            {stakeValid && (
+                              <p className="text-xs text-ink-muted">
+                                Potential payout: ₦
+                                {Math.round(stakeNumber * picked.selection.odds).toLocaleString("en-NG")}
+                              </p>
+                            )}
+                          </>
+                        )}
                       </div>
-                    ) : (
-                      <span className="shrink-0 text-xs text-ink-muted">Odds soon</span>
                     )}
                   </div>
                 );
@@ -122,6 +222,12 @@ export default function FixturesPage() {
           </section>
         ))}
       </div>
+
+      {feedback && (
+        <div className="fixed inset-x-4 bottom-4 mx-auto max-w-md rounded-lg bg-surface p-3 text-center text-sm shadow-lg">
+          {feedback}
+        </div>
+      )}
     </main>
   );
-}
+              }
