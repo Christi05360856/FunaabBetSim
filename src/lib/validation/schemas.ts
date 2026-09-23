@@ -28,3 +28,9 @@ export const placeBetSchema = z.object({
   stake: z.number().int().positive(),
 });
 export type PlaceBetInput = z.infer<typeof placeBetSchema>;
+export const confirmResultSchema = z.object({
+  matchId: z.string().min(1),
+  homeScore: z.number().int().min(0).max(99),
+  awayScore: z.number().int().min(0).max(99),
+});
+export type ConfirmResultInput = z.infer<typeof confirmResultSchema>;
