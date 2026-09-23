@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthContext";
 import type { Wallet } from "@/types/domain";
+import Link from "next/link";
 
 export default function DashboardPage() {
   const { user, loading, logout } = useAuth();
@@ -61,6 +62,9 @@ export default function DashboardPage() {
             {user.displayName ?? "Player"}
           </h1>
         </div>
+        <Link href="/fixtures" className="text-sm text-brand underline">
+  Fixtures
+</Link>
         <button onClick={logout} className="text-sm text-ink-muted underline">
           Log out
         </button>
