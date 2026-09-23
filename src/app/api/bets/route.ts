@@ -94,9 +94,14 @@ export async function POST(request: NextRequest) {
       };
 
       // ---- Writes — all committed together, or none of them are ----------
-      tx.update(walletRef, {
+        tx.update(walletRef, {
         balance: newBalance,
         lifetimeWagering: wallet.lifetimeWagering + stake,
+        // Start the reset cooldown the moment the balance hits exactly zero.
+        // Only set it if it isn't already running — don't restart an
+        // existing countdown just because another bet also landed on zero.
+        resetPendingSince:
+          newBalance === 0 && wallet.resetPendingSince === null ? now : wallet.resetPendingSince,
         updatedAt: now,
       });
       tx.set(betRef, bet);
