@@ -96,6 +96,11 @@ export default function AdminPage() {
         teamsById={teamsById}
         onSubmit={(body) => authedPost("/api/admin/markets", body)}
       />
+      <MatchStatusList
+        matches={matches}
+        teamsById={teamsById}
+        onOpen={(matchId) => authedPost("/api/admin/matches/open", { matchId })}
+      />
     </main>
   );
 }
@@ -364,3 +369,53 @@ function MarketForm({
     </form>
   );
          }
+
+function MatchStatusList({
+  matches,
+  teamsById,
+  onOpen,
+}: {
+  matches: Match[];
+  teamsById: Record<string, Team>;
+  onOpen: (matchId: string) => Promise<PostResult>;
+}) {
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [statusById, setStatusById] = useState<Record<string, string>>({});
+
+  async function handleOpen(matchId: string) {
+    setBusyId(matchId);
+    const result = await onOpen(matchId);
+    setStatusById((prev) => ({ ...prev, [matchId]: result.message }));
+    setBusyId(null);
+  }
+
+  return (
+    <div className="rounded-xl bg-surface p-5">
+      <h2 className="mb-3 font-display text-lg font-semibold">Match status</h2>
+      <div className="flex flex-col divide-y divide-ink-muted/20">
+        {matches.map((m) => (
+          <div key={m.id} className="flex items-center justify-between gap-2 py-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm">
+                {teamsById[m.homeTeamId]?.shortName ?? "?"} v{" "}
+                {teamsById[m.awayTeamId]?.shortName ?? "?"}
+              </p>
+              <p className="text-xs capitalize text-ink-muted">
+                {m.status} {statusById[m.id] ? `· ${statusById[m.id]}` : ""}
+              </p>
+            </div>
+            {m.status === "scheduled" && (
+              <button
+                onClick={() => handleOpen(m.id)}
+                disabled={busyId === m.id}
+                className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {busyId === m.id ? "…" : "Open betting"}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
