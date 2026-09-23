@@ -78,11 +78,6 @@ export default function DashboardPage() {
           <p className="mt-1 text-ink-muted">Loading…</p>
         )}
       </div>
-
-      <div className="rounded-xl border border-dashed border-ink-muted p-5 text-sm text-ink-muted">
-        Fixtures, markets and bet placement land in the next milestones —
-        this dashboard just proves the identity + wallet foundation works.
-      </div>
     </main>
   );
 }
