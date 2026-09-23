@@ -67,7 +67,7 @@ export default function BetsPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col px-4 py-6">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col px-4 pt-6 pb-28">
       <h1 className="mb-4 font-display text-xl font-semibold">My bets</h1>
 
       {bets.length === 0 && (
