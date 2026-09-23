@@ -10,6 +10,16 @@ import type { Match, Team, Competition, Market, Selection } from "@/types/domain
 
 type PickedSelection = { matchId: string; marketId: string; selection: Selection };
 
+const STATUS_LABEL: Partial<Record<Match["status"], string>> = {
+  open: "OPEN",
+  locked: "LOCKED",
+  live: "LIVE",
+  finished: "FT",
+  result_confirmed: "FT",
+  settled: "FT",
+  scheduled: "SOON",
+};
+
 export default function FixturesPage() {
   const { user } = useAuth();
   const [matches, setMatches] = useState<Match[]>([]);
@@ -109,7 +119,7 @@ export default function FixturesPage() {
   const stakeValid = stake !== "" && stakeNumber >= MINIMUM_STAKE;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col px-4 py-6 pb-28">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col px-4 pt-6 pb-28">
       <h1 className="mb-4 font-display text-xl font-semibold">Fixtures</h1>
 
       {matches.length === 0 && (
@@ -122,33 +132,51 @@ export default function FixturesPage() {
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
               {competitions[competitionId]?.name ?? "…"}
             </h2>
-            <div className="flex flex-col divide-y divide-ink-muted/20 rounded-xl bg-surface">
+            <div className="flex flex-col gap-2">
               {competitionMatches.map((match) => {
                 const home = teams[match.homeTeamId];
                 const away = teams[match.awayTeamId];
                 const market = marketsByMatch[match.id];
                 const canBet = match.status === "open" && market;
+                const isSettled = match.status === "settled" && match.homeScore !== null;
 
                 return (
-                  <div key={match.id} className="flex flex-col p-3">
+                  <div key={match.id} className="rounded-xl bg-surface p-3 shadow-sm">
                     <div className="flex items-center gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs text-ink-muted">
-                          {new Date(match.kickoffAt).toLocaleString("en-NG", {
-                            weekday: "short",
-                            day: "numeric",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="truncate text-xs text-ink-muted">
+                            {new Date(match.kickoffAt).toLocaleString("en-NG", {
+                              weekday: "short",
+                              day: "numeric",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </p>
+                          <span
+                            className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                              match.status === "live"
+                                ? "bg-loss/15 text-loss"
+                                : match.status === "open"
+                                  ? "bg-win/15 text-win"
+                                  : "bg-ink-muted/15 text-ink-muted"
+                            }`}
+                          >
+                            {STATUS_LABEL[match.status] ?? match.status.toUpperCase()}
+                          </span>
+                        </div>
                         <p className="truncate text-sm font-medium">
                           {home?.shortName ?? "?"} <span className="text-ink-muted">v</span>{" "}
                           {away?.shortName ?? "?"}
                         </p>
                       </div>
 
-                      {market ? (
+                      {isSettled ? (
+                        <span className="shrink-0 rounded-lg bg-bg px-3 py-1.5 text-sm font-semibold">
+                          {match.homeScore} - {match.awayScore}
+                        </span>
+                      ) : market ? (
                         <div className="flex shrink-0 gap-1.5">
                           {market.selections.map((selection) => {
                             const isPicked =
@@ -224,10 +252,10 @@ export default function FixturesPage() {
       </div>
 
       {feedback && (
-        <div className="fixed inset-x-4 bottom-4 mx-auto max-w-md rounded-lg bg-surface p-3 text-center text-sm shadow-lg">
+        <div className="fixed inset-x-4 bottom-20 mx-auto max-w-md rounded-lg bg-surface p-3 text-center text-sm shadow-lg">
           {feedback}
         </div>
       )}
     </main>
   );
-              }
+                              }
