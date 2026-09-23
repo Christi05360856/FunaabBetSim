@@ -14,3 +14,10 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
+export const matchWinnerMarketSchema = z.object({
+  matchId: z.string().min(1),
+  homeOdds: z.number().min(1.01).max(1000),
+  drawOdds: z.number().min(1.01).max(1000),
+  awayOdds: z.number().min(1.01).max(1000),
+});
+export type MatchWinnerMarketInput = z.infer<typeof matchWinnerMarketSchema>;
