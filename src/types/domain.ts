@@ -1,8 +1,7 @@
 /**
  * Core domain types for FUNAAB BetSim.
- * Milestone 1 (auth + wallet) and Milestone 2 (sports domain) types live
- * together here. Market/Bet types are still forward-declared, unused until
- * Milestone 3.
+ * Milestone 1 (auth + wallet), Milestone 2 (sports domain), and now
+ * Milestone 3 (markets + odds) all live together here.
  */
 
 export type UserRole = "user" | "admin";
@@ -32,14 +31,14 @@ export const RESET_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 export interface Team {
   id: string;
   name: string;
-  shortName: string; // e.g. "COE" for a display-friendly abbreviation
+  shortName: string;
   createdAt: number;
   updatedAt: number;
 }
 
 export interface Competition {
   id: string;
-  name: string; // e.g. "FUNAAB Inter-College League"
+  name: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -61,16 +60,45 @@ export interface Match {
   competitionId: string;
   homeTeamId: string;
   awayTeamId: string;
-  kickoffAt: number; // epoch ms
+  kickoffAt: number;
   status: MatchStatus;
-  homeScore: number | null; // filled in once FINISHED
+  homeScore: number | null;
   awayScore: number | null;
   createdAt: number;
   updatedAt: number;
 }
 
-// ---- Forward-declared for later phases -------------------------------------
+// ---- Markets & odds (Milestone 3) ------------------------------------------
 
 export type MarketStatus = "draft" | "active" | "locked" | "settled" | "disabled";
+
+// Only "match_winner" is actually buildable this milestone. The rest are
+// named now (per spec §17's initial market list) so the type doesn't need
+// reshaping later — but nothing constructs them yet.
+export type MarketType =
+  | "match_winner"
+  | "double_chance"
+  | "draw_no_bet"
+  | "over_under"
+  | "both_teams_to_score"
+  | "correct_score";
+
+export interface Selection {
+  id: string; // stable key, e.g. "home" | "draw" | "away"
+  label: string; // what the user sees, e.g. "Home", "Draw", "Away"
+  odds: number; // decimal odds, e.g. 1.39 — always > 1
+}
+
+export interface Market {
+  id: string;
+  matchId: string;
+  type: MarketType;
+  status: MarketStatus;
+  selections: Selection[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ---- Forward-declared for later phases -------------------------------------
 
 export type BetStatus = "open" | "won" | "lost" | "void";
