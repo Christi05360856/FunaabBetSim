@@ -36,8 +36,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Odds are public too — a visitor should see prices before signing up,
+    // same as every real sportsbook. Only the server ever writes them.
+    match /markets/{marketId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // Deny-by-default for everything not explicitly opened above
-    // (markets, bets, etc. arrive in later phases with their own narrow rules).
+    // (bets, ledger entries, etc. arrive in the next milestone with their
+    // own narrow, much stricter rules).
     match /{document=**} {
       allow read, write: if false;
     }
