@@ -100,6 +100,9 @@ export default function AdminPage() {
         matches={matches}
         teamsById={teamsById}
         onOpen={(matchId) => authedPost("/api/admin/matches/open", { matchId })}
+        onSettle={(matchId, homeScore, awayScore) =>
+          authedPost("/api/admin/matches/settle", { matchId, homeScore, awayScore })
+        }
       />
     </main>
   );
@@ -374,13 +377,16 @@ function MatchStatusList({
   matches,
   teamsById,
   onOpen,
+  onSettle,
 }: {
   matches: Match[];
   teamsById: Record<string, Team>;
   onOpen: (matchId: string) => Promise<PostResult>;
+  onSettle: (matchId: string, homeScore: number, awayScore: number) => Promise<PostResult>;
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [statusById, setStatusById] = useState<Record<string, string>>({});
+  const [scoresById, setScoresById] = useState<Record<string, { home: string; away: string }>>({});
 
   async function handleOpen(matchId: string) {
     setBusyId(matchId);
@@ -389,32 +395,81 @@ function MatchStatusList({
     setBusyId(null);
   }
 
+  async function handleSettle(matchId: string) {
+    const scores = scoresById[matchId];
+    if (!scores || scores.home === "" || scores.away === "") return;
+    setBusyId(matchId);
+    const result = await onSettle(matchId, Number(scores.home), Number(scores.away));
+    setStatusById((prev) => ({ ...prev, [matchId]: result.message }));
+    setBusyId(null);
+  }
+
+  function updateScore(matchId: string, side: "home" | "away", value: string) {
+    setScoresById((prev) => ({
+      ...prev,
+      [matchId]: { home: prev[matchId]?.home ?? "", away: prev[matchId]?.away ?? "", [side]: value },
+    }));
+  }
+
   return (
     <div className="rounded-xl bg-surface p-5">
       <h2 className="mb-3 font-display text-lg font-semibold">Match status</h2>
       <div className="flex flex-col divide-y divide-ink-muted/20">
-        {matches.map((m) => (
-          <div key={m.id} className="flex items-center justify-between gap-2 py-2">
-            <div className="min-w-0">
-              <p className="truncate text-sm">
-                {teamsById[m.homeTeamId]?.shortName ?? "?"} v{" "}
-                {teamsById[m.awayTeamId]?.shortName ?? "?"}
-              </p>
-              <p className="text-xs capitalize text-ink-muted">
-                {m.status} {statusById[m.id] ? `· ${statusById[m.id]}` : ""}
-              </p>
+        {matches.map((m) => {
+          const scores = scoresById[m.id] ?? { home: "", away: "" };
+          return (
+            <div key={m.id} className="flex flex-col gap-2 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm">
+                    {teamsById[m.homeTeamId]?.shortName ?? "?"} v{" "}
+                    {teamsById[m.awayTeamId]?.shortName ?? "?"}
+                  </p>
+                  <p className="text-xs capitalize text-ink-muted">
+                    {m.status} {statusById[m.id] ? `· ${statusById[m.id]}` : ""}
+                  </p>
+                </div>
+                {m.status === "scheduled" && (
+                  <button
+                    onClick={() => handleOpen(m.id)}
+                    disabled={busyId === m.id}
+                    className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                  >
+                    {busyId === m.id ? "…" : "Open betting"}
+                  </button>
+                )}
+              </div>
+
+              {m.status === "open" && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Home score"
+                    value={scores.home}
+                    onChange={(e) => updateScore(m.id, "home", e.target.value)}
+                    className="w-24 rounded-lg border border-ink-muted bg-transparent px-2 py-1.5 text-sm text-ink"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Away score"
+                    value={scores.away}
+                    onChange={(e) => updateScore(m.id, "away", e.target.value)}
+                    className="w-24 rounded-lg border border-ink-muted bg-transparent px-2 py-1.5 text-sm text-ink"
+                  />
+                  <button
+                    onClick={() => handleSettle(m.id)}
+                    disabled={busyId === m.id || scores.home === "" || scores.away === ""}
+                    className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                  >
+                    {busyId === m.id ? "…" : "Confirm result & settle"}
+                  </button>
+                </div>
+              )}
             </div>
-            {m.status === "scheduled" && (
-              <button
-                onClick={() => handleOpen(m.id)}
-                disabled={busyId === m.id}
-                className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {busyId === m.id ? "…" : "Open betting"}
-              </button>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
