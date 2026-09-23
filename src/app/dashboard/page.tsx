@@ -62,9 +62,14 @@ export default function DashboardPage() {
             {user.displayName ?? "Player"}
           </h1>
         </div>
-        <Link href="/fixtures" className="text-sm text-brand underline">
-  Fixtures
-</Link>
+      <div className="flex gap-4">
+  <Link href="/fixtures" className="text-sm text-brand underline">
+    Fixtures
+  </Link>
+  <Link href="/bets" className="text-sm text-brand underline">
+    My Bets
+  </Link>
+</div>
         <button onClick={logout} className="text-sm text-ink-muted underline">
           Log out
         </button>
