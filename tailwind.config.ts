@@ -5,11 +5,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        pitch: "#0E2A1E",     // deep green — main background
-        pitchLine: "#1E4732", // lighter green — cards/panels
-        naira: "#F2B705",     // gold — for odds and currency
-        loss: "#C4453A",      // red — losing bets, errors
-        win: "#3E8E5B",       // green — winning bets, primary buttons
+        brand: "var(--color-brand)",       // FUNAAB green
+        accent: "var(--color-accent)",     // FUNAAB gold
+        win: "var(--color-win)",
+        loss: "var(--color-loss)",
+        bg: "var(--color-bg)",
+        surface: "var(--color-surface)",
+        ink: "var(--color-text)",
+        "ink-muted": "var(--color-text-muted)",
       },
       fontFamily: {
         display: ["var(--font-display)", "sans-serif"],
