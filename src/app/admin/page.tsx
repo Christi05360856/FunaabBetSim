@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { db } from "@/lib/firebase/client";
-import type { Team, Competition } from "@/types/domain";
+import type { Team, Competition, Match } from "@/types/domain";
 
 type AdminStatus = "checking" | "admin" | "not-admin";
 type PostResult = { ok: boolean; message: string };
@@ -16,6 +16,7 @@ export default function AdminPage() {
   const [adminStatus, setAdminStatus] = useState<AdminStatus>("checking");
   const [teams, setTeams] = useState<Team[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [matches, setMatches] = useState<Match[]>([]);
 
   useEffect(() => {
     if (loading) return;
@@ -37,9 +38,14 @@ export default function AdminPage() {
       query(collection(db, "competitions"), orderBy("name")),
       (snap) => setCompetitions(snap.docs.map((d) => d.data() as Competition))
     );
+    const unsubMatches = onSnapshot(
+      query(collection(db, "matches"), orderBy("kickoffAt")),
+      (snap) => setMatches(snap.docs.map((d) => d.data() as Match))
+    );
     return () => {
       unsubTeams();
       unsubCompetitions();
+      unsubMatches();
     };
   }, [adminStatus]);
 
@@ -73,6 +79,8 @@ export default function AdminPage() {
     );
   }
 
+  const teamsById = Object.fromEntries(teams.map((t) => [t.id, t]));
+
   return (
     <main className="mx-auto flex max-w-md flex-col gap-8 px-6 py-16">
       <h1 className="font-display text-2xl font-semibold">Admin panel</h1>
@@ -82,6 +90,11 @@ export default function AdminPage() {
         teams={teams}
         competitions={competitions}
         onSubmit={(body) => authedPost("/api/admin/matches", body)}
+      />
+      <MarketForm
+        matches={matches}
+        teamsById={teamsById}
+        onSubmit={(body) => authedPost("/api/admin/markets", body)}
       />
     </main>
   );
@@ -254,3 +267,100 @@ function MatchForm({
     </form>
   );
 }
+
+function MarketForm({
+  matches,
+  teamsById,
+  onSubmit,
+}: {
+  matches: Match[];
+  teamsById: Record<string, Team>;
+  onSubmit: (body: unknown) => Promise<PostResult>;
+}) {
+  const [matchId, setMatchId] = useState("");
+  const [homeOdds, setHomeOdds] = useState("");
+  const [drawOdds, setDrawOdds] = useState("");
+  const [awayOdds, setAwayOdds] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    const result = await onSubmit({
+      matchId,
+      homeOdds: Number(homeOdds),
+      drawOdds: Number(drawOdds),
+      awayOdds: Number(awayOdds),
+    });
+    setStatus(result.message);
+    if (result.ok) {
+      setHomeOdds("");
+      setDrawOdds("");
+      setAwayOdds("");
+    }
+    setSubmitting(false);
+  }
+
+  const ready = matchId && homeOdds && drawOdds && awayOdds;
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3 rounded-xl bg-surface p-5">
+      <h2 className="font-display text-lg font-semibold">Set odds (Match Winner)</h2>
+
+      <select
+        className="rounded-lg border border-ink-muted bg-transparent px-3 py-2 text-ink"
+        value={matchId}
+        onChange={(e) => setMatchId(e.target.value)}
+      >
+        <option value="">Select match</option>
+        {matches.map((m) => (
+          <option key={m.id} value={m.id}>
+            {teamsById[m.homeTeamId]?.shortName ?? "?"} vs{" "}
+            {teamsById[m.awayTeamId]?.shortName ?? "?"} ·{" "}
+            {new Date(m.kickoffAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}
+          </option>
+        ))}
+      </select>
+
+      <div className="flex gap-2">
+        <input
+          type="number"
+          step="0.01"
+          min="1.01"
+          className="w-1/3 rounded-lg border border-ink-muted bg-transparent px-3 py-2 text-ink"
+          placeholder="Home"
+          value={homeOdds}
+          onChange={(e) => setHomeOdds(e.target.value)}
+        />
+        <input
+          type="number"
+          step="0.01"
+          min="1.01"
+          className="w-1/3 rounded-lg border border-ink-muted bg-transparent px-3 py-2 text-ink"
+          placeholder="Draw"
+          value={drawOdds}
+          onChange={(e) => setDrawOdds(e.target.value)}
+        />
+        <input
+          type="number"
+          step="0.01"
+          min="1.01"
+          className="w-1/3 rounded-lg border border-ink-muted bg-transparent px-3 py-2 text-ink"
+          placeholder="Away"
+          value={awayOdds}
+          onChange={(e) => setAwayOdds(e.target.value)}
+        />
+      </div>
+
+      <button
+        type="submit"
+        disabled={submitting || !ready}
+        className="rounded-lg bg-brand px-4 py-2 font-medium text-white disabled:opacity-50"
+      >
+        {submitting ? "Saving…" : "Set odds"}
+      </button>
+      {status && <p className="text-sm text-ink-muted">{status}</p>}
+    </form>
+  );
+         }
