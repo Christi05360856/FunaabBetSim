@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/auth/AuthContext";
 import type { Bet, Team, Match } from "@/types/domain";
@@ -28,9 +28,13 @@ export default function BetsPage() {
   useEffect(() => {
     if (!user) return;
     const unsubBets = onSnapshot(
-      query(collection(db, "bets"), where("uid", "==", user.uid), orderBy("placedAt", "desc")),
-      (snap) => setBets(snap.docs.map((d) => d.data() as Bet))
-    );
+  query(collection(db, "bets"), where("uid", "==", user.uid)),
+  (snap) => {
+    const list = snap.docs.map((d) => d.data() as Bet);
+    list.sort((a, b) => b.placedAt - a.placedAt);
+    setBets(list);
+  }
+);
     const unsubMatches = onSnapshot(collection(db, "matches"), (snap) => {
       const map: Record<string, Match> = {};
       snap.docs.forEach((d) => {
