@@ -18,9 +18,26 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Fixture data (teams, competitions, matches) is public information —
+    // anyone visiting the site should be able to see it, logged in or not.
+    // Only admins (via the Admin SDK, server-side) can ever write it.
+    match /teams/{teamId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /competitions/{competitionId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /matches/{matchId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // Deny-by-default for everything not explicitly opened above
-    // (matches, markets, bets, etc. arrive in later phases with their own
-    // narrow rules).
+    // (markets, bets, etc. arrive in later phases with their own narrow rules).
     match /{document=**} {
       allow read, write: if false;
     }
