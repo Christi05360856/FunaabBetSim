@@ -7,11 +7,11 @@ import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/auth/AuthContext";
 import type { Bet, Team, Match } from "@/types/domain";
 
-const STATUS_STYLES: Record<Bet["status"], string> = {
-  open: "text-ink-muted",
-  won: "text-win",
-  lost: "text-loss",
-  void: "text-ink-muted",
+const STATUS_BADGE: Record<Bet["status"], string> = {
+  open: "bg-ink-muted/15 text-ink-muted",
+  won: "bg-win/15 text-win",
+  lost: "bg-loss/15 text-loss",
+  void: "bg-ink-muted/15 text-ink-muted",
 };
 
 export default function BetsPage() {
@@ -28,13 +28,13 @@ export default function BetsPage() {
   useEffect(() => {
     if (!user) return;
     const unsubBets = onSnapshot(
-  query(collection(db, "bets"), where("uid", "==", user.uid)),
-  (snap) => {
-    const list = snap.docs.map((d) => d.data() as Bet);
-    list.sort((a, b) => b.placedAt - a.placedAt);
-    setBets(list);
-  }
-);
+      query(collection(db, "bets"), where("uid", "==", user.uid)),
+      (snap) => {
+        const list = snap.docs.map((d) => d.data() as Bet);
+        list.sort((a, b) => b.placedAt - a.placedAt);
+        setBets(list);
+      }
+    );
     const unsubMatches = onSnapshot(collection(db, "matches"), (snap) => {
       const map: Record<string, Match> = {};
       snap.docs.forEach((d) => {
@@ -74,22 +74,15 @@ export default function BetsPage() {
         <p className="text-ink-muted">No bets placed yet.</p>
       )}
 
-      <div className="flex flex-col divide-y divide-ink-muted/20 rounded-xl bg-surface">
+      <div className="flex flex-col gap-3">
         {bets.map((bet) => {
           const match = matches[bet.matchId];
           const home = match ? teams[match.homeTeamId] : undefined;
           const away = match ? teams[match.awayTeamId] : undefined;
 
           return (
-            <div key={bet.id} className="flex items-center justify-between gap-3 p-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">
-                  {home?.shortName ?? "?"} v {away?.shortName ?? "?"}
-                </p>
-                <p className="text-xs text-ink-muted">
-                  {bet.selectionLabel} @ {bet.oddsAtPlacement.toFixed(2)} · Stake ₦
-                  {bet.stake.toLocaleString("en-NG")}
-                </p>
+            <div key={bet.id} className="overflow-hidden rounded-xl bg-surface shadow-sm">
+              <div className="flex items-center justify-between px-4 pt-3">
                 <p className="text-xs text-ink-muted">
                   {new Date(bet.placedAt).toLocaleString("en-NG", {
                     day: "numeric",
@@ -98,20 +91,65 @@ export default function BetsPage() {
                     minute: "2-digit",
                   })}
                 </p>
-              </div>
-              <div className="shrink-0 text-right">
-                <p className={`text-sm font-semibold capitalize ${STATUS_STYLES[bet.status]}`}>
+                <span
+                  className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${STATUS_BADGE[bet.status]}`}
+                >
+                  <StatusIcon status={bet.status} />
                   {bet.status}
-                </p>
-                <p className="text-xs text-ink-muted">
-                  {bet.status === "open" ? "Potential" : "Payout"} ₦
-                  {bet.potentialPayout.toLocaleString("en-NG")}
-                </p>
+                </span>
+              </div>
+
+              <div className="my-3 border-t border-dashed border-ink-muted/25" />
+
+              <div className="flex items-center justify-between px-4">
+                <div className="min-w-0">
+                  <p className="truncate font-medium">
+                    {home?.shortName ?? "?"} v {away?.shortName ?? "?"}
+                  </p>
+                  <p className="text-xs text-ink-muted">
+                    {bet.selectionLabel} · Match Winner
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-md bg-brand/10 px-2 py-1 text-sm font-semibold text-brand">
+                  {bet.oddsAtPlacement.toFixed(2)}
+                </span>
+              </div>
+
+              <div className="mt-3 flex items-center justify-between bg-bg px-4 py-2.5 text-sm">
+                <span className="text-ink-muted">
+                  Stake ₦{bet.stake.toLocaleString("en-NG")}
+                </span>
+                <span className="font-medium">
+                  {bet.status === "open" ? "Potential " : "Payout "}
+                  ₦{bet.potentialPayout.toLocaleString("en-NG")}
+                </span>
               </div>
             </div>
           );
         })}
       </div>
     </main>
+  );
+}
+
+function StatusIcon({ status }: { status: Bet["status"] }) {
+  if (status === "won") {
+    return (
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
+        <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (status === "lost") {
+    return (
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
+        <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
+      <circle cx="12" cy="12" r="9" />
+    </svg>
   );
 }
