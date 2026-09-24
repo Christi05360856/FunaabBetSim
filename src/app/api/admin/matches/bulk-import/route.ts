@@ -102,17 +102,22 @@ export async function POST(request: NextRequest) {
 
     const ref = adminDb.collection("matches").doc();
     const match: Match = {
-      id: ref.id,
-      competitionId,
-      homeTeamId,
-      awayTeamId,
-      kickoffAt: m.kickoffAt,
-      status: "scheduled",
-      homeScore: null,
-      awayScore: null,
-      createdAt: now,
-      updatedAt: now,
-    };
+  id: ref.id,
+  competitionId,
+  round: null,
+  homeTeamId,
+  awayTeamId,
+  kickoffAt: m.kickoffAt,
+  status: "scheduled",
+  homeScore: null,
+  awayScore: null,
+  venue: null,
+  source: "bulk_import",
+  sourceEventId: null,
+  createdAt: now,
+  updatedAt: now,
+};
+    
     await ref.set(match);
     matchesCreated++;
   }
