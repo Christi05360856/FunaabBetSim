@@ -106,6 +106,7 @@ export default function AdminPage() {
         }
         onVoid={(matchId) => authedPost("/api/admin/matches/void", { matchId })}
       />
+      <BulkImportForm onSubmit={(body) => authedPost("/api/admin/matches/bulk-import", body)} />
     </main>
   );
 }
@@ -497,5 +498,90 @@ function MatchStatusList({
         })}
       </div>
     </div>
+  );
+}
+
+function BulkImportForm({ onSubmit }: { onSubmit: (body: unknown) => Promise<PostResult> }) {
+  const [competitionName, setCompetitionName] = useState("");
+  const [text, setText] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const parsed = lines.map((line) => {
+    const parts = line.split(";").map((p) => p.trim());
+    if (parts.length !== 3) return { line, error: "Expected 3 parts separated by ;" };
+    const [homeTeam, awayTeam, dateStr] = parts;
+    const kickoffAt = new Date(dateStr!.replace(" ", "T")).getTime();
+    if (!homeTeam || !awayTeam || Number.isNaN(kickoffAt)) {
+      return { line, error: "Could not read team names or date/time" };
+    }
+    return { homeTeam, awayTeam, kickoffAt };
+  });
+  const validMatches = parsed.filter(
+    (p): p is { homeTeam: string; awayTeam: string; kickoffAt: number } => !("error" in p)
+  );
+  const errorLines = parsed.filter((p): p is { line: string; error: string } => "error" in p);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    const result = await onSubmit({ competitionName, matches: validMatches });
+    setStatus(result.message);
+    if (result.ok) {
+      setText("");
+    }
+    setSubmitting(false);
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3 rounded-xl bg-surface p-5">
+      <h2 className="font-display text-lg font-semibold">Bulk import fixtures</h2>
+      <p className="text-xs text-ink-muted">
+        One match per line: <code>Home Team; Away Team; YYYY-MM-DD HH:mm</code>
+        <br />
+        Unrecognized teams and this competition are created automatically.
+      </p>
+
+      <input
+        className="rounded-lg border border-ink-muted bg-transparent px-3 py-2 text-ink"
+        placeholder="Competition name"
+        value={competitionName}
+        onChange={(e) => setCompetitionName(e.target.value)}
+      />
+
+      <textarea
+        rows={8}
+        className="rounded-lg border border-ink-muted bg-transparent px-3 py-2 font-mono text-xs text-ink"
+        placeholder={"Alpha Archivers; Legend fc; 2026-09-26 05:00\nDynamo FC; Knight Fc; 2026-09-26 06:00"}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+
+      {lines.length > 0 && (
+        <p className="text-xs text-ink-muted">
+          {validMatches.length} match{validMatches.length === 1 ? "" : "es"} ready
+          {errorLines.length > 0 && `, ${errorLines.length} line(s) with a problem`}
+        </p>
+      )}
+      {errorLines.length > 0 && (
+        <ul className="rounded-lg bg-loss/10 p-2 text-xs text-loss">
+          {errorLines.map((e, i) => (
+            <li key={i} className="truncate">
+              "{e.line}" — {e.error}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <button
+        type="submit"
+        disabled={submitting || !competitionName || validMatches.length === 0}
+        className="rounded-lg bg-brand px-4 py-2 font-medium text-white disabled:opacity-50"
+      >
+        {submitting ? "Importing…" : `Import ${validMatches.length || ""} match${validMatches.length === 1 ? "" : "es"}`}
+      </button>
+      {status && <p className="text-sm text-ink-muted">{status}</p>}
+    </form>
   );
 }
