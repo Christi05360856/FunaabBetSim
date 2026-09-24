@@ -118,6 +118,7 @@ export async function POST(request: NextRequest) {
   updatedAt: now,
 };
     
+    
     await ref.set(match);
     matchesCreated++;
   }
