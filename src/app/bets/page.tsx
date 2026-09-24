@@ -103,12 +103,11 @@ export default function BetsPage() {
 
               <div className="flex items-center justify-between px-4">
                 <div className="min-w-0">
-                  <p className="truncate font-medium">
-                    {home?.shortName ?? "?"} v {away?.shortName ?? "?"}
-                  </p>
-                  <p className="text-xs text-ink-muted">
-                    {bet.selectionLabel} · Match Winner
-                  </p>
+                  <p className="line-clamp-2 font-medium">{home?.name ?? "Unknown team"}</p>
+<p className="line-clamp-2 font-medium">{away?.name ?? "Unknown team"}</p>
+<p className="mt-0.5 text-xs text-ink-muted">
+  Pick: {bet.selectionId === "home" ? home?.name ?? bet.selectionLabel : bet.selectionId === "away" ? away?.name ?? bet.selectionLabel : bet.selectionLabel} · Match Winner
+</p>
                 </div>
                 <span className="shrink-0 rounded-md bg-brand/10 px-2 py-1 text-sm font-semibold text-brand">
                   {bet.oddsAtPlacement.toFixed(2)}
