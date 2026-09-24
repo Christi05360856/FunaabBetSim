@@ -166,10 +166,10 @@ export default function FixturesPage() {
                             {STATUS_LABEL[match.status] ?? match.status.toUpperCase()}
                           </span>
                         </div>
-                        <p className="truncate text-sm font-medium">
-                          {home?.shortName ?? "?"} <span className="text-ink-muted">v</span>{" "}
-                          {away?.shortName ?? "?"}
-                        </p>
+                        <div className="text-sm font-medium leading-snug">
+  <p className="line-clamp-2">{home?.name ?? "Unknown team"}</p>
+  <p className="line-clamp-2">{away?.name ?? "Unknown team"}</p>
+</div>
                       </div>
 
                       {isSettled ? (
