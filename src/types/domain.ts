@@ -81,7 +81,7 @@ export const SECOND_HALF_MINUTES = 45;
 export const FIRST_HALF_ADDED_TIME = 2;
 export const SECOND_HALF_ADDED_TIME = 2;
 
-// ---- Markets & odds -----------------------------------------------------------
+// ---- Markets & odds ----------------------------------------------------
 
 export type MarketStatus = "draft" | "active" | "locked" | "settled" | "disabled";
 
