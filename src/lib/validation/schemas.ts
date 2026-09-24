@@ -34,3 +34,17 @@ export const confirmResultSchema = z.object({
   awayScore: z.number().int().min(0).max(99),
 });
 export type ConfirmResultInput = z.infer<typeof confirmResultSchema>;
+export const bulkImportSchema = z.object({
+  competitionName: z.string().trim().min(2).max(80),
+  matches: z
+    .array(
+      z.object({
+        homeTeam: z.string().trim().min(1).max(80),
+        awayTeam: z.string().trim().min(1).max(80),
+        kickoffAt: z.number().int().positive(),
+      })
+    )
+    .min(1)
+    .max(200),
+});
+export type BulkImportInput = z.infer<typeof bulkImportSchema>;
