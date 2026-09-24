@@ -27,3 +27,48 @@
 body {
   @apply bg-bg text-ink font-body;
 }
+
+/* ---- Admin theme (light / dark toggle) ------------------------------------
+   Values are space-separated RGB channels so Tailwind opacity modifiers work.
+   The attribute is set by AdminThemeProvider in components/admin/AdminLayout. */
+[data-admin-theme="dark"] {
+  color-scheme: dark;
+  --adm-bg: 9 9 11;
+  --adm-surface: 24 24 27;
+  --adm-raised: 39 39 42;
+  --adm-line: 39 39 42;
+  --adm-line-strong: 63 63 70;
+  --adm-ink: 244 244 245;
+  --adm-muted: 161 161 170;
+  --adm-faint: 113 113 122;
+  --adm-brand: 5 150 105;
+  --adm-brand-ink: 52 211 153;
+  --adm-info: 96 165 250;
+  --adm-ok: 52 211 153;
+  --adm-warn: 251 191 36;
+  --adm-bad: 248 113 113;
+}
+
+[data-admin-theme="light"] {
+  color-scheme: light;
+  --adm-bg: 244 244 245;
+  --adm-surface: 255 255 255;
+  --adm-raised: 244 244 245;
+  --adm-line: 228 228 231;
+  --adm-line-strong: 212 212 216;
+  --adm-ink: 24 24 27;
+  --adm-muted: 82 82 91;
+  --adm-faint: 113 113 122;
+  --adm-brand: 5 150 105;
+  --adm-brand-ink: 4 120 87;
+  --adm-info: 37 99 235;
+  --adm-ok: 4 120 87;
+  --adm-warn: 180 83 9;
+  --adm-bad: 220 38 38;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-adm-in {
+    animation: none;
+  }
+}
