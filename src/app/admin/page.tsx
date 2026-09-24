@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { db } from "@/lib/firebase/client";
 import type { Team, Competition, Match } from "@/types/domain";
-import { Icons, Toast } from "@/components/admin/ui";
+import { Toast } from "@/components/admin/ui";
+import AdminLayout, { AdminThemeProvider, type AdminTabId } from "@/components/admin/AdminLayout";
 import OverviewTab from "@/components/admin/OverviewTab";
 import FixturesTab from "@/components/admin/FixturesTab";
 import OddsTab from "@/components/admin/OddsTab";
@@ -16,13 +18,51 @@ import DangerTab from "@/components/admin/DangerTab";
 
 type AdminStatus = "checking" | "admin" | "not-admin";
 type PostResult = { ok: boolean; message: string };
-type TabId = "overview" | "fixtures" | "odds" | "entities" | "import" | "danger";
+
+// Shape of the JSON our /api/admin/* routes send back.
+type ApiBody = {
+  message?: string;
+  error?: string;
+  teamsCreated?: number;
+  matchesCreated?: number;
+  matchesSkipped?: number;
+  alreadySettled?: boolean;
+  betsSettled?: number;
+  alreadyFinal?: boolean;
+  betsRefunded?: number;
+};
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+// Turns the API's raw counts into a readable toast message.
+function summarize(d: ApiBody, fallback: string): string {
+  if (d.message) return d.message;
+  if (typeof d.matchesCreated === "number") {
+    const parts = [`${plural(d.matchesCreated, "fixture")} imported`];
+    if (d.matchesSkipped) parts.push(`${plural(d.matchesSkipped, "duplicate")} skipped`);
+    if (d.teamsCreated) parts.push(`${plural(d.teamsCreated, "new team")} added`);
+    return parts.join(" · ");
+  }
+  if (d.alreadySettled) return "Already settled — nothing changed";
+  if (typeof d.betsSettled === "number") return `Match settled · ${plural(d.betsSettled, "bet")} processed`;
+  if (d.alreadyFinal) return "Match was already final — nothing changed";
+  if (typeof d.betsRefunded === "number") return `Match voided · ${plural(d.betsRefunded, "bet")} refunded`;
+  return fallback;
+}
 
 export default function AdminPage() {
+  return (
+    <AdminThemeProvider>
+      <AdminApp />
+    </AdminThemeProvider>
+  );
+}
+
+function AdminApp() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [adminStatus, setAdminStatus] = useState<AdminStatus>("checking");
-  const [tab, setTab] = useState<TabId>("overview");
+  const [tab, setTab] = useState<AdminTabId>("overview");
   const [teams, setTeams] = useState<Team[]>([]);
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -31,89 +71,99 @@ export default function AdminPage() {
   useEffect(() => {
     if (loading) return;
     if (!user) { router.replace("/login"); return; }
-    user.getIdTokenResult(true).then((r) => setAdminStatus(r.claims.admin === true ? "admin" : "not-admin"));
+    user
+      .getIdTokenResult(true)
+      .then((r) => setAdminStatus(r.claims.admin === true ? "admin" : "not-admin"))
+      .catch(() => setAdminStatus("not-admin"));
   }, [user, loading, router]);
 
   useEffect(() => {
     if (adminStatus !== "admin") return;
+    const fail = (what: string) => (err: Error) => setToast({ msg: `Could not load ${what}: ${err.message}`, type: "error" });
     const un = [
-      onSnapshot(query(collection(db, "teams"), orderBy("name")), (s) => setTeams(s.docs.map((d) => d.data() as Team))),
-      onSnapshot(query(collection(db, "competitions"), orderBy("name")), (s) => setCompetitions(s.docs.map((d) => d.data() as Competition))),
-      onSnapshot(query(collection(db, "matches"), orderBy("kickoffAt", "desc")), (s) => setMatches(s.docs.map((d) => d.data() as Match))),
+      onSnapshot(query(collection(db, "teams"), orderBy("name")), (s) => setTeams(s.docs.map((d) => d.data() as Team)), fail("teams")),
+      onSnapshot(query(collection(db, "competitions"), orderBy("name")), (s) => setCompetitions(s.docs.map((d) => d.data() as Competition)), fail("competitions")),
+      // Display order is decided in the tabs (upcoming first); this just keeps it stable.
+      onSnapshot(query(collection(db, "matches"), orderBy("kickoffAt")), (s) => setMatches(s.docs.map((d) => d.data() as Match)), fail("fixtures")),
     ];
     return () => un.forEach((u) => u());
   }, [adminStatus]);
 
-  async function post(path: string, body: unknown): Promise<PostResult> {
-    if (!user) return { ok: false, message: "Not logged in" };
-    const res = await fetch(path, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${await user.getIdToken()}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => ({}));
-    const result = res.ok ? { ok: true, message: data.message ?? "Done" } : { ok: false, message: data.error ?? "Error" };
+  function report(result: PostResult): PostResult {
     setToast({ msg: result.message, type: result.ok ? "success" : "error" });
     return result;
   }
 
-  const teamsById = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t])), [teams]);
-  const compsById = useMemo(() => Object.fromEntries(competitions.map((c) => [c.id, c])), [competitions]);
+  async function post(path: string, body: unknown, successMessage = "Done"): Promise<PostResult> {
+    if (!user) return report({ ok: false, message: "Not logged in" });
+    try {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${await user.getIdToken()}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json().catch(() => ({}))) as ApiBody;
+      return report(
+        res.ok
+          ? { ok: true, message: summarize(data, successMessage) }
+          : { ok: false, message: data.error ?? `Request failed (${res.status})` }
+      );
+    } catch {
+      return report({ ok: false, message: "Network problem — check your connection and try again" });
+    }
+  }
 
-  const tabs = [
-    { id: "overview", label: "Overview", icon: Icons.dashboard },
-    { id: "fixtures", label: "Fixtures", icon: Icons.fixtures },
-    { id: "odds", label: "Odds", icon: Icons.odds },
-    { id: "entities", label: "Teams", icon: Icons.entities },
-    { id: "import", label: "Import", icon: Icons.import },
-    { id: "danger", label: "Danger", icon: Icons.danger },
-  ] as const;
+  const teamsById = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t])) as Record<string, Team>, [teams]);
+  const compsById = useMemo(() => Object.fromEntries(competitions.map((c) => [c.id, c])) as Record<string, Competition>, [competitions]);
 
-  if (loading || adminStatus === "checking") return <main className="flex min-h-screen items-center justify-center bg-zinc-950"><div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" /></main>;
-  if (adminStatus === "not-admin") return <main className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-100">Access Denied</main>;
+  if (loading || adminStatus === "checking") {
+    return (
+      <main className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-adm-brand border-t-transparent" />
+      </main>
+    );
+  }
+
+  if (adminStatus === "not-admin") {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-3 px-4 text-center">
+        <p className="text-lg font-semibold">Access denied</p>
+        <p className="text-sm text-adm-muted">This account doesn&apos;t have admin access.</p>
+        <Link href="/" className="text-sm font-medium text-adm-brand-ink hover:underline">Back to the app</Link>
+      </main>
+    );
+  }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="sticky top-0 z-40 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 font-bold">F</div>
-            <div><h1 className="font-semibold">FUNAAB BetSim</h1><p className="text-xs text-zinc-500">Admin</p></div>
-          </div>
-          <span className="text-sm text-zinc-400">{user?.email}</span>
-        </div>
-      </header>
-
-      <div className="mx-auto flex max-w-7xl gap-6 px-4 py-6">
-        <aside className="hidden w-48 shrink-0 md:block">
-          <nav className="sticky top-20 flex flex-col gap-1">
-            {tabs.map((t) => (
-              <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium ${tab === t.id ? "bg-emerald-600/10 text-emerald-400" : "text-zinc-400 hover:bg-zinc-800/50"}`}>
-                {t.icon}{t.label}
-              </button>
-            ))}
-          </nav>
-        </aside>
-
-        <div className="min-w-0 flex-1 pb-20 md:pb-0">
-          {tab === "overview" && <OverviewTab matches={matches} teams={teams} competitions={competitions} />}
-          {tab === "fixtures" && <FixturesTab matches={matches} teamsById={teamsById} competitionsById={compsById} onAction={post} />}
-          {tab === "odds" && <OddsTab matches={matches} teamsById={teamsById} competitionsById={compsById} onSubmit={(b) => post("/api/admin/markets", b)} />}
-          {tab === "entities" && <EntitiesTab teams={teams} competitions={competitions} onAddTeam={(b) => post("/api/admin/teams", b)} onAddCompetition={(b) => post("/api/admin/competitions", b)} />}
-          {tab === "import" && <ImportTab onSubmit={(b) => post("/api/admin/matches/bulk-import", b)} />}
-          {tab === "danger" && <DangerTab onReset={() => post("/api/admin/dev/reset", {})} />}
-        </div>
-      </div>
-
-      <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-zinc-800 bg-zinc-950/90 backdrop-blur md:hidden">
-        {tabs.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} className={`flex flex-1 flex-col items-center gap-1 py-2 text-xs ${tab === t.id ? "text-emerald-400" : "text-zinc-500"}`}>
-            {t.icon}{t.label}
-          </button>
-        ))}
-      </nav>
+    <>
+      <AdminLayout tab={tab} onTabChange={setTab} email={user?.email ?? ""}>
+        {tab === "overview" && (
+          <OverviewTab matches={matches} teams={teams} competitions={competitions} teamsById={teamsById} competitionsById={compsById} onViewFixtures={() => setTab("fixtures")} />
+        )}
+        {tab === "fixtures" && (
+          <FixturesTab matches={matches} teamsById={teamsById} competitionsById={compsById} onAction={post} />
+        )}
+        {tab === "odds" && (
+          <OddsTab matches={matches} teamsById={teamsById} competitionsById={compsById} onSubmit={(b) => post("/api/admin/markets", b, "Odds saved")} />
+        )}
+        {tab === "entities" && (
+          <EntitiesTab
+            teams={teams}
+            competitions={competitions}
+            matches={matches}
+            onAddTeam={(b) => post("/api/admin/teams", b, "Team added")}
+            onAddCompetition={(b) => post("/api/admin/competitions", b, "Competition added")}
+          />
+        )}
+        {tab === "import" && (
+          <ImportTab competitions={competitions} onSubmit={(b) => post("/api/admin/matches/bulk-import", b)} />
+        )}
+        {tab === "danger" && (
+          <DangerTab onReset={() => post("/api/admin/dev/reset", {}, "Platform reset complete")} />
+        )}
+      </AdminLayout>
 
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
-    </main>
+    </>
   );
 }
