@@ -1,7 +1,7 @@
 /**
  * Core domain types for FUNAAB BetSim.
- * Milestones 1–3 (auth/wallet, sports domain, markets/odds) plus Milestone 4
- * (bets + transactions) all live together here.
+ * Milestones 1–6 plus the match lifecycle engine (live clock, halftime,
+ * second half, source tracking for future fixture-import adapters).
  */
 
 export type UserRole = "user" | "admin";
@@ -16,7 +16,7 @@ export interface AppUser {
 
 export interface Wallet {
   uid: string;
-  balance: number; // Naira; must stay >= 0 (spec §14 invariant)
+  balance: number;
   lifetimeWagering: number;
   resetPendingSince: number | null;
   updatedAt: number;
@@ -26,7 +26,7 @@ export const STARTING_BALANCE = 100_000;
 export const MINIMUM_STAKE = 1_000;
 export const RESET_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
-// ---- Sports domain (Milestone 2) ------------------------------------------
+// ---- Sports domain ----------------------------------------------------------
 
 export interface Team {
   id: string;
@@ -49,6 +49,8 @@ export type MatchStatus =
   | "open"
   | "locked"
   | "live"
+  | "halftime"
+  | "second_half"
   | "finished"
   | "result_confirmed"
   | "settled"
@@ -58,17 +60,28 @@ export type MatchStatus =
 export interface Match {
   id: string;
   competitionId: string;
+  round: number | null; // e.g. "Round 7" — optional, for imported/leagued fixtures
   homeTeamId: string;
   awayTeamId: string;
   kickoffAt: number;
   status: MatchStatus;
   homeScore: number | null;
   awayScore: number | null;
+  venue: string | null;
+  source: "manual" | "bulk_import"; // where this fixture came from — extensible for future providers
+  sourceEventId: string | null; // an external id, if ever imported from a real provider
   createdAt: number;
   updatedAt: number;
 }
 
-// ---- Markets & odds (Milestone 3) ------------------------------------------
+// Simulated match-clock timing (spec: "this is a simulation rule", not real football).
+export const FIRST_HALF_MINUTES = 45;
+export const HALFTIME_MINUTES = 15;
+export const SECOND_HALF_MINUTES = 45;
+export const FIRST_HALF_ADDED_TIME = 2;
+export const SECOND_HALF_ADDED_TIME = 2;
+
+// ---- Markets & odds -----------------------------------------------------------
 
 export type MarketStatus = "draft" | "active" | "locked" | "settled" | "disabled";
 
@@ -96,7 +109,7 @@ export interface Market {
   updatedAt: number;
 }
 
-// ---- Bets & transactions (Milestone 4) -------------------------------------
+// ---- Bets & transactions --------------------------------------------------------
 
 export type BetStatus = "open" | "won" | "lost" | "void";
 
@@ -106,10 +119,10 @@ export interface Bet {
   matchId: string;
   marketId: string;
   selectionId: string;
-  selectionLabel: string; // copied at placement — display never needs a join
-  oddsAtPlacement: number; // spec §9: settlement must use this, never live odds
+  selectionLabel: string;
+  oddsAtPlacement: number;
   stake: number;
-  potentialPayout: number; // stake * oddsAtPlacement, precomputed
+  potentialPayout: number;
   status: BetStatus;
   placedAt: number;
   settledAt: number | null;
@@ -121,8 +134,8 @@ export interface Transaction {
   id: string;
   uid: string;
   type: TransactionType;
-  amount: number; // negative for debit_bet, positive for payout/refund/reset
+  amount: number;
   balanceAfter: number;
-  betId: string | null; // null for a reset transaction
+  betId: string | null;
   createdAt: number;
 }
