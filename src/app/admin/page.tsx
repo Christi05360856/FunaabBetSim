@@ -94,6 +94,7 @@ export default function AdminPage() {
       <MarketForm
         matches={matches}
         teamsById={teamsById}
+        competitionsById={Object.fromEntries(competitions.map((c) => [c.id, c]))}
         onSubmit={(body) => authedPost("/api/admin/markets", body)}
       />
       <MatchStatusList
@@ -103,6 +104,7 @@ export default function AdminPage() {
         onSettle={(matchId, homeScore, awayScore) =>
           authedPost("/api/admin/matches/settle", { matchId, homeScore, awayScore })
         }
+        onVoid={(matchId) => authedPost("/api/admin/matches/void", { matchId })}
       />
     </main>
   );
@@ -279,10 +281,12 @@ function MatchForm({
 function MarketForm({
   matches,
   teamsById,
+  competitionsById,
   onSubmit,
 }: {
   matches: Match[];
   teamsById: Record<string, Team>;
+  competitionsById: Record<string, Competition>;
   onSubmit: (body: unknown) => Promise<PostResult>;
 }) {
   const [matchId, setMatchId] = useState("");
@@ -324,9 +328,9 @@ function MarketForm({
         <option value="">Select match</option>
         {matches.map((m) => (
           <option key={m.id} value={m.id}>
-            {teamsById[m.homeTeamId]?.shortName ?? "?"} vs{" "}
+            {competitionsById[m.competitionId]?.name ?? "?"} · {teamsById[m.homeTeamId]?.shortName ?? "?"} vs{" "}
             {teamsById[m.awayTeamId]?.shortName ?? "?"} ·{" "}
-            {new Date(m.kickoffAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}
+            {new Date(m.kickoffAt).toLocaleString("en-NG", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
           </option>
         ))}
       </select>
@@ -378,11 +382,13 @@ function MatchStatusList({
   teamsById,
   onOpen,
   onSettle,
+  onVoid,
 }: {
   matches: Match[];
   teamsById: Record<string, Team>;
   onOpen: (matchId: string) => Promise<PostResult>;
   onSettle: (matchId: string, homeScore: number, awayScore: number) => Promise<PostResult>;
+  onVoid: (matchId: string) => Promise<PostResult>;
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [statusById, setStatusById] = useState<Record<string, string>>({});
@@ -404,6 +410,13 @@ function MatchStatusList({
     setBusyId(null);
   }
 
+  async function handleVoid(matchId: string) {
+    setBusyId(matchId);
+    const result = await onVoid(matchId);
+    setStatusById((prev) => ({ ...prev, [matchId]: result.message }));
+    setBusyId(null);
+  }
+
   function updateScore(matchId: string, side: "home" | "away", value: string) {
     setScoresById((prev) => ({
       ...prev,
@@ -417,6 +430,8 @@ function MatchStatusList({
       <div className="flex flex-col divide-y divide-ink-muted/20">
         {matches.map((m) => {
           const scores = scoresById[m.id] ?? { home: "", away: "" };
+          const isFinal = m.status === "settled" || m.status === "voided";
+
           return (
             <div key={m.id} className="flex flex-col gap-2 py-2">
               <div className="flex items-center justify-between gap-2">
@@ -466,6 +481,16 @@ function MatchStatusList({
                     {busyId === m.id ? "…" : "Confirm result & settle"}
                   </button>
                 </div>
+              )}
+
+              {!isFinal && (
+                <button
+                  onClick={() => handleVoid(m.id)}
+                  disabled={busyId === m.id}
+                  className="self-start text-xs text-loss underline disabled:opacity-50"
+                >
+                  Void this match (refund all bets)
+                </button>
               )}
             </div>
           );
