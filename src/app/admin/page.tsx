@@ -105,6 +105,7 @@ export default function AdminPage() {
           authedPost("/api/admin/matches/settle", { matchId, homeScore, awayScore })
         }
         onVoid={(matchId) => authedPost("/api/admin/matches/void", { matchId })}
+        onDelete={(matchId) => authedPost("/api/admin/matches/delete", { matchId })}
       />
       <BulkImportForm onSubmit={(body) => authedPost("/api/admin/matches/bulk-import", body)} />
     </main>
@@ -384,12 +385,14 @@ function MatchStatusList({
   onOpen,
   onSettle,
   onVoid,
+  onDelete,
 }: {
   matches: Match[];
   teamsById: Record<string, Team>;
   onOpen: (matchId: string) => Promise<PostResult>;
   onSettle: (matchId: string, homeScore: number, awayScore: number) => Promise<PostResult>;
   onVoid: (matchId: string) => Promise<PostResult>;
+  onDelete: (matchId: string) => Promise<PostResult>;
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [statusById, setStatusById] = useState<Record<string, string>>({});
@@ -418,6 +421,13 @@ function MatchStatusList({
     setBusyId(null);
   }
 
+  async function handleDelete(matchId: string) {
+    setBusyId(matchId);
+    const result = await onDelete(matchId);
+    setStatusById((prev) => ({ ...prev, [matchId]: result.message }));
+    setBusyId(null);
+  }
+
   function updateScore(matchId: string, side: "home" | "away", value: string) {
     setScoresById((prev) => ({
       ...prev,
@@ -438,8 +448,8 @@ function MatchStatusList({
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate text-sm">
-                    {teamsById[m.homeTeamId]?.shortName ?? "?"} v{" "}
-                    {teamsById[m.awayTeamId]?.shortName ?? "?"}
+                    {teamsById[m.homeTeamId]?.name ?? "?"} v{" "}
+                    {teamsById[m.awayTeamId]?.name ?? "?"}
                   </p>
                   <p className="text-xs capitalize text-ink-muted">
                     {m.status} {statusById[m.id] ? `· ${statusById[m.id]}` : ""}
@@ -485,13 +495,22 @@ function MatchStatusList({
               )}
 
               {!isFinal && (
-                <button
-                  onClick={() => handleVoid(m.id)}
-                  disabled={busyId === m.id}
-                  className="self-start text-xs text-loss underline disabled:opacity-50"
-                >
-                  Void this match (refund all bets)
-                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => handleVoid(m.id)}
+                    disabled={busyId === m.id}
+                    className="text-xs text-loss underline disabled:opacity-50"
+                  >
+                    Void (refund bets)
+                  </button>
+                  <button
+                    onClick={() => handleDelete(m.id)}
+                    disabled={busyId === m.id}
+                    className="text-xs text-ink-muted underline disabled:opacity-50"
+                  >
+                    Delete (only if no bets)
+                  </button>
+                </div>
               )}
             </div>
           );
@@ -500,6 +519,7 @@ function MatchStatusList({
     </div>
   );
 }
+                
 
 function BulkImportForm({ onSubmit }: { onSubmit: (body: unknown) => Promise<PostResult> }) {
   const [competitionName, setCompetitionName] = useState("");
