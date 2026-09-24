@@ -24,7 +24,7 @@ export default function AdminPage() {
       router.replace("/login");
       return;
     }
-    user.getIdTokenResult().then((result) => {
+    user.getIdTokenResult(true).then((result) => {
       setAdminStatus(result.claims.admin === true ? "admin" : "not-admin");
     });
   }, [user, loading, router]);
