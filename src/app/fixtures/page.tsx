@@ -7,7 +7,7 @@
  * (Double Chance, Over/Under, BTTS…) have a real home to render into later,
  * without another redesign — see MarketType in types/domain.ts.
  */
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, doc, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
@@ -16,8 +16,11 @@ import { deriveClockState, isBettingOpen } from "@/lib/domain/matchClock";
 import { BetPanel } from "@/components/BetPanel";
 import { usePlaceBet } from "@/lib/hooks/usePlaceBet";
 
-export default function MatchDetailPage({ params }: { params: Promise<{ matchId: string }> }) {
-  const { matchId } = use(params);
+// Next.js 14 App Router passes params synchronously as a plain object here
+// (the params-as-Promise + React use() pattern is a Next.js 15 convention —
+// this project is pinned to 14.2.15, see the handover doc).
+export default function MatchDetailPage({ params }: { params: { matchId: string } }) {
+  const { matchId } = params;
   const router = useRouter();
 
   const [match, setMatch] = useState<Match | null | undefined>(undefined); // undefined = loading
@@ -202,4 +205,4 @@ function LockIcon() {
       <path d="M17 9V7a5 5 0 00-10 0v2a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2v-8a2 2 0 00-2-2zm-8-2a3 3 0 016 0v2H9V7z" />
     </svg>
   );
-                                                            }
+}
