@@ -15,16 +15,19 @@ export default function BottomNav() {
   if (pathname?.startsWith("/admin")) return null;
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-ink-muted/20 bg-surface">
-      <div className="mx-auto flex max-w-md items-center justify-around px-2 py-2">
+    <nav
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-ink-muted/15 bg-surface/95 backdrop-blur"
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+    >
+      <div className="mx-auto flex max-w-md items-center justify-around px-2 py-1.5">
         {ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href;
+          const active = href === "/" ? pathname === "/" : (pathname?.startsWith(href) ?? false);
           return (
             <Link
               key={href}
               href={href}
-              className={`flex flex-col items-center gap-0.5 px-3 py-1 text-xs ${
-                active ? "text-brand" : "text-ink-muted"
+              className={`flex min-w-[4rem] flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                active ? "bg-brand/10 text-brand" : "text-ink-muted"
               }`}
             >
               <Icon active={active} />
@@ -58,11 +61,7 @@ function FixturesIcon({ active }: { active: boolean }) {
 function BetsIcon({ active }: { active: boolean }) {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2}>
-      <path
-        d="M6 3h9l4 4v14H6z M15 3v4h4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d="M6 3h9l4 4v14H6z M15 3v4h4" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M9 12h6M9 16h6" strokeLinecap="round" />
     </svg>
   );
