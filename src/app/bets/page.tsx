@@ -6,6 +6,7 @@ import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/auth/AuthContext";
 import type { Bet, Team, Match } from "@/types/domain";
+import { deriveClockState } from "@/lib/domain/matchClock";
 
 const STATUS_BADGE: Record<Bet["status"], string> = {
   open: "bg-ink-muted/15 text-ink-muted",
@@ -13,6 +14,29 @@ const STATUS_BADGE: Record<Bet["status"], string> = {
   lost: "bg-loss/15 text-loss",
   void: "bg-ink-muted/15 text-ink-muted",
 };
+
+// An "open" bet on a match that has since kicked off should read LIVE/HT, not
+// a flat "Open" — the clock is derived the same way the fixtures page does it,
+// no extra Firestore field needed. Won/Lost/Void are already final and just
+// pass through unchanged.
+type DisplayStatus = { label: string; className: string; pulse: boolean };
+
+function displayStatus(bet: Bet, match: Match | undefined): DisplayStatus {
+  if (bet.status !== "open" || !match) {
+    return { label: bet.status, className: STATUS_BADGE[bet.status], pulse: false };
+  }
+  const clock = deriveClockState(match);
+  if (clock.phase === "first_half" || clock.phase === "second_half") {
+    return { label: `LIVE ${clock.display}`, className: "bg-loss/15 text-loss", pulse: true };
+  }
+  if (clock.phase === "halftime") {
+    return { label: "HT", className: "bg-accent/20 text-accent", pulse: false };
+  }
+  if (clock.phase === "full_time") {
+    return { label: "Awaiting result", className: "bg-ink-muted/15 text-ink-muted", pulse: false };
+  }
+  return { label: "Open", className: STATUS_BADGE.open, pulse: false };
+}
 
 export default function BetsPage() {
   const { user, loading } = useAuth();
@@ -79,6 +103,7 @@ export default function BetsPage() {
           const match = matches[bet.matchId];
           const home = match ? teams[match.homeTeamId] : undefined;
           const away = match ? teams[match.awayTeamId] : undefined;
+          const status = displayStatus(bet, match);
 
           return (
             <div key={bet.id} className="overflow-hidden rounded-xl bg-surface shadow-sm">
@@ -92,10 +117,14 @@ export default function BetsPage() {
                   })}
                 </p>
                 <span
-                  className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${STATUS_BADGE[bet.status]}`}
+                  className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${status.className}`}
                 >
-                  <StatusIcon status={bet.status} />
-                  {bet.status}
+                  {status.pulse ? (
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-loss" />
+                  ) : (
+                    <StatusIcon status={bet.status} />
+                  )}
+                  {status.label}
                 </span>
               </div>
 
@@ -103,11 +132,11 @@ export default function BetsPage() {
 
               <div className="flex items-center justify-between px-4">
                 <div className="min-w-0">
-                  <p className="line-clamp-2 font-medium">{home?.name ?? "Unknown team"}</p>
-<p className="line-clamp-2 font-medium">{away?.name ?? "Unknown team"}</p>
-<p className="mt-0.5 text-xs text-ink-muted">
-  Pick: {bet.selectionId === "home" ? home?.name ?? bet.selectionLabel : bet.selectionId === "away" ? away?.name ?? bet.selectionLabel : bet.selectionLabel} · Match Winner
-</p>
+                  <p className="truncate font-medium leading-snug">{home?.name ?? "Unknown team"}</p>
+                  <p className="truncate font-medium leading-snug">{away?.name ?? "Unknown team"}</p>
+                  <p className="mt-0.5 text-xs text-ink-muted">
+                    Pick: {bet.selectionLabel} · Match Winner
+                  </p>
                 </div>
                 <span className="shrink-0 rounded-md bg-brand/10 px-2 py-1 text-sm font-semibold text-brand">
                   {bet.oddsAtPlacement.toFixed(2)}
@@ -151,4 +180,5 @@ function StatusIcon({ status }: { status: Bet["status"] }) {
       <circle cx="12" cy="12" r="9" />
     </svg>
   );
-}
+          }
+
