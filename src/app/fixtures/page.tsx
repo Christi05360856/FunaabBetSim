@@ -1,144 +1,121 @@
 "use client";
 
-/**
- * Match detail page. Right now it only ever has one market (Match Winner —
- * the only implemented MarketType), so the "Markets" section is a single
- * card. It exists as its own route/layout so future market types
- * (Double Chance, Over/Under, BTTS…) have a real home to render into later,
- * without another redesign — see MarketType in types/domain.ts.
- */
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { collection, doc, onSnapshot, query, where } from "firebase/firestore";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import type { Match, Team, Competition, Market } from "@/types/domain";
-import { deriveClockState, isBettingOpen } from "@/lib/domain/matchClock";
+import { isBettingOpen } from "@/lib/domain/matchClock";
+import { groupFixturesForBrowsing } from "@/lib/domain/fixtureDisplay";
+import { LiveClockBadge } from "@/components/LiveClock";
 import { BetPanel } from "@/components/BetPanel";
 import { usePlaceBet } from "@/lib/hooks/usePlaceBet";
 
-// Next.js 14 App Router passes params synchronously as a plain object here
-// (the params-as-Promise + React use() pattern is a Next.js 15 convention —
-// this project is pinned to 14.2.15, see the handover doc).
-export default function MatchDetailPage({ params }: { params: { matchId: string } }) {
-  const { matchId } = params;
-  const router = useRouter();
-
-  const [match, setMatch] = useState<Match | null | undefined>(undefined); // undefined = loading
-  const [home, setHome] = useState<Team | null>(null);
-  const [away, setAway] = useState<Team | null>(null);
-  const [competition, setCompetition] = useState<Competition | null>(null);
-  const [market, setMarket] = useState<Market | null>(null);
+export default function FixturesPage() {
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [teams, setTeams] = useState<Record<string, Team>>({});
+  const [competitions, setCompetitions] = useState<Record<string, Competition>>({});
+  const [marketsByMatch, setMarketsByMatch] = useState<Record<string, Market>>({});
   const bet = usePlaceBet();
 
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, "matches", matchId), (snap) => {
-      setMatch(snap.exists() ? (snap.data() as Match) : null);
-    });
-    return () => unsub();
-  }, [matchId]);
-
-  useEffect(() => {
-    if (!match) return;
-    const unsubHome = onSnapshot(doc(db, "teams", match.homeTeamId), (s) => setHome(s.exists() ? (s.data() as Team) : null));
-    const unsubAway = onSnapshot(doc(db, "teams", match.awayTeamId), (s) => setAway(s.exists() ? (s.data() as Team) : null));
-    const unsubComp = onSnapshot(doc(db, "competitions", match.competitionId), (s) => setCompetition(s.exists() ? (s.data() as Competition) : null));
-    return () => {
-      unsubHome();
-      unsubAway();
-      unsubComp();
-    };
-  }, [match]);
-
-  useEffect(() => {
-    if (!match) return;
-    // Market doc IDs are auto-generated (adminDb.collection("markets").doc()),
-    // not derived from the match — so this queries by matchId+type, the same
-    // pattern the settle/void API routes already use server-side.
-    const unsub = onSnapshot(
-      query(collection(db, "markets"), where("matchId", "==", match.id), where("type", "==", "match_winner")),
-      (snap) => setMarket(snap.empty ? null : (snap.docs[0]!.data() as Market))
+    const unsubMatches = onSnapshot(
+      query(collection(db, "matches"), orderBy("kickoffAt")),
+      (snap) => {
+        // FIX: Filter out broken matches that crash the page
+        const validMatches = snap.docs
+          .map((d) => d.data() as Match)
+          .filter((m) => m && m.id && m.homeTeamId && m.awayTeamId && m.kickoffAt);
+        setMatches(validMatches);
+      }
     );
-    return () => unsub();
-  }, [match]);
+    
+    const unsubTeams = onSnapshot(collection(db, "teams"), (snap) => {
+      const map: Record<string, Team> = {};
+      snap.docs.forEach((d) => {
+        const team = d.data() as Team;
+        if (team && team.id) map[team.id] = team;
+      });
+      setTeams(map);
+    });
+    
+    const unsubCompetitions = onSnapshot(collection(db, "competitions"), (snap) => {
+      const map: Record<string, Competition> = {};
+      snap.docs.forEach((d) => {
+        const competition = d.data() as Competition;
+        if (competition && competition.id) map[competition.id] = competition;
+      });
+      setCompetitions(map);
+    });
+    
+    const unsubMarkets = onSnapshot(
+      query(collection(db, "markets"), where("type", "==", "match_winner")),
+      (snap) => {
+        const map: Record<string, Market> = {};
+        snap.docs.forEach((d) => {
+          const market = d.data() as Market;
+          if (market && market.matchId) map[market.matchId] = market;
+        });
+        setMarketsByMatch(map);
+      }
+    );
+    
+    return () => {
+      unsubMatches();
+      unsubTeams();
+      unsubCompetitions();
+      unsubMarkets();
+    };
+  }, []);
 
-  // Live clock ticks itself every 15s so this page updates through kickoff/HT/FT.
+  // Re-groups every minute so a fixture slides from "Live" to date-grouped
+  // sections, or between date buckets, without a page refresh.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 15_000);
+    const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
 
-  if (match === undefined) {
+  const { live, upcoming, recentResults } = useMemo(() => groupFixturesForBrowsing(matches, now), [matches, now]);
+  const isEmpty = live.length === 0 && upcoming.length === 0;
+
+  function MatchCard({ match }: { match: Match }) {
+    // FIX: Safety checks for missing team IDs
+    const home = match.homeTeamId ? teams[match.homeTeamId] : undefined;
+    const away = match.awayTeamId ? teams[match.awayTeamId] : undefined;
+    const market = marketsByMatch[match.id];
+    const canBet = isBettingOpen(match) && Boolean(market);
+    const isLive = match.status === "live" || match.status === "halftime" || match.status === "second_half";
+
     return (
-      <main className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-ink-muted">Loading…</p>
-      </main>
-    );
-  }
-
-  if (match === null) {
-    return (
-      <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 px-4 text-center">
-        <p className="font-medium">Fixture not found</p>
-        <button onClick={() => router.push("/fixtures")} className="text-sm font-medium text-brand underline">
-          Back to Fixtures
-        </button>
-      </main>
-    );
-  }
-
-  const clock = deriveClockState(match, now);
-  const canBet = isBettingOpen(match, now);
-  const isLive = clock.phase === "first_half" || clock.phase === "second_half";
-
-  return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col pb-28">
-      {/* Hero */}
-      <div className="bg-gradient-to-b from-brand to-brand-dark px-4 pb-6 pt-4 text-white">
-        <button onClick={() => router.back()} className="mb-3 flex items-center gap-1 text-sm text-white/80">
-          <BackIcon /> Back
-        </button>
-        <p className="text-center text-xs font-medium uppercase tracking-wide text-white/70">
-          {competition?.name ?? "…"}
-        </p>
-        <div className="mt-3 flex items-center justify-center gap-4">
-          <p className="flex-1 text-right text-base font-semibold leading-tight">{home?.name ?? "Home"}</p>
-          <span className="shrink-0 rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
-            {clock.display}
-          </span>
-          <p className="flex-1 text-left text-base font-semibold leading-tight">{away?.name ?? "Away"}</p>
+      <div className={`rounded-2xl bg-surface p-3.5 shadow-card ${isLive ? "ring-1 ring-loss/25" : ""}`}>
+        <div className="flex items-center justify-between gap-2">
+          <p className="truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">
+            {match.competitionId ? (competitions[match.competitionId]?.name ?? "…") : "…"}
+          </p>
+          <LiveClockBadge match={match} />
         </div>
-        {isLive && (
-          <p className="mt-2 flex items-center justify-center gap-1.5 text-xs font-medium text-white/80">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" /> Live now
-          </p>
-        )}
-        {match.status === "settled" && match.homeScore !== null && (
-          <p className="mt-2 text-center font-display text-2xl font-bold">
-            {match.homeScore} – {match.awayScore}
-          </p>
-        )}
-      </div>
 
-      {/* Markets */}
-      <div className="flex flex-col gap-3 px-4 pt-5">
-        <h2 className="text-xs font-bold uppercase tracking-wide text-ink-muted">Match Winner</h2>
+        <div className="mt-2 flex items-center gap-3">
+          <Link href={`/fixtures/${match.id}`} className="min-w-0 flex-1">
+            <p className="truncate text-[15px] font-semibold leading-snug">{home?.name ?? "Unknown team"}</p>
+            <p className="truncate text-[15px] font-semibold leading-snug">{away?.name ?? "Unknown team"}</p>
+          </Link>
 
-        {!market ? (
-          <div className="rounded-2xl bg-surface p-4 text-center text-sm text-ink-muted shadow-card">
-            Odds haven&apos;t been set for this match yet.
-          </div>
-        ) : (
-          <div className="rounded-2xl bg-surface p-4 shadow-card">
-            <div className="flex gap-2">
+          {match.status === "settled" && match.homeScore !== null ? (
+            <span className="shrink-0 rounded-lg bg-surface-raised px-3 py-1.5 font-display text-base font-bold tabular-nums">
+              {match.homeScore} – {match.awayScore}
+            </span>
+          ) : market ? (
+            <div className="flex shrink-0 gap-1.5">
               {market.selections.map((selection) => {
-                const isPicked = bet.picked?.selection.id === selection.id;
+                const isPicked = bet.picked?.matchId === match.id && bet.picked.selection.id === selection.id;
                 return (
                   <button
                     key={selection.id}
                     disabled={!canBet}
                     onClick={() => bet.pick(match.id, market.id, selection)}
-                    className={`flex flex-1 flex-col items-center gap-0.5 rounded-xl py-3 transition-colors ${
+                    className={`flex w-[3.75rem] flex-col items-center rounded-xl px-1 py-2 transition-colors ${
                       !canBet
                         ? "bg-ink-muted/10 text-ink-muted"
                         : isPicked
@@ -146,10 +123,10 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
                           : "bg-brand/10 text-brand active:bg-brand/20"
                     }`}
                   >
-                    <span className={`text-xs font-medium ${isPicked ? "text-white/80" : "text-ink-muted"}`}>
+                    <span className={`text-[10px] font-medium ${isPicked ? "text-white/80" : "text-ink-muted"}`}>
                       {selection.label}
                     </span>
-                    <span className="flex items-center gap-1 font-display text-lg font-bold tabular-nums">
+                    <span className="flex items-center gap-0.5 font-display text-sm font-bold tabular-nums">
                       {!canBet && <LockIcon />}
                       {selection.odds.toFixed(2)}
                     </span>
@@ -157,30 +134,66 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
                 );
               })}
             </div>
-            {!canBet && (
-              <p className="mt-2.5 text-center text-xs text-ink-muted">
-                {match.status === "settled" ? "This match has been settled." : "Betting is closed for this match."}
-              </p>
-            )}
+          ) : (
+            <span className="shrink-0 text-xs text-ink-muted">Odds soon</span>
+          )}
+        </div>
+
+        {bet.picked?.matchId === match.id && (
+          <div className="mt-3">
+            <BetPanel
+              picked={bet.picked}
+              homeLabel={home?.name ?? "Home"}
+              awayLabel={away?.name ?? "Away"}
+              user={bet.user}
+              stake={bet.stake}
+              setStake={bet.setStake}
+              submitting={bet.submitting}
+              onConfirm={bet.confirmBet}
+            />
           </div>
         )}
-
-        {bet.picked && (
-          <BetPanel
-            picked={bet.picked}
-            homeLabel={home?.name ?? "Home"}
-            awayLabel={away?.name ?? "Away"}
-            user={bet.user}
-            stake={bet.stake}
-            setStake={bet.setStake}
-            submitting={bet.submitting}
-            onConfirm={bet.confirmBet}
-          />
-        )}
       </div>
+    );
+  }
 
-      {/* Room for future market types (Double Chance, Over/Under, BTTS…) once
-          their admin UI + settlement resolvers exist — see handover §12. */}
+  return (
+    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pt-5 pb-28">
+      <h1 className="font-display text-xl font-bold">Fixtures</h1>
+
+      {isEmpty && (
+        <p className="text-sm text-ink-muted">No fixtures right now — check back soon.</p>
+      )}
+
+      {live.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <div className="flex items-center gap-1.5 px-0.5">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-loss" />
+            <h2 className="text-xs font-bold uppercase tracking-wide text-loss">Live now</h2>
+          </div>
+          <div className="flex flex-col gap-2.5">
+            {live.map((m) => <MatchCard key={m.id} match={m} />)}
+          </div>
+        </section>
+      )}
+
+      {upcoming.map((section) => (
+        <section key={section.key} className="flex flex-col gap-2">
+          <h2 className="px-0.5 text-xs font-bold uppercase tracking-wide text-ink-muted">{section.label}</h2>
+          <div className="flex flex-col gap-2.5">
+            {section.matches.map((m) => <MatchCard key={m.id} match={m} />)}
+          </div>
+        </section>
+      ))}
+
+      {recentResults.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="px-0.5 text-xs font-bold uppercase tracking-wide text-ink-muted">Recent results</h2>
+          <div className="flex flex-col gap-2.5">
+            {recentResults.map((m) => <MatchCard key={m.id} match={m} />)}
+          </div>
+        </section>
+      )}
 
       {bet.feedback && (
         <div className="fixed inset-x-4 bottom-20 z-40 mx-auto max-w-md animate-fade-in rounded-xl bg-ink px-4 py-3 text-center text-sm text-bg shadow-card">
@@ -191,17 +204,9 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
   );
 }
 
-function BackIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-      <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 function LockIcon() {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" className="opacity-70">
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" className="opacity-70">
       <path d="M17 9V7a5 5 0 00-10 0v2a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2v-8a2 2 0 00-2-2zm-8-2a3 3 0 016 0v2H9V7z" />
     </svg>
   );
