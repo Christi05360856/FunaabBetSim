@@ -4,6 +4,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { placeBetSchema } from "@/lib/validation/schemas";
 import { canPlaceStake } from "@/lib/domain/wallet";
 import type { Bet, Market, Match, Transaction, Wallet } from "@/types/domain";
+import { isBettingOpen } from "@/lib/domain/matchClock";
 
 export async function POST(request: NextRequest) {
   // 1. User is authenticated (spec §12 rule 1)
@@ -38,10 +39,12 @@ export async function POST(request: NextRequest) {
       if (!walletSnap.exists) throw new Error("Wallet not found");
       const wallet = walletSnap.data() as Wallet;
 
-      // 3–4. Match exists and is open (spec §12 rules 3–4, 10)
+      // 3–4. Match exists, is open, and kickoff hasn't happened yet.
+      // Checking kickoffAt here (not just status) closes the window
+      // automatically at kickoff, even if an admin never manually closed it.
       if (!matchSnap.exists) throw new Error("Match not found");
       const match = matchSnap.data() as Match;
-      if (match.status !== "open") {
+      if (!isBettingOpen(match)) {
         throw new Error("Betting is not open for this match");
       }
 
