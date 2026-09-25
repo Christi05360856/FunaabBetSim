@@ -3,72 +3,50 @@
 @tailwind utilities;
 
 :root {
-  --color-brand: #1F7A4D;   /* FUNAAB green */
-  --color-accent: #C89B3C;  /* FUNAAB gold */
-  --color-win: #2F9E58;
-  --color-loss: #D14343;
-  --color-bg: #FAFAF9;
+  --color-brand: #1F7A4D;       /* FUNAAB green */
+  --color-brand-dark: #155C39;
+  --color-accent: #C89B3C;      /* FUNAAB gold */
+  --color-win: #1E9E5A;
+  --color-loss: #E14848;
+  --color-bg: #F4F5F3;
   --color-surface: #FFFFFF;
+  --color-surface-raised: #F9FAF8;
   --color-text: #14181B;
-  --color-text-muted: #5B6663;
+  --color-text-muted: #667066;
+  --shadow-card: 0 1px 2px rgba(20, 24, 27, 0.04), 0 1px 8px rgba(20, 24, 27, 0.05);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-bg: #0E1512;
-    --color-surface: #16201B;
+    --color-bg: #0B1210;
+    --color-surface: #151F1A;
+    --color-surface-raised: #1C2820;
     --color-text: #F2F4F3;
-    --color-text-muted: #9AA6A1;
-    --color-brand: #3FA873;
-    --color-accent: #D9B45C;
+    --color-text-muted: #93A398;
+    --color-brand: #34A874;
+    --color-brand-dark: #2A8A60;
+    --color-accent: #E0BB63;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 10px rgba(0, 0, 0, 0.25);
   }
 }
 
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-padding-top: env(safe-area-inset-top, 0px);
+}
+
 body {
-  @apply bg-bg text-ink font-body;
-}
-
-/* ---- Admin theme (light / dark toggle) ------------------------------------
-   Values are space-separated RGB channels so Tailwind opacity modifiers work.
-   The attribute is set by AdminThemeProvider in components/admin/AdminLayout. */
-[data-admin-theme="dark"] {
-  color-scheme: dark;
-  --adm-bg: 9 9 11;
-  --adm-surface: 24 24 27;
-  --adm-raised: 39 39 42;
-  --adm-line: 39 39 42;
-  --adm-line-strong: 63 63 70;
-  --adm-ink: 244 244 245;
-  --adm-muted: 161 161 170;
-  --adm-faint: 113 113 122;
-  --adm-brand: 5 150 105;
-  --adm-brand-ink: 52 211 153;
-  --adm-info: 96 165 250;
-  --adm-ok: 52 211 153;
-  --adm-warn: 251 191 36;
-  --adm-bad: 248 113 113;
-}
-
-[data-admin-theme="light"] {
-  color-scheme: light;
-  --adm-bg: 244 244 245;
-  --adm-surface: 255 255 255;
-  --adm-raised: 244 244 245;
-  --adm-line: 228 228 231;
-  --adm-line-strong: 212 212 216;
-  --adm-ink: 24 24 27;
-  --adm-muted: 82 82 91;
-  --adm-faint: 113 113 122;
-  --adm-brand: 5 150 105;
-  --adm-brand-ink: 4 120 87;
-  --adm-info: 37 99 235;
-  --adm-ok: 4 120 87;
-  --adm-warn: 180 83 9;
-  --adm-bad: 220 38 38;
+  @apply bg-bg text-ink font-body antialiased;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-adm-in {
-    animation: none;
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
