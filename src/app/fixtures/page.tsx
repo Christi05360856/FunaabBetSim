@@ -1,158 +1,141 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
+/**
+ * Match detail page. Right now it only ever has one market (Match Winner —
+ * the only implemented MarketType), so the "Markets" section is a single
+ * card. It exists as its own route/layout so future market types
+ * (Double Chance, Over/Under, BTTS…) have a real home to render into later,
+ * without another redesign — see MarketType in types/domain.ts.
+ */
+import { use, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { collection, doc, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { useAuth } from "@/lib/auth/AuthContext";
-import { MINIMUM_STAKE } from "@/types/domain";
-import type { Match, Team, Competition, Market, Selection } from "@/types/domain";
-import { isBettingOpen } from "@/lib/domain/matchClock";
-import { groupFixturesForBrowsing } from "@/lib/domain/fixtureDisplay";
-import { LiveClockBadge } from "@/components/LiveClock";
+import type { Match, Team, Competition, Market } from "@/types/domain";
+import { deriveClockState, isBettingOpen } from "@/lib/domain/matchClock";
+import { BetPanel } from "@/components/BetPanel";
+import { usePlaceBet } from "@/lib/hooks/usePlaceBet";
 
-type PickedSelection = { matchId: string; marketId: string; selection: Selection };
+export default function MatchDetailPage({ params }: { params: Promise<{ matchId: string }> }) {
+  const { matchId } = use(params);
+  const router = useRouter();
 
-const QUICK_STAKES = [1_000, 5_000, 20_000];
-
-export default function FixturesPage() {
-  const { user } = useAuth();
-  const [matches, setMatches] = useState<Match[]>([]);
-  const [teams, setTeams] = useState<Record<string, Team>>({});
-  const [competitions, setCompetitions] = useState<Record<string, Competition>>({});
-  const [marketsByMatch, setMarketsByMatch] = useState<Record<string, Market>>({});
-
-  const [picked, setPicked] = useState<PickedSelection | null>(null);
-  const [stake, setStake] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [match, setMatch] = useState<Match | null | undefined>(undefined); // undefined = loading
+  const [home, setHome] = useState<Team | null>(null);
+  const [away, setAway] = useState<Team | null>(null);
+  const [competition, setCompetition] = useState<Competition | null>(null);
+  const [market, setMarket] = useState<Market | null>(null);
+  const bet = usePlaceBet();
 
   useEffect(() => {
-    const unsubMatches = onSnapshot(
-      query(collection(db, "matches"), orderBy("kickoffAt")),
-      (snap) => setMatches(snap.docs.map((d) => d.data() as Match))
-    );
-    const unsubTeams = onSnapshot(collection(db, "teams"), (snap) => {
-      const map: Record<string, Team> = {};
-      snap.docs.forEach((d) => {
-        const team = d.data() as Team;
-        map[team.id] = team;
-      });
-      setTeams(map);
+    const unsub = onSnapshot(doc(db, "matches", matchId), (snap) => {
+      setMatch(snap.exists() ? (snap.data() as Match) : null);
     });
-    const unsubCompetitions = onSnapshot(collection(db, "competitions"), (snap) => {
-      const map: Record<string, Competition> = {};
-      snap.docs.forEach((d) => {
-        const competition = d.data() as Competition;
-        map[competition.id] = competition;
-      });
-      setCompetitions(map);
-    });
-    const unsubMarkets = onSnapshot(
-      query(collection(db, "markets"), where("type", "==", "match_winner")),
-      (snap) => {
-        const map: Record<string, Market> = {};
-        snap.docs.forEach((d) => {
-          const market = d.data() as Market;
-          map[market.matchId] = market;
-        });
-        setMarketsByMatch(map);
-      }
-    );
-    return () => {
-      unsubMatches();
-      unsubTeams();
-      unsubCompetitions();
-      unsubMarkets();
-    };
-  }, []);
+    return () => unsub();
+  }, [matchId]);
 
-  // Re-groups every minute so a fixture slides from "Live" to date-grouped
-  // sections, or between date buckets, without a page refresh.
+  useEffect(() => {
+    if (!match) return;
+    const unsubHome = onSnapshot(doc(db, "teams", match.homeTeamId), (s) => setHome(s.exists() ? (s.data() as Team) : null));
+    const unsubAway = onSnapshot(doc(db, "teams", match.awayTeamId), (s) => setAway(s.exists() ? (s.data() as Team) : null));
+    const unsubComp = onSnapshot(doc(db, "competitions", match.competitionId), (s) => setCompetition(s.exists() ? (s.data() as Competition) : null));
+    return () => {
+      unsubHome();
+      unsubAway();
+      unsubComp();
+    };
+  }, [match]);
+
+  useEffect(() => {
+    if (!match) return;
+    // Market doc IDs are auto-generated (adminDb.collection("markets").doc()),
+    // not derived from the match — so this queries by matchId+type, the same
+    // pattern the settle/void API routes already use server-side.
+    const unsub = onSnapshot(
+      query(collection(db, "markets"), where("matchId", "==", match.id), where("type", "==", "match_winner")),
+      (snap) => setMarket(snap.empty ? null : (snap.docs[0]!.data() as Market))
+    );
+    return () => unsub();
+  }, [match]);
+
+  // Live clock ticks itself every 15s so this page updates through kickoff/HT/FT.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 60_000);
+    const id = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(id);
   }, []);
 
-  const { live, upcoming, recentResults } = useMemo(() => groupFixturesForBrowsing(matches, now), [matches, now]);
-
-  function togglePick(matchId: string, marketId: string, selection: Selection) {
-    setFeedback(null);
-    setPicked((prev) =>
-      prev?.selection.id === selection.id && prev.matchId === matchId ? null : { matchId, marketId, selection }
-    );
-    setStake("");
-  }
-
-  async function confirmBet() {
-    if (!picked || !user) return;
-    setSubmitting(true);
-    setFeedback(null);
-    try {
-      const idToken = await user.getIdToken();
-      const response = await fetch("/api/bets", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          matchId: picked.matchId,
-          marketId: picked.marketId,
-          selectionId: picked.selection.id,
-          stake: Number(stake),
-        }),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Could not place bet");
-      setFeedback(`Bet placed! Potential payout: ₦${body.potentialPayout.toLocaleString("en-NG")}`);
-      setPicked(null);
-      setStake("");
-    } catch (err) {
-      setFeedback(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  const stakeNumber = Number(stake);
-  const stakeValid = stake !== "" && stakeNumber >= MINIMUM_STAKE;
-  const isEmpty = live.length === 0 && upcoming.length === 0;
-
-  function MatchCard({ match }: { match: Match }) {
-    const home = teams[match.homeTeamId];
-    const away = teams[match.awayTeamId];
-    const market = marketsByMatch[match.id];
-    const canBet = isBettingOpen(match) && Boolean(market);
-    const isLive = match.status === "live" || match.status === "halftime" || match.status === "second_half";
-
+  if (match === undefined) {
     return (
-      <div className={`rounded-2xl bg-surface p-3.5 shadow-card ${isLive ? "ring-1 ring-loss/25" : ""}`}>
-        <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">
-            {competitions[match.competitionId]?.name ?? "…"}
-          </p>
-          <LiveClockBadge match={match} />
+      <main className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-ink-muted">Loading…</p>
+      </main>
+    );
+  }
+
+  if (match === null) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 px-4 text-center">
+        <p className="font-medium">Fixture not found</p>
+        <button onClick={() => router.push("/fixtures")} className="text-sm font-medium text-brand underline">
+          Back to Fixtures
+        </button>
+      </main>
+    );
+  }
+
+  const clock = deriveClockState(match, now);
+  const canBet = isBettingOpen(match, now);
+  const isLive = clock.phase === "first_half" || clock.phase === "second_half";
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-md flex-col pb-28">
+      {/* Hero */}
+      <div className="bg-gradient-to-b from-brand to-brand-dark px-4 pb-6 pt-4 text-white">
+        <button onClick={() => router.back()} className="mb-3 flex items-center gap-1 text-sm text-white/80">
+          <BackIcon /> Back
+        </button>
+        <p className="text-center text-xs font-medium uppercase tracking-wide text-white/70">
+          {competition?.name ?? "…"}
+        </p>
+        <div className="mt-3 flex items-center justify-center gap-4">
+          <p className="flex-1 text-right text-base font-semibold leading-tight">{home?.name ?? "Home"}</p>
+          <span className="shrink-0 rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
+            {clock.display}
+          </span>
+          <p className="flex-1 text-left text-base font-semibold leading-tight">{away?.name ?? "Away"}</p>
         </div>
+        {isLive && (
+          <p className="mt-2 flex items-center justify-center gap-1.5 text-xs font-medium text-white/80">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" /> Live now
+          </p>
+        )}
+        {match.status === "settled" && match.homeScore !== null && (
+          <p className="mt-2 text-center font-display text-2xl font-bold">
+            {match.homeScore} – {match.awayScore}
+          </p>
+        )}
+      </div>
 
-        <div className="mt-2 flex items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[15px] font-semibold leading-snug">{home?.name ?? "Unknown team"}</p>
-            <p className="truncate text-[15px] font-semibold leading-snug">{away?.name ?? "Unknown team"}</p>
+      {/* Markets */}
+      <div className="flex flex-col gap-3 px-4 pt-5">
+        <h2 className="text-xs font-bold uppercase tracking-wide text-ink-muted">Match Winner</h2>
+
+        {!market ? (
+          <div className="rounded-2xl bg-surface p-4 text-center text-sm text-ink-muted shadow-card">
+            Odds haven&apos;t been set for this match yet.
           </div>
-
-          {match.status === "settled" && match.homeScore !== null ? (
-            <span className="shrink-0 rounded-lg bg-surface-raised px-3 py-1.5 font-display text-base font-bold tabular-nums">
-              {match.homeScore} – {match.awayScore}
-            </span>
-          ) : market ? (
-            <div className="flex shrink-0 gap-1.5">
+        ) : (
+          <div className="rounded-2xl bg-surface p-4 shadow-card">
+            <div className="flex gap-2">
               {market.selections.map((selection) => {
-                const isPicked = picked?.matchId === match.id && picked.selection.id === selection.id;
+                const isPicked = bet.picked?.selection.id === selection.id;
                 return (
                   <button
                     key={selection.id}
                     disabled={!canBet}
-                    onClick={() => togglePick(match.id, market.id, selection)}
-                    className={`flex w-[3.75rem] flex-col items-center rounded-xl px-1 py-2 transition-colors ${
+                    onClick={() => bet.pick(match.id, market.id, selection)}
+                    className={`flex flex-1 flex-col items-center gap-0.5 rounded-xl py-3 transition-colors ${
                       !canBet
                         ? "bg-ink-muted/10 text-ink-muted"
                         : isPicked
@@ -160,10 +143,10 @@ export default function FixturesPage() {
                           : "bg-brand/10 text-brand active:bg-brand/20"
                     }`}
                   >
-                    <span className={`text-[10px] font-medium ${isPicked ? "text-white/80" : "text-ink-muted"}`}>
+                    <span className={`text-xs font-medium ${isPicked ? "text-white/80" : "text-ink-muted"}`}>
                       {selection.label}
                     </span>
-                    <span className="flex items-center gap-0.5 font-display text-sm font-bold tabular-nums">
+                    <span className="flex items-center gap-1 font-display text-lg font-bold tabular-nums">
                       {!canBet && <LockIcon />}
                       {selection.odds.toFixed(2)}
                     </span>
@@ -171,125 +154,52 @@ export default function FixturesPage() {
                 );
               })}
             </div>
-          ) : (
-            <span className="shrink-0 text-xs text-ink-muted">Odds soon</span>
-          )}
-        </div>
-
-        {picked?.matchId === match.id && (
-          <div className="mt-3 flex flex-col gap-2.5 rounded-xl bg-surface-raised p-3 animate-fade-in">
-            {!user ? (
-              <p className="text-sm text-ink-muted">
-                <Link href="/login" className="font-medium text-brand underline">Log in</Link> to place a bet.
+            {!canBet && (
+              <p className="mt-2.5 text-center text-xs text-ink-muted">
+                {match.status === "settled" ? "This match has been settled." : "Betting is closed for this match."}
               </p>
-            ) : (
-              <>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-ink-muted">
-                    {home?.name} <span className="text-ink-muted/60">vs</span> {away?.name}
-                  </span>
-                  <span className="font-display font-bold text-brand">{picked.selection.odds.toFixed(2)}</span>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5">
-                  {QUICK_STAKES.map((amount) => (
-                    <button
-                      key={amount}
-                      onClick={() => setStake(String(amount))}
-                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
-                        stake === String(amount) ? "bg-brand text-white" : "bg-bg text-ink-muted"
-                      }`}
-                    >
-                      ₦{amount.toLocaleString("en-NG")}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={MINIMUM_STAKE}
-                    placeholder={`Min ₦${MINIMUM_STAKE.toLocaleString("en-NG")}`}
-                    value={stake}
-                    onChange={(e) => setStake(e.target.value)}
-                    className="min-w-0 flex-1 rounded-lg border border-ink-muted/25 bg-surface px-3 py-2 text-sm"
-                  />
-                  <button
-                    onClick={confirmBet}
-                    disabled={!stakeValid || submitting}
-                    className="shrink-0 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                  >
-                    {submitting ? "Placing…" : "Place bet"}
-                  </button>
-                </div>
-                {stakeValid && (
-                  <p className="text-xs text-ink-muted">
-                    Potential payout:{" "}
-                    <span className="font-semibold text-ink">
-                      ₦{Math.round(stakeNumber * picked.selection.odds).toLocaleString("en-NG")}
-                    </span>
-                  </p>
-                )}
-              </>
             )}
           </div>
         )}
+
+        {bet.picked && (
+          <BetPanel
+            picked={bet.picked}
+            homeLabel={home?.name ?? "Home"}
+            awayLabel={away?.name ?? "Away"}
+            user={bet.user}
+            stake={bet.stake}
+            setStake={bet.setStake}
+            submitting={bet.submitting}
+            onConfirm={bet.confirmBet}
+          />
+        )}
       </div>
-    );
-  }
 
-  return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pt-5 pb-28">
-      <h1 className="font-display text-xl font-bold">Fixtures</h1>
+      {/* Room for future market types (Double Chance, Over/Under, BTTS…) once
+          their admin UI + settlement resolvers exist — see handover §12. */}
 
-      {isEmpty && (
-        <p className="text-sm text-ink-muted">No fixtures right now — check back soon.</p>
-      )}
-
-      {live.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <div className="flex items-center gap-1.5 px-0.5">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-loss" />
-            <h2 className="text-xs font-bold uppercase tracking-wide text-loss">Live now</h2>
-          </div>
-          <div className="flex flex-col gap-2.5">
-            {live.map((m) => <MatchCard key={m.id} match={m} />)}
-          </div>
-        </section>
-      )}
-
-      {upcoming.map((section) => (
-        <section key={section.key} className="flex flex-col gap-2">
-          <h2 className="px-0.5 text-xs font-bold uppercase tracking-wide text-ink-muted">{section.label}</h2>
-          <div className="flex flex-col gap-2.5">
-            {section.matches.map((m) => <MatchCard key={m.id} match={m} />)}
-          </div>
-        </section>
-      ))}
-
-      {recentResults.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <h2 className="px-0.5 text-xs font-bold uppercase tracking-wide text-ink-muted">Recent results</h2>
-          <div className="flex flex-col gap-2.5">
-            {recentResults.map((m) => <MatchCard key={m.id} match={m} />)}
-          </div>
-        </section>
-      )}
-
-      {feedback && (
+      {bet.feedback && (
         <div className="fixed inset-x-4 bottom-20 z-40 mx-auto max-w-md animate-fade-in rounded-xl bg-ink px-4 py-3 text-center text-sm text-bg shadow-card">
-          {feedback}
+          {bet.feedback}
         </div>
       )}
     </main>
   );
 }
 
-function LockIcon() {
+function BackIcon() {
   return (
-    <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" className="opacity-70">
-      <path d="M17 9V7a5 5 0 00-10 0v2a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2v-8a2 2 0 00-2-2zm-8-2a3 3 0 016 0v2H9V7z" />
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+      <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
+
+function LockIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" className="opacity-70">
+      <path d="M17 9V7a5 5 0 00-10 0v2a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2v-8a2 2 0 00-2-2zm-8-2a3 3 0 016 0v2H9V7z" />
+    </svg>
+  );
+                                                            }
