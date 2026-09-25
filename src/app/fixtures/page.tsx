@@ -7,18 +7,10 @@ import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { MINIMUM_STAKE } from "@/types/domain";
 import type { Match, Team, Competition, Market, Selection } from "@/types/domain";
+import { isBettingOpen } from "@/lib/domain/matchClock";
+import { LiveClockBadge } from "@/components/LiveClock";
 
 type PickedSelection = { matchId: string; marketId: string; selection: Selection };
-
-const STATUS_LABEL: Partial<Record<Match["status"], string>> = {
-  open: "OPEN",
-  locked: "LOCKED",
-  live: "LIVE",
-  finished: "FT",
-  result_confirmed: "FT",
-  settled: "FT",
-  scheduled: "SOON",
-};
 
 export default function FixturesPage() {
   const { user } = useAuth();
@@ -137,7 +129,10 @@ export default function FixturesPage() {
                 const home = teams[match.homeTeamId];
                 const away = teams[match.awayTeamId];
                 const market = marketsByMatch[match.id];
-                const canBet = match.status === "open" && market;
+                // Betting closes automatically at kickoff even if an admin
+                // never manually closed it — the clock, not just the stored
+                // status, is what decides this (spec §4).
+                const canBet = isBettingOpen(match) && Boolean(market);
                 const isSettled = match.status === "settled" && match.homeScore !== null;
 
                 return (
@@ -154,22 +149,12 @@ export default function FixturesPage() {
                               minute: "2-digit",
                             })}
                           </p>
-                          <span
-                            className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                              match.status === "live"
-                                ? "bg-loss/15 text-loss"
-                                : match.status === "open"
-                                  ? "bg-win/15 text-win"
-                                  : "bg-ink-muted/15 text-ink-muted"
-                            }`}
-                          >
-                            {STATUS_LABEL[match.status] ?? match.status.toUpperCase()}
-                          </span>
+                          <LiveClockBadge match={match} />
                         </div>
-                        <div className="text-sm font-medium leading-snug">
-  <p className="line-clamp-2">{home?.name ?? "Unknown team"}</p>
-  <p className="line-clamp-2">{away?.name ?? "Unknown team"}</p>
-</div>
+                        <p className="truncate text-sm font-medium">
+                          {home?.shortName ?? "?"} <span className="text-ink-muted">v</span>{" "}
+                          {away?.shortName ?? "?"}
+                        </p>
                       </div>
 
                       {isSettled ? (
@@ -258,4 +243,4 @@ export default function FixturesPage() {
       )}
     </main>
   );
-                              }
+                                }
