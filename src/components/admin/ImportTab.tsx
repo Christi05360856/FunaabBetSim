@@ -3,6 +3,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import type { Competition } from "@/types/domain";
 import { Card, CardHeader, Button, Input, Select, Field } from "./ui";
+import { formatKickoff } from "./helpers";
 
 type PostResult = { ok: boolean; message: string };
 type ParsedMatch = { homeTeam: string; awayTeam: string; kickoffAt: number };
@@ -14,11 +15,11 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
 
 function parseLine(raw: string, line: number): ParsedLine {
   const parts = raw.split(";").map((p) => p.trim());
-  if (parts.length !== 3) return { line, error: "Use: Home; Away; YYYY-MM-DD HH:mm" };
+  if (parts.length !== 3) return { line, error: "Use: Home; Away; YYYY-MM-DD HH:mm (24-hour)" };
   const [home, away, date] = parts as [string, string, string];
   if (!home || !away) return { line, error: "Both team names are required" };
   if (home.toLowerCase() === away.toLowerCase()) return { line, error: "A team can't play itself" };
-  if (!DATE_RE.test(date)) return { line, error: "Date must look like 2026-09-26 15:00" };
+  if (!DATE_RE.test(date)) return { line, error: "Date must look like 2026-09-26 22:00 — 24-hour clock, not AM/PM" };
   const kickoffAt = new Date(date.replace(" ", "T")).getTime();
   if (Number.isNaN(kickoffAt)) return { line, error: "That date doesn't exist" };
   return { line, match: { homeTeam: home, awayTeam: away, kickoffAt } };
@@ -59,7 +60,9 @@ export default function ImportTab({ competitions, onSubmit }: { competitions: Co
     <div className="flex flex-col gap-6">
       <div>
         <h2 className="text-xl font-bold">Bulk import</h2>
-        <p className="mt-1 text-sm text-adm-muted">One fixture per line: Home; Away; YYYY-MM-DD HH:mm</p>
+        <p className="mt-1 text-sm text-adm-muted">
+          One fixture per line: Home; Away; YYYY-MM-DD HH:mm — <strong>24-hour clock</strong> (10pm = 22:00, not 10:00)
+        </p>
       </div>
       <Card>
         <CardHeader title="Import fixtures" subtitle="Teams that don't exist yet are created automatically." />
@@ -82,7 +85,7 @@ export default function ImportTab({ competitions, onSubmit }: { competitions: Co
             <textarea
               rows={8}
               className="w-full rounded-lg border border-adm-line-strong bg-adm-raised px-3 py-2 font-mono text-xs text-adm-ink placeholder:text-adm-faint outline-none focus:border-adm-brand"
-              placeholder="Team A; Team B; 2026-09-26 15:00"
+              placeholder="Team A; Team B; 2026-09-26 22:00"
               value={text}
               onChange={(e) => setText(e.target.value)}
             />
@@ -101,10 +104,25 @@ export default function ImportTab({ competitions, onSubmit }: { competitions: Co
             </ul>
           )}
 
+          {valid.length > 0 && (
+            <div className="flex flex-col gap-1 rounded-lg bg-adm-raised p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-adm-muted">
+                Double-check these kickoff times before importing
+              </p>
+              <ul className="flex flex-col gap-1 text-xs">
+                {valid.map((m, i) => (
+                  <li key={i} className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate text-adm-ink">{m.homeTeam} v {m.awayTeam}</span>
+                    <span className="shrink-0 font-medium text-adm-brand">{formatKickoff(m.kickoffAt)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <Button type="submit" disabled={!canSubmit}>{busy ? "Importing…" : `Import ${valid.length} fixture${valid.length === 1 ? "" : "s"}`}</Button>
         </form>
       </Card>
     </div>
   );
 }
-
