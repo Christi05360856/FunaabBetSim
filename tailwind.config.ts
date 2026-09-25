@@ -1,52 +1,44 @@
 import type { Config } from "tailwindcss";
 
-// Admin theme colours read CSS variables (see globals.css) so one class works
-// in both light and dark mode. The "/ <alpha-value>" bit keeps things like
-// bg-adm-brand/10 working.
-const adm = (name: string) => `rgb(var(--adm-${name}) / <alpha-value>)`;
-
 const config: Config = {
   content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
   theme: {
     extend: {
       colors: {
-        brand: "var(--color-brand)",       // FUNAAB green
-        accent: "var(--color-accent)",     // FUNAAB gold
+        brand: {
+          DEFAULT: "var(--color-brand)",
+          dark: "var(--color-brand-dark)",
+        },
+        accent: "var(--color-accent)",
         win: "var(--color-win)",
         loss: "var(--color-loss)",
         bg: "var(--color-bg)",
-        surface: "var(--color-surface)",
+        surface: {
+          DEFAULT: "var(--color-surface)",
+          raised: "var(--color-surface-raised)",
+        },
         ink: "var(--color-text)",
         "ink-muted": "var(--color-text-muted)",
-        adm: {
-          bg: adm("bg"),
-          surface: adm("surface"),
-          raised: adm("raised"),
-          line: adm("line"),
-          "line-strong": adm("line-strong"),
-          ink: adm("ink"),
-          muted: adm("muted"),
-          faint: adm("faint"),
-          brand: adm("brand"),
-          "brand-ink": adm("brand-ink"),
-          info: adm("info"),
-          ok: adm("ok"),
-          warn: adm("warn"),
-          bad: adm("bad"),
-        },
       },
       fontFamily: {
         display: ["var(--font-display)", "sans-serif"],
         body: ["var(--font-body)", "sans-serif"],
       },
+      boxShadow: {
+        card: "var(--shadow-card)",
+      },
+      borderRadius: {
+        xl: "0.875rem",
+        "2xl": "1.25rem",
+      },
       keyframes: {
-        "adm-in": {
-          from: { opacity: "0", transform: "translateY(6px)" },
+        "fade-in": {
+          from: { opacity: "0", transform: "translateY(4px)" },
           to: { opacity: "1", transform: "none" },
         },
       },
       animation: {
-        "adm-in": "adm-in 0.2s ease-out",
+        "fade-in": "fade-in 0.15s ease-out",
       },
     },
   },
