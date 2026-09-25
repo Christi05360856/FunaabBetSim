@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
@@ -8,9 +8,12 @@ import { useAuth } from "@/lib/auth/AuthContext";
 import { MINIMUM_STAKE } from "@/types/domain";
 import type { Match, Team, Competition, Market, Selection } from "@/types/domain";
 import { isBettingOpen } from "@/lib/domain/matchClock";
+import { groupFixturesForBrowsing } from "@/lib/domain/fixtureDisplay";
 import { LiveClockBadge } from "@/components/LiveClock";
 
 type PickedSelection = { matchId: string; marketId: string; selection: Selection };
+
+const QUICK_STAKES = [1_000, 5_000, 20_000];
 
 export default function FixturesPage() {
   const { user } = useAuth();
@@ -64,6 +67,16 @@ export default function FixturesPage() {
     };
   }, []);
 
+  // Re-groups every minute so a fixture slides from "Live" to date-grouped
+  // sections, or between date buckets, without a page refresh.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const { live, upcoming, recentResults } = useMemo(() => groupFixturesForBrowsing(matches, now), [matches, now]);
+
   function togglePick(matchId: string, marketId: string, selection: Selection) {
     setFeedback(null);
     setPicked((prev) =>
@@ -100,147 +113,183 @@ export default function FixturesPage() {
     }
   }
 
-  const groups = new Map<string, Match[]>();
-  for (const match of matches) {
-    const key = match.competitionId;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(match);
-  }
-
   const stakeNumber = Number(stake);
   const stakeValid = stake !== "" && stakeNumber >= MINIMUM_STAKE;
+  const isEmpty = live.length === 0 && upcoming.length === 0;
 
-  return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col px-4 pt-6 pb-28">
-      <h1 className="mb-4 font-display text-xl font-semibold">Fixtures</h1>
+  function MatchCard({ match }: { match: Match }) {
+    const home = teams[match.homeTeamId];
+    const away = teams[match.awayTeamId];
+    const market = marketsByMatch[match.id];
+    const canBet = isBettingOpen(match) && Boolean(market);
+    const isLive = match.status === "live" || match.status === "halftime" || match.status === "second_half";
 
-      {matches.length === 0 && (
-        <p className="text-ink-muted">No fixtures yet — check back soon.</p>
-      )}
+    return (
+      <div className={`rounded-2xl bg-surface p-3.5 shadow-card ${isLive ? "ring-1 ring-loss/25" : ""}`}>
+        <div className="flex items-center justify-between gap-2">
+          <p className="truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">
+            {competitions[match.competitionId]?.name ?? "…"}
+          </p>
+          <LiveClockBadge match={match} />
+        </div>
 
-      <div className="flex flex-col gap-5">
-        {Array.from(groups.entries()).map(([competitionId, competitionMatches]) => (
-          <section key={competitionId}>
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-              {competitions[competitionId]?.name ?? "…"}
-            </h2>
-            <div className="flex flex-col gap-2">
-              {competitionMatches.map((match) => {
-                const home = teams[match.homeTeamId];
-                const away = teams[match.awayTeamId];
-                const market = marketsByMatch[match.id];
-                // Betting closes automatically at kickoff even if an admin
-                // never manually closed it — the clock, not just the stored
-                // status, is what decides this (spec §4).
-                const canBet = isBettingOpen(match) && Boolean(market);
-                const isSettled = match.status === "settled" && match.homeScore !== null;
+        <div className="mt-2 flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[15px] font-semibold leading-snug">{home?.name ?? "Unknown team"}</p>
+            <p className="truncate text-[15px] font-semibold leading-snug">{away?.name ?? "Unknown team"}</p>
+          </div>
 
+          {match.status === "settled" && match.homeScore !== null ? (
+            <span className="shrink-0 rounded-lg bg-surface-raised px-3 py-1.5 font-display text-base font-bold tabular-nums">
+              {match.homeScore} – {match.awayScore}
+            </span>
+          ) : market ? (
+            <div className="flex shrink-0 gap-1.5">
+              {market.selections.map((selection) => {
+                const isPicked = picked?.matchId === match.id && picked.selection.id === selection.id;
                 return (
-                  <div key={match.id} className="rounded-xl bg-surface p-3 shadow-sm">
-                    <div className="flex items-center gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <p className="truncate text-xs text-ink-muted">
-                            {new Date(match.kickoffAt).toLocaleString("en-NG", {
-                              weekday: "short",
-                              day: "numeric",
-                              month: "short",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </p>
-                          <LiveClockBadge match={match} />
-                        </div>
-                        <p className="truncate text-sm font-medium">
-                          {home?.shortName ?? "?"} <span className="text-ink-muted">v</span>{" "}
-                          {away?.shortName ?? "?"}
-                        </p>
-                      </div>
-
-                      {isSettled ? (
-                        <span className="shrink-0 rounded-lg bg-bg px-3 py-1.5 text-sm font-semibold">
-                          {match.homeScore} - {match.awayScore}
-                        </span>
-                      ) : market ? (
-                        <div className="flex shrink-0 gap-1.5">
-                          {market.selections.map((selection) => {
-                            const isPicked =
-                              picked?.matchId === match.id && picked.selection.id === selection.id;
-                            return (
-                              <button
-                                key={selection.id}
-                                disabled={!canBet}
-                                onClick={() => togglePick(match.id, market.id, selection)}
-                                className={`flex w-14 flex-col items-center rounded-lg px-1 py-1.5 transition-colors disabled:opacity-40 ${
-                                  isPicked ? "bg-brand text-white" : "bg-brand/10 text-brand"
-                                }`}
-                              >
-                                <span
-                                  className={`text-[10px] ${isPicked ? "text-white/80" : "text-ink-muted"}`}
-                                >
-                                  {selection.label}
-                                </span>
-                                <span className="text-sm font-semibold">
-                                  {selection.odds.toFixed(2)}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <span className="shrink-0 text-xs text-ink-muted">Odds soon</span>
-                      )}
-                    </div>
-
-                    {picked?.matchId === match.id && (
-                      <div className="mt-3 flex flex-col gap-2 rounded-lg bg-bg p-3">
-                        {!user ? (
-                          <p className="text-sm text-ink-muted">
-                            <Link href="/login" className="text-brand underline">Log in</Link> to place a bet.
-                          </p>
-                        ) : (
-                          <>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                inputMode="numeric"
-                                min={MINIMUM_STAKE}
-                                placeholder={`Stake (min ₦${MINIMUM_STAKE.toLocaleString("en-NG")})`}
-                                value={stake}
-                                onChange={(e) => setStake(e.target.value)}
-                                className="flex-1 rounded-lg border border-ink-muted bg-transparent px-3 py-2 text-sm text-ink"
-                              />
-                              <button
-                                onClick={confirmBet}
-                                disabled={!stakeValid || submitting}
-                                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                              >
-                                {submitting ? "Placing…" : "Place bet"}
-                              </button>
-                            </div>
-                            {stakeValid && (
-                              <p className="text-xs text-ink-muted">
-                                Potential payout: ₦
-                                {Math.round(stakeNumber * picked.selection.odds).toLocaleString("en-NG")}
-                              </p>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <button
+                    key={selection.id}
+                    disabled={!canBet}
+                    onClick={() => togglePick(match.id, market.id, selection)}
+                    className={`flex w-[3.75rem] flex-col items-center rounded-xl px-1 py-2 transition-colors ${
+                      !canBet
+                        ? "bg-ink-muted/10 text-ink-muted"
+                        : isPicked
+                          ? "bg-brand text-white"
+                          : "bg-brand/10 text-brand active:bg-brand/20"
+                    }`}
+                  >
+                    <span className={`text-[10px] font-medium ${isPicked ? "text-white/80" : "text-ink-muted"}`}>
+                      {selection.label}
+                    </span>
+                    <span className="flex items-center gap-0.5 font-display text-sm font-bold tabular-nums">
+                      {!canBet && <LockIcon />}
+                      {selection.odds.toFixed(2)}
+                    </span>
+                  </button>
                 );
               })}
             </div>
-          </section>
-        ))}
+          ) : (
+            <span className="shrink-0 text-xs text-ink-muted">Odds soon</span>
+          )}
+        </div>
+
+        {picked?.matchId === match.id && (
+          <div className="mt-3 flex flex-col gap-2.5 rounded-xl bg-surface-raised p-3 animate-fade-in">
+            {!user ? (
+              <p className="text-sm text-ink-muted">
+                <Link href="/login" className="font-medium text-brand underline">Log in</Link> to place a bet.
+              </p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-ink-muted">
+                    {home?.name} <span className="text-ink-muted/60">vs</span> {away?.name}
+                  </span>
+                  <span className="font-display font-bold text-brand">{picked.selection.odds.toFixed(2)}</span>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {QUICK_STAKES.map((amount) => (
+                    <button
+                      key={amount}
+                      onClick={() => setStake(String(amount))}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
+                        stake === String(amount) ? "bg-brand text-white" : "bg-bg text-ink-muted"
+                      }`}
+                    >
+                      ₦{amount.toLocaleString("en-NG")}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={MINIMUM_STAKE}
+                    placeholder={`Min ₦${MINIMUM_STAKE.toLocaleString("en-NG")}`}
+                    value={stake}
+                    onChange={(e) => setStake(e.target.value)}
+                    className="min-w-0 flex-1 rounded-lg border border-ink-muted/25 bg-surface px-3 py-2 text-sm"
+                  />
+                  <button
+                    onClick={confirmBet}
+                    disabled={!stakeValid || submitting}
+                    className="shrink-0 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {submitting ? "Placing…" : "Place bet"}
+                  </button>
+                </div>
+                {stakeValid && (
+                  <p className="text-xs text-ink-muted">
+                    Potential payout:{" "}
+                    <span className="font-semibold text-ink">
+                      ₦{Math.round(stakeNumber * picked.selection.odds).toLocaleString("en-NG")}
+                    </span>
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
+    );
+  }
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pt-5 pb-28">
+      <h1 className="font-display text-xl font-bold">Fixtures</h1>
+
+      {isEmpty && (
+        <p className="text-sm text-ink-muted">No fixtures right now — check back soon.</p>
+      )}
+
+      {live.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <div className="flex items-center gap-1.5 px-0.5">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-loss" />
+            <h2 className="text-xs font-bold uppercase tracking-wide text-loss">Live now</h2>
+          </div>
+          <div className="flex flex-col gap-2.5">
+            {live.map((m) => <MatchCard key={m.id} match={m} />)}
+          </div>
+        </section>
+      )}
+
+      {upcoming.map((section) => (
+        <section key={section.key} className="flex flex-col gap-2">
+          <h2 className="px-0.5 text-xs font-bold uppercase tracking-wide text-ink-muted">{section.label}</h2>
+          <div className="flex flex-col gap-2.5">
+            {section.matches.map((m) => <MatchCard key={m.id} match={m} />)}
+          </div>
+        </section>
+      ))}
+
+      {recentResults.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="px-0.5 text-xs font-bold uppercase tracking-wide text-ink-muted">Recent results</h2>
+          <div className="flex flex-col gap-2.5">
+            {recentResults.map((m) => <MatchCard key={m.id} match={m} />)}
+          </div>
+        </section>
+      )}
 
       {feedback && (
-        <div className="fixed inset-x-4 bottom-20 mx-auto max-w-md rounded-lg bg-surface p-3 text-center text-sm shadow-lg">
+        <div className="fixed inset-x-4 bottom-20 z-40 mx-auto max-w-md animate-fade-in rounded-xl bg-ink px-4 py-3 text-center text-sm text-bg shadow-card">
           {feedback}
         </div>
       )}
     </main>
   );
-                                }
+}
+
+function LockIcon() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" className="opacity-70">
+      <path d="M17 9V7a5 5 0 00-10 0v2a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2v-8a2 2 0 00-2-2zm-8-2a3 3 0 016 0v2H9V7z" />
+    </svg>
+  );
+}
