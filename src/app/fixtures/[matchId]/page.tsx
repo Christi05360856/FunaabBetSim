@@ -21,35 +21,45 @@ export default function FixturesPage() {
   useEffect(() => {
     const unsubMatches = onSnapshot(
       query(collection(db, "matches"), orderBy("kickoffAt")),
-      (snap) => setMatches(snap.docs.map((d) => d.data() as Match))
+      (snap) => {
+        // FIX: Filter out broken matches that crash the page
+        const validMatches = snap.docs
+          .map((d) => d.data() as Match)
+          .filter((m) => m && m.id && m.homeTeamId && m.awayTeamId && m.kickoffAt);
+        setMatches(validMatches);
+      }
     );
+    
     const unsubTeams = onSnapshot(collection(db, "teams"), (snap) => {
       const map: Record<string, Team> = {};
       snap.docs.forEach((d) => {
         const team = d.data() as Team;
-        map[team.id] = team;
+        if (team && team.id) map[team.id] = team;
       });
       setTeams(map);
     });
+    
     const unsubCompetitions = onSnapshot(collection(db, "competitions"), (snap) => {
       const map: Record<string, Competition> = {};
       snap.docs.forEach((d) => {
         const competition = d.data() as Competition;
-        map[competition.id] = competition;
+        if (competition && competition.id) map[competition.id] = competition;
       });
       setCompetitions(map);
     });
+    
     const unsubMarkets = onSnapshot(
       query(collection(db, "markets"), where("type", "==", "match_winner")),
       (snap) => {
         const map: Record<string, Market> = {};
         snap.docs.forEach((d) => {
           const market = d.data() as Market;
-          map[market.matchId] = market;
+          if (market && market.matchId) map[market.matchId] = market;
         });
         setMarketsByMatch(map);
       }
     );
+    
     return () => {
       unsubMatches();
       unsubTeams();
@@ -70,8 +80,9 @@ export default function FixturesPage() {
   const isEmpty = live.length === 0 && upcoming.length === 0;
 
   function MatchCard({ match }: { match: Match }) {
-    const home = teams[match.homeTeamId];
-    const away = teams[match.awayTeamId];
+    // FIX: Safety checks for missing team IDs
+    const home = match.homeTeamId ? teams[match.homeTeamId] : undefined;
+    const away = match.awayTeamId ? teams[match.awayTeamId] : undefined;
     const market = marketsByMatch[match.id];
     const canBet = isBettingOpen(match) && Boolean(market);
     const isLive = match.status === "live" || match.status === "halftime" || match.status === "second_half";
@@ -80,7 +91,7 @@ export default function FixturesPage() {
       <div className={`rounded-2xl bg-surface p-3.5 shadow-card ${isLive ? "ring-1 ring-loss/25" : ""}`}>
         <div className="flex items-center justify-between gap-2">
           <p className="truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">
-            {competitions[match.competitionId]?.name ?? "…"}
+            {match.competitionId ? (competitions[match.competitionId]?.name ?? "…") : "…"}
           </p>
           <LiveClockBadge match={match} />
         </div>
