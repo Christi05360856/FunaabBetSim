@@ -21,7 +21,10 @@ type Props = {
   competitions: Competition[];
   teamsById: Record<string, Team>;
   competitionsById: Record<string, Competition>;
-  onNavigateToFixtures: (filter?: FixtureFilter) => void;
+  /** Preferred: jump to Fixtures with an optional filter */
+  onNavigateToFixtures?: (filter?: FixtureFilter) => void;
+  /** Legacy alias — still supported so older page.tsx keeps working */
+  onViewFixtures?: () => void;
 };
 
 export default function OverviewTab({
@@ -31,8 +34,14 @@ export default function OverviewTab({
   teamsById,
   competitionsById,
   onNavigateToFixtures,
+  onViewFixtures,
 }: Props) {
   const now = useNow();
+
+  function go(filter: FixtureFilter = "all") {
+    if (onNavigateToFixtures) onNavigateToFixtures(filter);
+    else if (onViewFixtures) onViewFixtures();
+  }
 
   const stats = useMemo(
     () => ({
@@ -79,7 +88,7 @@ export default function OverviewTab({
       <button
         key={m.id}
         type="button"
-        onClick={() => onNavigateToFixtures(isFinal(m) ? "final" : m.status === "open" ? "open" : isFinal(m) ? "final" : "all")}
+        onClick={() => go(isFinal(m) ? "final" : m.status === "open" ? "open" : "all")}
         className="flex w-full items-start justify-between gap-3 py-3 text-left transition-colors hover:bg-adm-raised/50"
       >
         <div className="min-w-0">
@@ -115,7 +124,7 @@ export default function OverviewTab({
             key={s.label}
             type="button"
             disabled={!s.filter}
-            onClick={() => s.filter && onNavigateToFixtures(s.filter)}
+            onClick={() => s.filter && go(s.filter)}
             className={`text-left transition-opacity ${s.filter ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
           >
             <Card compact>
@@ -132,7 +141,7 @@ export default function OverviewTab({
           title="Coming up"
           subtitle="Live and upcoming fixtures, soonest first"
           action={
-            <Button size="sm" variant="ghost" onClick={() => onNavigateToFixtures("all")}>
+            <Button size="sm" variant="ghost" onClick={() => go("all")}>
               View all
             </Button>
           }
@@ -150,7 +159,7 @@ export default function OverviewTab({
             title="Recent results"
             subtitle="Latest finished fixtures"
             action={
-              <Button size="sm" variant="ghost" onClick={() => onNavigateToFixtures("final")}>
+              <Button size="sm" variant="ghost" onClick={() => go("final")}>
                 View all
               </Button>
             }
