@@ -1,12 +1,5 @@
 "use client";
 
-/**
- * Match detail page. Right now it only ever has one market (Match Winner —
- * the only implemented MarketType), so the "Markets" section is a single
- * card. It exists as its own route/layout so future market types
- * (Double Chance, Over/Under, BTTS…) have a real home to render into later,
- * without another redesign — see MarketType in types/domain.ts.
- */
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, doc, onSnapshot, query, where } from "firebase/firestore";
@@ -16,18 +9,25 @@ import { deriveClockState, isBettingOpen } from "@/lib/domain/matchClock";
 import { BetPanel } from "@/components/BetPanel";
 import { usePlaceBet } from "@/lib/hooks/usePlaceBet";
 
-// Next.js 14 App Router passes params synchronously as a plain object here
-// (the params-as-Promise + React use() pattern is a Next.js 15 convention —
-// this project is pinned to 14.2.15, see the handover doc).
+type MarketTab = "match_winner" | "over_under" | "double_chance" | "draw_no_bet";
+
+const MARKET_TABS: { key: MarketTab; label: string }[] = [
+  { key: "match_winner", label: "1X2" },
+  { key: "over_under", label: "O/U" },
+  { key: "double_chance", label: "DC" },
+  { key: "draw_no_bet", label: "DNB" },
+];
+
 export default function MatchDetailPage({ params }: { params: { matchId: string } }) {
   const { matchId } = params;
   const router = useRouter();
 
-  const [match, setMatch] = useState<Match | null | undefined>(undefined); // undefined = loading
+  const [match, setMatch] = useState<Match | null | undefined>(undefined);
   const [home, setHome] = useState<Team | null>(null);
   const [away, setAway] = useState<Team | null>(null);
   const [competition, setCompetition] = useState<Competition | null>(null);
-  const [market, setMarket] = useState<Market | null>(null);
+  const [markets, setMarkets] = useState<Market[]>([]);
+  const [activeTab, setActiveTab] = useState<MarketTab>("match_winner");
   const bet = usePlaceBet();
 
   useEffect(() => {
@@ -38,10 +38,6 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
   }, [matchId]);
 
   useEffect(() => {
-    // Guards against a malformed match doc (missing homeTeamId/awayTeamId/
-    // competitionId) — calling doc() with an undefined id crashes the
-    // Firestore SDK internally, which is exactly what broke this page
-    // before the Fixtures list started filtering these matches out.
     if (!match || !match.homeTeamId || !match.awayTeamId || !match.competitionId) return;
     const unsubHome = onSnapshot(doc(db, "teams", match.homeTeamId), (s) => setHome(s.exists() ? (s.data() as Team) : null));
     const unsubAway = onSnapshot(doc(db, "teams", match.awayTeamId), (s) => setAway(s.exists() ? (s.data() as Team) : null));
@@ -55,17 +51,13 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
 
   useEffect(() => {
     if (!match) return;
-    // Market doc IDs are auto-generated (adminDb.collection("markets").doc()),
-    // not derived from the match — so this queries by matchId+type, the same
-    // pattern the settle/void API routes already use server-side.
     const unsub = onSnapshot(
-      query(collection(db, "markets"), where("matchId", "==", match.id), where("type", "==", "match_winner")),
-      (snap) => setMarket(snap.empty ? null : (snap.docs[0]!.data() as Market))
+      query(collection(db, "markets"), where("matchId", "==", match.id)),
+      (snap) => setMarkets(snap.docs.map((d) => d.data() as Market))
     );
     return () => unsub();
   }, [match]);
 
-  // Live clock ticks itself every 15s so this page updates through kickoff/HT/FT.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 15_000);
@@ -94,6 +86,8 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
   const clock = deriveClockState(match, now);
   const canBet = isBettingOpen(match, now);
   const isLive = clock.phase === "first_half" || clock.phase === "second_half";
+  
+  const activeMarket = markets.find((m) => m.type === activeTab);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col pb-28">
@@ -124,24 +118,49 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
         )}
       </div>
 
-      {/* Markets */}
-      <div className="flex flex-col gap-3 px-4 pt-5">
-        <h2 className="text-xs font-bold uppercase tracking-wide text-ink-muted">Match Winner</h2>
+      {/* Market Tabs */}
+      <div className="flex border-b border-ink-muted/10 bg-surface">
+        {MARKET_TABS.map((tab) => {
+          const hasMarket = markets.some((m) => m.type === tab.key);
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 py-3 text-sm font-semibold transition-colors ${
+                activeTab === tab.key
+                  ? "text-brand border-b-2 border-brand"
+                  : "text-ink-muted"
+              } ${!hasMarket ? "opacity-50" : ""}`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
 
-        {!market ? (
+      {/* Market Content */}
+      <div className="flex flex-col gap-3 px-4 pt-4">
+        {!activeMarket ? (
           <div className="rounded-2xl bg-surface p-4 text-center text-sm text-ink-muted shadow-card">
-            Odds haven&apos;t been set for this match yet.
+            Odds haven&apos;t been set for this market yet.
           </div>
         ) : (
           <div className="rounded-2xl bg-surface p-4 shadow-card">
+            {/* Market header with line for O/U */}
+            {activeMarket.type === "over_under" && (
+              <p className="mb-3 text-center text-xs font-medium text-ink-muted">
+                Total Goals Line: {(activeMarket as any).line ?? 2.5}
+              </p>
+            )}
+            
             <div className="flex gap-2">
-              {market.selections.map((selection) => {
+              {activeMarket.selections.map((selection) => {
                 const isPicked = bet.picked?.selection.id === selection.id;
                 return (
                   <button
                     key={selection.id}
                     disabled={!canBet}
-                    onClick={() => bet.pick(match.id, market.id, selection)}
+                    onClick={() => bet.pick(match.id, activeMarket.id, selection)}
                     className={`flex flex-1 flex-col items-center gap-0.5 rounded-xl py-3 transition-colors ${
                       !canBet
                         ? "bg-ink-muted/10 text-ink-muted"
@@ -182,9 +201,6 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
           />
         )}
       </div>
-
-      {/* Room for future market types (Double Chance, Over/Under, BTTS…) once
-          their admin UI + settlement resolvers exist — see handover §12. */}
 
       {bet.feedback && (
         <div className="fixed inset-x-4 bottom-20 z-40 mx-auto max-w-md animate-fade-in rounded-xl bg-ink px-4 py-3 text-center text-sm text-bg shadow-card">
