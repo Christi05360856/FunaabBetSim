@@ -31,8 +31,6 @@ export async function POST(request: NextRequest) {
 
   const { competitionId, homeTeamId, awayTeamId, kickoffAt } = parsed.data;
 
-  // Confirm every referenced id actually exists before creating the match —
-  // otherwise a typo'd id silently creates a match pointing at nothing.
   const [competitionSnap, homeSnap, awaySnap] = await Promise.all([
     adminDb.collection("competitions").doc(competitionId).get(),
     adminDb.collection("teams").doc(homeTeamId).get(),
@@ -51,12 +49,18 @@ export async function POST(request: NextRequest) {
   await ref.set({
     id: ref.id,
     competitionId,
+    round: null,
     homeTeamId,
     awayTeamId,
     kickoffAt,
     status: "scheduled",
     homeScore: null,
     awayScore: null,
+    currentHomeScore: null,
+    currentAwayScore: null,
+    venue: null,
+    source: "manual",
+    sourceEventId: null,
     createdAt: now,
     updatedAt: now,
   });
