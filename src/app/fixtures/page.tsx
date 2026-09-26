@@ -80,15 +80,13 @@ export default function FixturesPage() {
   const { live, upcoming, recentResults } = useMemo(() => {
     let filtered = matches;
 
-    if (activeFilter === "today") {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      filtered = matches.filter(
-        (m) => m.kickoffAt >= today.getTime() && m.kickoffAt < tomorrow.getTime()
-      );
-    } else if (activeFilter === "live") {
+    
+if (activeFilter === "today") {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  filtered = matches.filter((m) => m.kickoffAt >= today.getTime());
+}
+    else if (activeFilter === "live") {
       filtered = matches.filter((m) =>
         ["live", "halftime", "second_half"].includes(m.status)
       );
