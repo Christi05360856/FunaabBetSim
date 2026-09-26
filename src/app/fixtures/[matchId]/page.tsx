@@ -38,7 +38,11 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
   }, [matchId]);
 
   useEffect(() => {
-    if (!match) return;
+    // Guards against a malformed match doc (missing homeTeamId/awayTeamId/
+    // competitionId) — calling doc() with an undefined id crashes the
+    // Firestore SDK internally, which is exactly what broke this page
+    // before the Fixtures list started filtering these matches out.
+    if (!match || !match.homeTeamId || !match.awayTeamId || !match.competitionId) return;
     const unsubHome = onSnapshot(doc(db, "teams", match.homeTeamId), (s) => setHome(s.exists() ? (s.data() as Team) : null));
     const unsubAway = onSnapshot(doc(db, "teams", match.awayTeamId), (s) => setAway(s.exists() ? (s.data() as Team) : null));
     const unsubComp = onSnapshot(doc(db, "competitions", match.competitionId), (s) => setCompetition(s.exists() ? (s.data() as Competition) : null));
@@ -76,7 +80,7 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
     );
   }
 
-  if (match === null) {
+  if (match === null || !match.homeTeamId || !match.awayTeamId || !match.competitionId || !match.kickoffAt) {
     return (
       <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 px-4 text-center">
         <p className="font-medium">Fixture not found</p>
