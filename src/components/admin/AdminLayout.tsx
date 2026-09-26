@@ -3,13 +3,11 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Icons } from "./ui";
 
-export type AdminTabId = "overview" | "fixtures" | "odds" | "entities" | "import" | "danger";
+export type AdminTabId = "overview" | "fixtures" | "import" | "danger";
 
 const NAV: { id: AdminTabId; label: string; icon: ReactNode }[] = [
   { id: "overview", label: "Overview", icon: Icons.dashboard },
   { id: "fixtures", label: "Fixtures", icon: Icons.fixtures },
-  { id: "odds", label: "Odds", icon: Icons.odds },
-  { id: "entities", label: "Teams", icon: Icons.entities },
   { id: "import", label: "Import", icon: Icons.import },
   { id: "danger", label: "Danger", icon: Icons.danger },
 ];
@@ -157,4 +155,3 @@ export default function AdminLayout({
     </>
   );
 }
-
