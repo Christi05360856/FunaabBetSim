@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
@@ -56,6 +56,7 @@ export default function BetsPage() {
   const [now, setNow] = useState(() => Date.now());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedBet, setSelectedBet] = useState<Bet | null>(null);
+  const [actionSheetBet, setActionSheetBet] = useState<Bet | null>(null);
   const [winCelebration, setWinCelebration] = useState<{
     count: number;
     total: number;
@@ -149,8 +150,8 @@ export default function BetsPage() {
     );
   }
 
-  const openBets = bets.filter((b) => b.status === "open");
-  const historyBets = bets.filter((b) => b.status !== "open");
+  const openBets = bets.filter((b) => b.status === "open" && !b.hidden);
+  const historyBets = bets.filter((b) => b.status !== "open" && !b.hidden);
   const displayBets = activeTab === "open" ? openBets : historyBets;
 
   return (
@@ -200,14 +201,16 @@ export default function BetsPage() {
             Singles
           </p>
           {displayBets.map((bet) => (
-            <button
+            <div
               key={bet.id}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => setSelectedBet(bet)}
+              onKeyDown={(e) => { if (e.key === "Enter") setSelectedBet(bet); }}
               className="w-full text-left"
             >
-              <BetCard bet={bet} teams={teams} matches={matches} now={now} />
-            </button>
+              <BetCard bet={bet} teams={teams} matches={matches} now={now} onOpenActions={(e) => { e.stopPropagation(); setActionSheetBet(bet); }} />
+            </div>
           ))}
         </div>
       )}
@@ -220,6 +223,10 @@ export default function BetsPage() {
           now={now}
           onClose={() => setSelectedBet(null)}
         />
+      )}
+
+      {actionSheetBet && (
+        <BetActionSheet bet={actionSheetBet} onClose={() => setActionSheetBet(null)} />
       )}
 
       {winCelebration && (
@@ -238,11 +245,13 @@ function BetCard({
   teams,
   matches,
   now,
+  onOpenActions,
 }: {
   bet: Bet;
   teams: Record<string, Team>;
   matches: Record<string, Match>;
   now: number;
+  onOpenActions: (e: MouseEvent) => void;
 }) {
   const match = matches[bet.matchId];
   const home = match?.homeTeamId ? teams[match.homeTeamId] : undefined;
@@ -273,9 +282,23 @@ function BetCard({
             {isLive && clock ? " · " + clock.display : ""}
           </p>
         </div>
-        <span className={"shrink-0 rounded-full px-2.5 py-1 text-xs font-bold " + STATUS_BADGE[bet.status]}>
-          {STATUS_LABEL[bet.status]}
-        </span>
+        <div className="flex shrink-0 items-start gap-1">
+          <span className={"rounded-full px-2.5 py-1 text-xs font-bold " + STATUS_BADGE[bet.status]}>
+            {STATUS_LABEL[bet.status]}
+          </span>
+          <button
+            type="button"
+            onClick={onOpenActions}
+            aria-label="Ticket options"
+            className="rounded-full p-1 text-ink-muted active:bg-ink-muted/10"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="5" cy="12" r="1.8" />
+              <circle cx="12" cy="12" r="1.8" />
+              <circle cx="19" cy="12" r="1.8" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {score && (
@@ -490,6 +513,116 @@ function BetDetailSheet({
   );
 }
 
+function BetActionSheet({ bet, onClose }: { bet: Bet; onClose: () => void }) {
+  const { user } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const ticketId = shortTicketId(bet.id);
+
+  function shareText() {
+    return `FUNAAB BetSim ticket ${ticketId} — ${bet.selectionLabel} @${bet.oddsAtPlacement.toFixed(2)}, stake ₦${bet.stake.toLocaleString("en-NG")}.`;
+  }
+
+  async function copyNumber() {
+    try {
+      await navigator.clipboard.writeText(ticketId);
+      setFeedback("Ticket number copied");
+    } catch {
+      setFeedback("Could not copy — try again");
+    }
+  }
+
+  async function share() {
+    const text = shareText();
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "FUNAAB BetSim ticket", text });
+      } else {
+        await navigator.clipboard.writeText(text);
+        setFeedback("Sharing isn't available here — copied instead");
+      }
+    } catch {
+      /* user cancelled the share sheet — not an error */
+    }
+  }
+
+  function print() {
+    window.print();
+  }
+
+  async function hideBet() {
+    if (!user) return;
+    setBusy(true);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch("/api/bets/hide", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ betId: bet.id, hidden: true }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Could not hide this ticket");
+      }
+      onClose();
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : "Could not hide this ticket");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end bg-black/40" onClick={onClose}>
+      <div
+        className="w-full rounded-t-2xl bg-surface pb-[env(safe-area-inset-bottom,0px)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-ink-muted/25" />
+        <p className="px-4 pb-2 pt-3 text-center text-sm font-semibold">Select</p>
+        {feedback && (
+          <p className="px-4 pb-2 text-center text-xs text-ink-muted">{feedback}</p>
+        )}
+        <div className="divide-y divide-ink-muted/10">
+          <SheetAction icon="📋" label="Copy number" onClick={copyNumber} />
+          <SheetAction icon="🖨️" label="Print" onClick={print} />
+          <SheetAction icon="↗️" label="Share" onClick={share} />
+          <SheetAction icon="🙈" label={busy ? "Hiding…" : "Hide bet"} onClick={hideBet} disabled={busy} />
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="mx-4 my-3 w-[calc(100%-2rem)] rounded-xl bg-ink-muted/10 py-3 text-sm font-semibold"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SheetAction({
+  icon,
+  label,
+  onClick,
+  disabled,
+}: {
+  icon: string;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex w-full items-center gap-3 px-4 py-3.5 text-left disabled:opacity-50"
+    >
+      <span className="text-lg">{icon}</span>
+      <span className="text-sm font-medium">{label}</span>
+    </button>
+  );
+}
 function WinCelebrationModal({
   count,
   total,
