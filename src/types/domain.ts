@@ -134,6 +134,8 @@ export interface Bet {
   status: BetStatus;
   placedAt: number;
   settledAt: number | null;
+  /** Set by the bettor to remove a ticket from their own history view. Never affects settlement. */
+  hidden?: boolean;
 }
 
 export type TransactionType = "debit_bet" | "payout" | "refund" | "reset";
