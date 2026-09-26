@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { RESET_COOLDOWN_MS } from "@/types/domain";
 import type { Wallet } from "@/types/domain";
@@ -91,6 +90,7 @@ export default function DashboardPage() {
     ? RESET_COOLDOWN_MS - (Date.now() - wallet!.resetPendingSince!)
     : 0;
   const cooldownDone = cooldownActive && remainingMs <= 0;
+  void tick; // read so the effect above isn't flagged as unused-only re-render
 
   function formatRemaining(ms: number) {
     const totalMinutes = Math.max(0, Math.ceil(ms / (60 * 1000)));
@@ -100,33 +100,23 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-8 px-6 pt-16 pb-28">
-      <div className="flex items-center justify-between">
-        <div>
+    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-5 pt-6 pb-28">
+      <div className="flex items-center gap-3">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand/10 font-display text-lg font-bold text-brand">
+          {(user.displayName ?? "P").charAt(0).toUpperCase()}
+        </span>
+        <div className="min-w-0">
           <p className="text-sm text-ink-muted">Welcome back</p>
-          <h1 className="font-display text-2xl font-semibold">
-            {user.displayName ?? "Player"}
-          </h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link href="/fixtures" className="text-sm text-brand underline">
-            Fixtures
-          </Link>
-          <Link href="/bets" className="text-sm text-brand underline">
-            My Bets
-          </Link>
-          <button onClick={logout} className="text-sm text-ink-muted underline">
-            Log out
-          </button>
+          <h1 className="truncate font-display text-xl font-bold">{user.displayName ?? "Player"}</h1>
         </div>
       </div>
 
-      <div className="rounded-xl bg-surface p-5 shadow-sm">
-        <p className="text-sm text-ink-muted">Virtual balance</p>
+      <div className="rounded-2xl bg-surface p-5 shadow-card">
+        <p className="text-sm font-medium text-ink-muted">Virtual balance</p>
         {walletError ? (
           <p className="mt-1 text-sm text-loss">{walletError}</p>
         ) : wallet ? (
-          <p className="mt-1 font-display text-3xl text-accent">
+          <p className="mt-1 font-display text-3xl font-bold text-accent">
             ₦{wallet.balance.toLocaleString("en-NG")}
           </p>
         ) : (
@@ -134,27 +124,32 @@ export default function DashboardPage() {
         )}
 
         {cooldownActive && (
-          <div className="mt-4 border-t border-ink-muted/20 pt-4">
+          <div className="mt-4 border-t border-ink-muted/15 pt-4">
             {cooldownDone ? (
               <>
                 <p className="text-sm text-ink-muted">Your balance is ready to reset.</p>
                 <button
                   onClick={handleReset}
                   disabled={resetSubmitting}
-                  className="mt-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                  className="mt-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   {resetSubmitting ? "Resetting…" : "Reset to ₦100,000"}
                 </button>
               </>
             ) : (
-              <p className="text-sm text-ink-muted">
-                Reset available in {formatRemaining(remainingMs)}
-              </p>
+              <p className="text-sm text-ink-muted">Reset available in {formatRemaining(remainingMs)}</p>
             )}
             {resetError && <p className="mt-2 text-sm text-loss">{resetError}</p>}
           </div>
         )}
       </div>
+
+      <button
+        onClick={logout}
+        className="rounded-2xl bg-surface px-5 py-3.5 text-left text-sm font-semibold text-loss shadow-card"
+      >
+        Log out
+      </button>
     </main>
   );
 }
