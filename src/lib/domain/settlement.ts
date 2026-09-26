@@ -35,14 +35,21 @@ export function resolveDrawNoBetSelectionId(
   return "refund"; // Draw = refund
 }
 
-// Over/Under
-export function resolveOverUnderSelectionId(
-  homeScore: number,
-  awayScore: number,
-  line: number
-): "over" | "under" {
-  const totalGoals = homeScore + awayScore;
-  return totalGoals > line ? "over" : "under";
+// Over/Under — now modeled as one market per match holding every goal line
+// as its own pair of selections ("over_2.5"/"under_2.5", "over_3.5"/…), so
+// settlement resolves every line's winner in one pass instead of needing a
+// separate market per line.
+export function resolveOverUnderLadderWinners(totalGoals: number, selectionIds: string[]): string[] {
+  const winners: string[] = [];
+  const lines = new Set<number>();
+  for (const id of selectionIds) {
+    const match = /^(over|under)_(\d+(?:\.\d+)?)$/.exec(id);
+    if (match) lines.add(Number(match[2]));
+  }
+  for (const line of lines) {
+    winners.push(totalGoals > line ? `over_${line}` : `under_${line}`);
+  }
+  return winners;
 }
 
 // Both Teams to Score
