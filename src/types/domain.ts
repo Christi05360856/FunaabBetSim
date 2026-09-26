@@ -139,3 +139,24 @@ export interface Transaction {
   betId: string | null;
   createdAt: number;
 }
+
+// Add these new market types to the existing MarketType union:
+export type MarketType =
+  | "match_winner"
+  | "double_chance"
+  | "draw_no_bet"
+  | "over_under"
+  | "both_teams_to_score"
+  | "correct_score";
+
+// Add Over/Under line type:
+export interface OverUnderMarket extends Market {
+  type: "over_under";
+  line: number; // e.g., 2.5 goals
+}
+
+// Selection IDs for different market types:
+// match_winner: "home" | "draw" | "away"
+// double_chance: "home_draw" | "home_away" | "draw_away"
+// draw_no_bet: "home" | "away"
+// over_under: "over" | "under"
