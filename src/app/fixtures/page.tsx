@@ -11,18 +11,21 @@ import { LiveClockBadge } from "@/components/LiveClock";
 import { BetPanel } from "@/components/BetPanel";
 import { usePlaceBet } from "@/lib/hooks/usePlaceBet";
 
+type FilterTab = "all" | "today" | "live" | "hot";
+
 export default function FixturesPage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [teams, setTeams] = useState<Record<string, Team>>({});
   const [competitions, setCompetitions] = useState<Record<string, Competition>>({});
   const [marketsByMatch, setMarketsByMatch] = useState<Record<string, Market>>({});
+  const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
+  const [sortBy, setSortBy] = useState<"time" | "odds" | "league">("time");
   const bet = usePlaceBet();
 
   useEffect(() => {
     const unsubMatches = onSnapshot(
       query(collection(db, "matches"), orderBy("kickoffAt")),
       (snap) => {
-        // FIX: Filter out broken matches that crash the page
         const validMatches = snap.docs
           .map((d) => d.data() as Match)
           .filter((m) => m && m.id && m.homeTeamId && m.awayTeamId && m.kickoffAt);
@@ -68,32 +71,69 @@ export default function FixturesPage() {
     };
   }, []);
 
-  // Re-groups every minute so a fixture slides from "Live" to date-grouped
-  // sections, or between date buckets, without a page refresh.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
 
-  const { live, upcoming, recentResults } = useMemo(() => groupFixturesForBrowsing(matches, now), [matches, now]);
+  const { live, upcoming, recentResults } = useMemo(() => {
+    let filtered = matches;
+    
+    // Apply filter
+    if (activeFilter === "today") {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      filtered = matches.filter((m) => m.kickoffAt >= today.getTime() && m.kickoffAt < tomorrow.getTime());
+    } else if (activeFilter === "live") {
+      filtered = matches.filter((m) => ["live", "halftime", "second_half"].includes(m.status));
+    } else if (activeFilter === "hot") {
+      // "Hot" = matches with lowest home odds (most likely to win)
+      filtered = matches
+        .filter((m) => marketsByMatch[m.id])
+        .sort((a, b) => {
+          const oddsA = marketsByMatch[a.id]?.selections.find((s) => s.id === "home")?.odds ?? 999;
+          const oddsB = marketsByMatch[b.id]?.selections.find((s) => s.id === "home")?.odds ?? 999;
+          return oddsA - oddsB;
+        })
+        .slice(0, 10);
+    }
+    
+    return groupFixturesForBrowsing(filtered, now);
+  }, [matches, now, activeFilter, marketsByMatch]);
+
   const isEmpty = live.length === 0 && upcoming.length === 0;
 
   function MatchCard({ match }: { match: Match }) {
-    // FIX: Safety checks for missing team IDs
     const home = match.homeTeamId ? teams[match.homeTeamId] : undefined;
     const away = match.awayTeamId ? teams[match.awayTeamId] : undefined;
     const market = marketsByMatch[match.id];
     const canBet = isBettingOpen(match) && Boolean(market);
     const isLive = match.status === "live" || match.status === "halftime" || match.status === "second_half";
+    const isHot = market && (market.selections.find((s) => s.id === "home")?.odds ?? 999) < 1.5;
 
     return (
       <div className={`rounded-2xl bg-surface p-3.5 shadow-card ${isLive ? "ring-1 ring-loss/25" : ""}`}>
+        {/* Header row with competition, HOT tag, and Game ID */}
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">
-            {match.competitionId ? (competitions[match.competitionId]?.name ?? "…") : "…"}
-          </p>
-          <LiveClockBadge match={match} />
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            {isHot && (
+              <span className="shrink-0 rounded bg-loss px-1.5 py-0.5 text-[9px] font-bold text-white uppercase">
+                HOT 🔥
+              </span>
+            )}
+            <p className="truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">
+              {match.competitionId ? (competitions[match.competitionId]?.name ?? "…") : "…"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[10px] text-ink-muted font-mono">
+              ID {match.id.slice(0, 6).toUpperCase()}
+            </span>
+            <LiveClockBadge match={match} />
+          </div>
         </div>
 
         <div className="mt-2 flex items-center gap-3">
@@ -158,8 +198,59 @@ export default function FixturesPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pt-5 pb-28">
-      <h1 className="font-display text-xl font-bold">Fixtures</h1>
+    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-4 px-4 pt-5 pb-28">
+      {/* Header with back icon */}
+      <div className="flex items-center gap-3">
+        <Link href="/" className="flex h-9 w-9 items-center justify-center rounded-full bg-surface shadow-card">
+          <BackIcon />
+        </Link>
+        <h1 className="font-display text-xl font-bold flex-1">Football</h1>
+        <Link href="/" className="flex h-9 w-9 items-center justify-center rounded-full bg-surface shadow-card">
+          <HomeIcon />
+        </Link>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
+        {[
+          { key: "all" as FilterTab, label: "All" },
+          { key: "today" as FilterTab, label: "Today" },
+          { key: "live" as FilterTab, label: "🔴 Live" },
+          { key: "hot" as FilterTab, label: "🔥 Hot" },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveFilter(tab.key)}
+            className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+              activeFilter === tab.key
+                ? "bg-brand text-white"
+                : "bg-surface text-ink-muted shadow-card"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Sort options */}
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-ink-muted">Sort:</span>
+        {[
+          { key: "time" as const, label: "Time" },
+          { key: "odds" as const, label: "Odds" },
+          { key: "league" as const, label: "League" },
+        ].map((opt) => (
+          <button
+            key={opt.key}
+            onClick={() => setSortBy(opt.key)}
+            className={`rounded-full px-3 py-1 font-medium ${
+              sortBy === opt.key ? "bg-brand/10 text-brand" : "text-ink-muted"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
 
       {isEmpty && (
         <p className="text-sm text-ink-muted">No fixtures right now — check back soon.</p>
@@ -208,6 +299,22 @@ function LockIcon() {
   return (
     <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" className="opacity-70">
       <path d="M17 9V7a5 5 0 00-10 0v2a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2v-8a2 2 0 00-2-2zm-8-2a3 3 0 016 0v2H9V7z" />
+    </svg>
+  );
+}
+
+function BackIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function HomeIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
