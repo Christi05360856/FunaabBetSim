@@ -21,9 +21,7 @@ type Props = {
   competitions: Competition[];
   teamsById: Record<string, Team>;
   competitionsById: Record<string, Competition>;
-  /** Preferred: jump to Fixtures with an optional filter */
   onNavigateToFixtures?: (filter?: FixtureFilter) => void;
-  /** Legacy alias — still supported so older page.tsx keeps working */
   onViewFixtures?: () => void;
 };
 
@@ -67,6 +65,11 @@ export default function OverviewTab({
     };
   }, [matches, now]);
 
+  const teamsSub =
+    String(competitions.length) +
+    " competition" +
+    (competitions.length === 1 ? "" : "s");
+
   const cards: {
     label: string;
     value: number;
@@ -79,7 +82,7 @@ export default function OverviewTab({
     { label: "Open", value: stats.open, color: "text-adm-ok", sub: "", filter: "open" },
     { label: "Live", value: stats.live, color: "text-adm-bad", sub: "", filter: "live" },
     { label: "Settled", value: stats.settled, color: "text-adm-muted", sub: "", filter: "settled" },
-    { label: "Teams", value: teams.length, color: "text-adm-ink", sub: `\( {competitions.length} competition \){competitions.length === 1 ? "" : "s"}` },
+    { label: "Teams", value: teams.length, color: "text-adm-ink", sub: teamsSub },
   ];
 
   const renderRow = (m: Match) => {
@@ -101,7 +104,7 @@ export default function OverviewTab({
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           <Badge status={m.status} />
           {score && (
-            <span className={`text-sm font-semibold tabular-nums ${score.live ? "text-adm-bad" : ""}`}>
+            <span className={"text-sm font-semibold tabular-nums" + (score.live ? " text-adm-bad" : "")}>
               {score.home} – {score.away}
               {score.live && <span className="ml-1 text-[10px] font-medium uppercase">live</span>}
             </span>
@@ -125,12 +128,12 @@ export default function OverviewTab({
             type="button"
             disabled={!s.filter}
             onClick={() => s.filter && go(s.filter)}
-            className={`text-left transition-opacity ${s.filter ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
+            className={"text-left transition-opacity " + (s.filter ? "cursor-pointer hover:opacity-80" : "cursor-default")}
           >
             <Card compact>
               <p className="text-xs text-adm-muted">{s.label}</p>
-              <p className={`mt-1 text-2xl font-bold ${s.color}`}>{s.value}</p>
-              {s.sub && <p className="mt-0.5 text-xs text-adm-faint">{s.sub}</p>}
+              <p className={"mt-1 text-2xl font-bold " + s.color}>{s.value}</p>
+              {s.sub ? <p className="mt-0.5 text-xs text-adm-faint">{s.sub}</p> : null}
             </Card>
           </button>
         ))}
@@ -153,7 +156,7 @@ export default function OverviewTab({
         )}
       </Card>
 
-      {results.length > 0 && (
+      {results.length > 0 ? (
         <Card>
           <CardHeader
             title="Recent results"
@@ -166,7 +169,7 @@ export default function OverviewTab({
           />
           <div className="flex flex-col divide-y divide-adm-line">{results.map(renderRow)}</div>
         </Card>
-      )}
+      ) : null}
     </div>
   );
 }
