@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * The stake-entry panel shown once a selection is picked — identical on the
- * Fixtures list (inline, under the card) and the match detail page (inline,
- * under the odds). All behavior lives in usePlaceBet(); this is pure markup.
+ * Stake panel once a selection is picked.
+ * Quick chips ADD to the current stake (tap 20k repeatedly) up to balance.
  */
 import Link from "next/link";
 import { MINIMUM_STAKE } from "@/types/domain";
 import type { PickedSelection } from "@/lib/hooks/usePlaceBet";
+import { useWallet } from "@/lib/hooks/useWallet";
 
 const QUICK_STAKES = [1_000, 5_000, 20_000];
 
@@ -30,13 +30,29 @@ export function BetPanel({
   submitting: boolean;
   onConfirm: () => void;
 }) {
-  const stakeNumber = Number(stake);
-  const stakeValid = stake !== "" && stakeNumber >= MINIMUM_STAKE;
+  const { wallet } = useWallet();
+  const balance = wallet?.balance ?? 0;
+  const stakeNumber = Number(stake) || 0;
+  const overBalance = stake !== "" && stakeNumber > balance;
+  const stakeValid = stake !== "" && stakeNumber >= MINIMUM_STAKE && !overBalance;
+
+  function addQuick(amount: number) {
+    const current = Number(stake) || 0;
+    const next = current + amount;
+    if (next > balance) {
+      setStake(String(balance));
+      return;
+    }
+    setStake(String(next));
+  }
 
   if (!user) {
     return (
       <div className="rounded-xl bg-surface-raised p-3 text-sm text-ink-muted animate-fade-in">
-        <Link href="/login" className="font-medium text-brand underline">Log in</Link> to place a bet.
+        <Link href="/login" className="font-medium text-brand underline">
+          Log in
+        </Link>{" "}
+        to place a bet.
       </div>
     );
   }
@@ -47,7 +63,9 @@ export function BetPanel({
         <span className="min-w-0 truncate text-ink-muted">
           {homeLabel} <span className="text-ink-muted/60">vs</span> {awayLabel}
         </span>
-        <span className="shrink-0 font-display font-bold text-brand">{picked.selection.odds.toFixed(2)}</span>
+        <span className="shrink-0 font-display font-bold text-brand">
+          {picked.selection.odds.toFixed(2)}
+        </span>
       </div>
 
       <div className="flex flex-wrap gap-1.5">
@@ -55,24 +73,34 @@ export function BetPanel({
           <button
             key={amount}
             type="button"
-            onClick={() => setStake(String(amount))}
-            className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
-              stake === String(amount) ? "bg-brand text-white" : "bg-bg text-ink-muted"
-            }`}
+            onClick={() => addQuick(amount)}
+            className="rounded-lg bg-bg px-2.5 py-1 text-xs font-semibold text-ink-muted transition-colors active:bg-brand active:text-white"
           >
-            ₦{amount.toLocaleString("en-NG")}
+            +₦{amount.toLocaleString("en-NG")}
           </button>
         ))}
+        {stakeNumber > 0 && (
+          <button
+            type="button"
+            onClick={() => setStake("")}
+            className="rounded-lg bg-bg px-2.5 py-1 text-xs font-semibold text-ink-muted"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
         <input
-          type="number"
+          type="text"
           inputMode="numeric"
-          min={MINIMUM_STAKE}
-          placeholder={`Min ₦${MINIMUM_STAKE.toLocaleString("en-NG")}`}
+          pattern="[0-9]*"
+          placeholder={"Min ₦" + MINIMUM_STAKE.toLocaleString("en-NG")}
           value={stake}
-          onChange={(e) => setStake(e.target.value)}
+          onChange={(e) => {
+            const digits = e.target.value.replace(/[^0-9]/g, "");
+            setStake(digits);
+          }}
           className="min-w-0 flex-1 rounded-lg border border-ink-muted/25 bg-surface px-3 py-2 text-sm"
         />
         <button
@@ -84,6 +112,10 @@ export function BetPanel({
           {submitting ? "Placing…" : "Place bet"}
         </button>
       </div>
+
+      {overBalance && (
+        <p className="text-xs font-medium text-loss">Balance not enough</p>
+      )}
 
       {stakeValid && (
         <p className="text-xs text-ink-muted">
