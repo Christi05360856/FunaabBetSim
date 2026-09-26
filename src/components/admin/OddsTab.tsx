@@ -36,7 +36,15 @@ export default function OddsTab({ matches, teamsById, competitionsById, onSubmit
     e.preventDefault();
     if (!selected || !allValid) return;
     setBusy(true);
-    const r = await onSubmit({ matchId: selected.id, homeOdds: Number(odds.home), drawOdds: Number(odds.draw), awayOdds: Number(odds.away) });
+    const r = await onSubmit({
+      matchId: selected.id,
+      type: "match_winner",
+      selections: [
+        { id: "home", label: "Home", odds: Number(odds.home) },
+        { id: "draw", label: "Draw", odds: Number(odds.draw) },
+        { id: "away", label: "Away", odds: Number(odds.away) },
+      ],
+    });
     setBusy(false);
     if (r.ok) setOdds({ home: "", draw: "", away: "" }); // keep your numbers if it failed
   }
