@@ -16,9 +16,8 @@ const STATUS_BADGE: Record<Bet["status"], string> = {
 };
 
 // An "open" bet on a match that has since kicked off should read LIVE/HT, not
-// a flat "Open" — the clock is derived the same way the fixtures page does it,
-// no extra Firestore field needed. Won/Lost/Void are already final and just
-// pass through unchanged.
+// a flat "Open" — derived from the same clock the fixtures page uses, no
+// extra Firestore field needed. Won/Lost/Void just pass through unchanged.
 type DisplayStatus = { label: string; className: string; pulse: boolean };
 
 function displayStatus(bet: Bet, match: Match | undefined): DisplayStatus {
@@ -82,6 +81,15 @@ export default function BetsPage() {
     };
   }, [user]);
 
+  // Ticks every 30s so a bet's badge moves from "Open" to "LIVE" to
+  // "Awaiting result" without a page refresh.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  void now; // forces the periodic re-render below; deriveClockState reads Date.now() itself
+
   if (loading || !user) {
     return (
       <main className="flex min-h-screen items-center justify-center">
@@ -91,11 +99,14 @@ export default function BetsPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col px-4 pt-6 pb-28">
-      <h1 className="mb-4 font-display text-xl font-semibold">My bets</h1>
+    <main className="mx-auto flex min-h-screen max-w-md flex-col px-4 pt-5 pb-28">
+      <h1 className="mb-4 font-display text-xl font-bold">My Bets</h1>
 
       {bets.length === 0 && (
-        <p className="text-ink-muted">No bets placed yet.</p>
+        <div className="flex flex-col items-center gap-1 rounded-2xl bg-surface py-12 text-center shadow-card">
+          <p className="font-medium">No bets yet</p>
+          <p className="text-sm text-ink-muted">Head to Fixtures to place your first one.</p>
+        </div>
       )}
 
       <div className="flex flex-col gap-3">
@@ -106,9 +117,9 @@ export default function BetsPage() {
           const status = displayStatus(bet, match);
 
           return (
-            <div key={bet.id} className="overflow-hidden rounded-xl bg-surface shadow-sm">
-              <div className="flex items-center justify-between px-4 pt-3">
-                <p className="text-xs text-ink-muted">
+            <div key={bet.id} className="overflow-hidden rounded-2xl bg-surface shadow-card">
+              <div className="flex items-center justify-between px-4 pt-3.5">
+                <p className="text-xs font-medium text-ink-muted">
                   {new Date(bet.placedAt).toLocaleString("en-NG", {
                     day: "numeric",
                     month: "short",
@@ -117,7 +128,7 @@ export default function BetsPage() {
                   })}
                 </p>
                 <span
-                  className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${status.className}`}
+                  className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${status.className}`}
                 >
                   {status.pulse ? (
                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-loss" />
@@ -130,24 +141,20 @@ export default function BetsPage() {
 
               <div className="my-3 border-t border-dashed border-ink-muted/25" />
 
-              <div className="flex items-center justify-between px-4">
-                <div className="min-w-0">
-                  <p className="truncate font-medium leading-snug">{home?.name ?? "Unknown team"}</p>
-                  <p className="truncate font-medium leading-snug">{away?.name ?? "Unknown team"}</p>
-                  <p className="mt-0.5 text-xs text-ink-muted">
-                    Pick: {bet.selectionLabel} · Match Winner
-                  </p>
+              <div className="flex items-center justify-between gap-3 px-4">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-semibold leading-snug">{home?.name ?? "Unknown team"}</p>
+                  <p className="truncate text-[15px] font-semibold leading-snug">{away?.name ?? "Unknown team"}</p>
+                  <p className="mt-0.5 text-xs text-ink-muted">Pick: {bet.selectionLabel} · Match Winner</p>
                 </div>
-                <span className="shrink-0 rounded-md bg-brand/10 px-2 py-1 text-sm font-semibold text-brand">
+                <span className="shrink-0 rounded-lg bg-brand/10 px-2.5 py-1.5 font-display text-base font-bold text-brand tabular-nums">
                   {bet.oddsAtPlacement.toFixed(2)}
                 </span>
               </div>
 
-              <div className="mt-3 flex items-center justify-between bg-bg px-4 py-2.5 text-sm">
-                <span className="text-ink-muted">
-                  Stake ₦{bet.stake.toLocaleString("en-NG")}
-                </span>
-                <span className="font-medium">
+              <div className="mt-3.5 flex items-center justify-between bg-surface-raised px-4 py-2.5 text-sm">
+                <span className="text-ink-muted">Stake ₦{bet.stake.toLocaleString("en-NG")}</span>
+                <span className="font-semibold">
                   {bet.status === "open" ? "Potential " : "Payout "}
                   ₦{bet.potentialPayout.toLocaleString("en-NG")}
                 </span>
@@ -180,5 +187,4 @@ function StatusIcon({ status }: { status: Bet["status"] }) {
       <circle cx="12" cy="12" r="9" />
     </svg>
   );
-          }
-
+}
