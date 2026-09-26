@@ -167,11 +167,15 @@ function AdminApp() {
             initialFilter={fixturesFilter}
           />
         )}
-        {tab === "import" && <ImportTab competitions={competitions} onSubmit={(b) => post("/api/admin/matches/bulk-import", b)} />}
-        {tab === "danger" && <DangerTab onReset={() => post("/api/admin/dev/reset", {}, "Platform reset complete")} />}
+        {tab === "import" && (
+          <ImportTab competitions={competitions} onSubmit={(b) => post("/api/admin/matches/bulk-import", b)} />
+        )}
+        {tab === "danger" && (
+          <DangerTab onReset={() => post("/api/admin/dev/reset", {}, "Platform reset complete")} />
+        )}
       </AdminLayout>
 
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </>
   );
-                                                            }
+}
