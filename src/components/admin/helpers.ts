@@ -74,7 +74,22 @@ export function formatKickoff(ts: number): string {
   });
 }
 
+/** Final settlement score is present. */
 export function hasScore(m: Match): boolean {
   return typeof m.homeScore === "number" && typeof m.awayScore === "number";
 }
 
+/** Interim / in-play score is present (may be missing on older documents). */
+export function hasLiveScore(m: Match): boolean {
+  return typeof m.currentHomeScore === "number" && typeof m.currentAwayScore === "number";
+}
+
+/**
+ * Prefer final score when settled; otherwise show live interim score.
+ * Returns null when nothing to show.
+ */
+export function displayScore(m: Match): { home: number; away: number; live: boolean } | null {
+  if (hasScore(m)) return { home: m.homeScore!, away: m.awayScore!, live: false };
+  if (hasLiveScore(m)) return { home: m.currentHomeScore!, away: m.currentAwayScore!, live: true };
+  return null;
+}
