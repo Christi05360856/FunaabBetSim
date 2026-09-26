@@ -174,4 +174,4 @@ function AdminApp() {
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </>
   );
-        }
+}
