@@ -1,181 +1,121 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
-import { useAuth } from "@/lib/auth/AuthContext";
+import { useEffect, useState } from "react";
+import { collection, onSnapshot, query, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import type { Team, Competition, Match } from "@/types/domain";
-import { Toast } from "@/components/admin/ui";
-import AdminLayout, { AdminThemeProvider, type AdminTabId } from "@/components/admin/AdminLayout";
-import OverviewTab from "@/components/admin/OverviewTab";
-import FixturesTab, { type FixtureFilter } from "@/components/admin/FixturesTab";
-import ImportTab from "@/components/admin/ImportTab";
-import DangerTab from "@/components/admin/DangerTab";
+import type { Match, Team, Competition } from "@/types/domain";
+import { groupFixturesForBrowsing } from "@/lib/domain/fixtureDisplay";
+import { LiveClockBadge } from "@/components/LiveClock";
 
-type AdminStatus = "checking" | "admin" | "not-admin";
-type PostResult = { ok: boolean; message: string };
-
-type ApiBody = {
-  message?: string;
-  error?: string;
-  teamsCreated?: number;
-  matchesCreated?: number;
-  matchesSkipped?: number;
-  alreadySettled?: boolean;
-  betsSettled?: number;
-  alreadyFinal?: boolean;
-  betsRefunded?: number;
-};
-
-const plural = (n: number, word: string) => `${n} \( {word} \){n === 1 ? "" : "s"}`;
-
-function summarize(d: ApiBody, fallback: string): string {
-  if (d.message) return d.message;
-  if (typeof d.matchesCreated === "number") {
-    const parts = [`${plural(d.matchesCreated, "fixture")} imported`];
-    if (d.matchesSkipped) parts.push(`${plural(d.matchesSkipped, "duplicate")} skipped`);
-    if (d.teamsCreated) parts.push(`${plural(d.teamsCreated, "new team")} added`);
-    return parts.join(" · ");
-  }
-  if (d.alreadySettled) return "Already settled — nothing changed";
-  if (typeof d.betsSettled === "number") return `Match settled · ${plural(d.betsSettled, "bet")} processed`;
-  if (d.alreadyFinal) return "Match was already final — nothing changed";
-  if (typeof d.betsRefunded === "number") return `Match voided · ${plural(d.betsRefunded, "bet")} refunded`;
-  return fallback;
-}
-
-export default function AdminPage() {
-  return (
-    <AdminThemeProvider>
-      <AdminApp />
-    </AdminThemeProvider>
-  );
-}
-
-function AdminApp() {
-  const { user, loading } = useAuth();
-  const router = useRouter();
-  const [adminStatus, setAdminStatus] = useState<AdminStatus>("checking");
-  const [tab, setTab] = useState<AdminTabId>("overview");
-  const [fixturesFilter, setFixturesFilter] = useState<FixtureFilter>("all");
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [competitions, setCompetitions] = useState<Competition[]>([]);
+export default function HomePage() {
   const [matches, setMatches] = useState<Match[]>([]);
-  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [teams, setTeams] = useState<Record<string, Team>>({});
+  const [competitions, setCompetitions] = useState<Record<string, Competition>>({});
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    if (loading) return;
-    if (!user) {
-      router.replace("/login");
-      return;
-    }
-    user
-      .getIdTokenResult(true)
-      .then((r) => setAdminStatus(r.claims.admin === true ? "admin" : "not-admin"))
-      .catch(() => setAdminStatus("not-admin"));
-  }, [user, loading, router]);
+    const unsub = onSnapshot(
+      query(collection(db, "matches"), orderBy("kickoffAt"), limit(20)),
+      (snap) => {
+        setMatches(snap.docs.map((d) => d.data() as Match).filter((m) => m?.id && m?.homeTeamId && m?.awayTeamId));
+      }
+    );
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
-    if (adminStatus !== "admin") return;
-    const fail = (what: string) => (err: Error) => setToast({ msg: `Could not load ${what}: ${err.message}`, type: "error" });
-    const un = [
-      onSnapshot(query(collection(db, "teams"), orderBy("name")), (s) => setTeams(s.docs.map((d) => d.data() as Team)), fail("teams")),
-      onSnapshot(
-        query(collection(db, "competitions"), orderBy("name")),
-        (s) => setCompetitions(s.docs.map((d) => d.data() as Competition)),
-        fail("competitions")
-      ),
-      onSnapshot(query(collection(db, "matches"), orderBy("kickoffAt")), (s) => setMatches(s.docs.map((d) => d.data() as Match)), fail("fixtures")),
-    ];
-    return () => un.forEach((u) => u());
-  }, [adminStatus]);
-
-  function report(result: PostResult): PostResult {
-    setToast({ msg: result.message, type: result.ok ? "success" : "error" });
-    return result;
-  }
-
-  async function post(path: string, body: unknown, successMessage = "Done"): Promise<PostResult> {
-    if (!user) return report({ ok: false, message: "Not logged in" });
-    try {
-      const res = await fetch(path, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${await user.getIdToken()}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+    const unsub = onSnapshot(collection(db, "teams"), (snap) => {
+      const map: Record<string, Team> = {};
+      snap.docs.forEach((d) => {
+        const t = d.data() as Team;
+        if (t?.id) map[t.id] = t;
       });
-      const data = (await res.json().catch(() => ({}))) as ApiBody;
-      return report(
-        res.ok ? { ok: true, message: summarize(data, successMessage) } : { ok: false, message: data.error ?? `Request failed (${res.status})` }
-      );
-    } catch {
-      return report({ ok: false, message: "Network problem — check your connection and try again" });
-    }
-  }
+      setTeams(map);
+    });
+    return () => unsub();
+  }, []);
 
-  function goToFixtures(filter: FixtureFilter = "all") {
-    setFixturesFilter(filter);
-    setTab("fixtures");
-  }
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "competitions"), (snap) => {
+      const map: Record<string, Competition> = {};
+      snap.docs.forEach((d) => {
+        const c = d.data() as Competition;
+        if (c?.id) map[c.id] = c;
+      });
+      setCompetitions(map);
+    });
+    return () => unsub();
+  }, []);
 
-  const teamsById = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t])) as Record<string, Team>, [teams]);
-  const compsById = useMemo(
-    () => Object.fromEntries(competitions.map((c) => [c.id, c])) as Record<string, Competition>,
-    [competitions]
-  );
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
-  if (loading || adminStatus === "checking") {
-    return (
-      <main className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-adm-brand border-t-transparent" />
-      </main>
-    );
-  }
-
-  if (adminStatus === "not-admin") {
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-3 px-4 text-center">
-        <p className="text-lg font-semibold">Access denied</p>
-        <p className="text-sm text-adm-muted">This account doesn&apos;t have admin access.</p>
-        <Link href="/" className="text-sm font-medium text-adm-brand-ink hover:underline">
-          Back to the app
-        </Link>
-      </main>
-    );
-  }
+  const { live, upcoming } = groupFixturesForBrowsing(matches, now);
+  const displayMatches = [...live, ...upcoming.flatMap((s) => s.matches)].slice(0, 10);
 
   return (
-    <>
-      <AdminLayout tab={tab} onTabChange={setTab} email={user?.email ?? ""}>
-        {tab === "overview" && (
-          <OverviewTab
-            matches={matches}
-            teams={teams}
-            competitions={competitions}
-            teamsById={teamsById}
-            competitionsById={compsById}
-            onNavigateToFixtures={goToFixtures}
-          />
-        )}
-        {tab === "fixtures" && (
-          <FixturesTab
-            matches={matches}
-            teamsById={teamsById}
-            competitionsById={compsById}
-            onAction={post}
-            initialFilter={fixturesFilter}
-          />
-        )}
-        {tab === "import" && (
-          <ImportTab competitions={competitions} onSubmit={(b) => post("/api/admin/matches/bulk-import", b)} />
-        )}
-        {tab === "danger" && (
-          <DangerTab onReset={() => post("/api/admin/dev/reset", {}, "Platform reset complete")} />
-        )}
-      </AdminLayout>
+    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pb-28 pt-6">
+      {/* Hero */}
+      <div className="flex flex-col items-center gap-2 py-8 text-center">
+        <h1 className="font-display text-3xl font-bold text-brand">FUNAAB BetSim</h1>
+        <p className="text-sm text-ink-muted">Simulated sports betting. No real money.</p>
+        <div className="mt-4 flex gap-3">
+          <Link
+            href="/fixtures"
+            className="rounded-xl bg-brand px-6 py-3 text-sm font-semibold text-white shadow-card"
+          >
+            Browse Fixtures
+          </Link>
+          <Link
+            href="/bets"
+            className="rounded-xl bg-surface px-6 py-3 text-sm font-semibold text-brand shadow-card"
+          >
+            My Bets
+          </Link>
+        </div>
+      </div>
 
-      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
-    </>
+      {/* Live / Upcoming preview */}
+      {displayMatches.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-xs font-bold uppercase tracking-wide text-ink-muted">
+            {live.length > 0 ? "Live & Upcoming" : "Upcoming Fixtures"}
+          </h2>
+          <div className="flex flex-col gap-2.5">
+            {displayMatches.map((m) => (
+              <Link
+                key={m.id}
+                href={`/fixtures/${m.id}`}
+                className="flex items-center justify-between rounded-2xl bg-surface p-3.5 shadow-card"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">
+                    {m.competitionId ? competitions[m.competitionId]?.name ?? "…" : "…"}
+                  </p>
+                  <p className="mt-1 truncate text-sm font-semibold">
+                    {teams[m.homeTeamId]?.name ?? "Home"}
+                  </p>
+                  <p className="truncate text-sm font-semibold">
+                    {teams[m.awayTeamId]?.name ?? "Away"}
+                  </p>
+                </div>
+                <div className="shrink-0">
+                  <LiveClockBadge match={m} />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {displayMatches.length === 0 && (
+        <p className="text-center text-sm text-ink-muted py-8">
+          No fixtures right now — check back soon.
+        </p>
+      )}
+    </main>
   );
 }
