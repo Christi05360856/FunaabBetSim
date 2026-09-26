@@ -65,8 +65,16 @@ export interface Match {
   awayTeamId: string;
   kickoffAt: number;
   status: MatchStatus;
+  /** Final score — set only by settlement. Never updated by live-score. */
   homeScore: number | null;
   awayScore: number | null;
+  /**
+   * Interim / in-play score. Updated repeatedly while the match is
+   * live / halftime / second_half. Independent of settlement.
+   * Existing documents may lack these fields — treat missing as null.
+   */
+  currentHomeScore: number | null;
+  currentAwayScore: number | null;
   venue: string | null;
   source: "manual" | "bulk_import"; // where this fixture came from — extensible for future providers
   sourceEventId: string | null; // an external id, if ever imported from a real provider
