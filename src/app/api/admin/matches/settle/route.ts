@@ -8,6 +8,7 @@ import {
   resolveDrawNoBetSelectionId,
   resolveOverUnderSelectionId,
   resolveBTSSelectionId,
+  resolveCorrectScoreOutcome,
 } from "@/lib/domain/settlement";
 import type { Bet, Match, Market, Transaction, Wallet } from "@/types/domain";
 
@@ -118,6 +119,12 @@ export async function POST(request: NextRequest) {
           case "both_teams_to_score":
             winningSelectionIds = [resolveBTSSelectionId(homeScore, awayScore)];
             break;
+          case "correct_score": {
+            const { exactId, otherBucketId } = resolveCorrectScoreOutcome(homeScore, awayScore);
+            const exactWasOffered = market.selections.some((s) => s.id === exactId);
+            winningSelectionIds = [exactWasOffered ? exactId : otherBucketId];
+            break;
+          }
           default:
             continue; // Skip unknown market types
         }
