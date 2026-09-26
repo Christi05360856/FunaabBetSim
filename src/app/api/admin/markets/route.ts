@@ -13,7 +13,6 @@ const selectionSchema = z.object({
 const bodySchema = z.object({
   matchId: z.string().min(1),
   type: z.enum(["match_winner", "double_chance", "draw_no_bet", "over_under", "both_teams_to_score", "correct_score"]),
-  line: z.number().optional(), // For over_under
   selections: z.array(selectionSchema).min(2),
 });
 
@@ -31,37 +30,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { matchId, type, line, selections } = parsed.data;
+  const { matchId, type, selections } = parsed.data;
 
   const matchSnap = await adminDb.collection("matches").doc(matchId).get();
   if (!matchSnap.exists) {
     return NextResponse.json({ error: "Match not found" }, { status: 400 });
   }
 
-  // Check if market already exists for this match+type — for Over/Under,
-  // scope that check to the specific line too, since a match can (and
-  // should) offer several goal lines (0.5, 1.5, 2.5…) at once, each as its
-  // own market. Every other market type still has exactly one per match.
-  let existingQuery = adminDb
+  // Exactly one market per (match, type) — Over/Under's five goal lines
+  // live as separate selections ("over_2.5", "under_2.5", …) inside the
+  // one over_under market, not as separate market documents.
+  const existingSnap = await adminDb
     .collection("markets")
     .where("matchId", "==", matchId)
-    .where("type", "==", type);
-  if (type === "over_under" && line !== undefined) {
-    existingQuery = existingQuery.where("line", "==", line);
-  }
-  const existingSnap = await existingQuery.limit(1).get();
+    .where("type", "==", type)
+    .limit(1)
+    .get();
 
   if (!existingSnap.empty) {
-    const message =
-      type === "over_under"
-        ? `A ${line ?? ""} goals Over/Under market already exists for this match`
-        : "Market already exists for this match";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: "Market already exists for this match" }, { status: 400 });
   }
 
   const now = Date.now();
   const ref = adminDb.collection("markets").doc();
-  
+
   const market: Market = {
     id: ref.id,
     matchId,
@@ -71,11 +63,6 @@ export async function POST(request: NextRequest) {
     createdAt: now,
     updatedAt: now,
   };
-
-  // Add line for over_under markets
-  if (type === "over_under" && line !== undefined) {
-    (market as any).line = line;
-  }
 
   await ref.set(market);
 
