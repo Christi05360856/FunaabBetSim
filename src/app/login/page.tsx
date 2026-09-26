@@ -36,45 +36,44 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-6 pt-16 pb-28">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-6 py-10">
       <div className="text-center">
-        <p className="text-xs font-semibold uppercase tracking-wide text-accent">
-          Play money only
-        </p>
-        <h1 className="mt-1 font-display text-2xl font-semibold">FUNAAB BetSim</h1>
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand font-display text-xl font-bold text-white">F</span>
+        <h1 className="mt-3 font-display text-2xl font-bold">FUNAAB BetSim</h1>
+        <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-accent">Play money only · Nothing is real</p>
       </div>
 
-      <div className="rounded-xl bg-surface p-6 shadow-sm">
-        <h2 className="mb-4 font-display text-lg font-semibold">Log in</h2>
+      <div className="rounded-2xl bg-surface p-6 shadow-card">
+        <h2 className="mb-4 font-display text-lg font-bold">Log in</h2>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <label className="flex flex-col gap-1 text-sm">
+          <label className="flex flex-col gap-1.5 text-sm font-medium">
             Email
             <input
               type="email"
-              className="rounded-lg border border-ink-muted bg-bg px-3 py-2 text-ink"
+              className="rounded-xl border border-ink-muted/25 bg-surface-raised px-3 py-2.5 text-ink outline-none focus:border-brand"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
+          <label className="flex flex-col gap-1.5 text-sm font-medium">
             Password
             <input
               type="password"
-              className="rounded-lg border border-ink-muted bg-bg px-3 py-2 text-ink"
+              className="rounded-xl border border-ink-muted/25 bg-surface-raised px-3 py-2.5 text-ink outline-none focus:border-brand"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
             />
           </label>
 
-          {error && <p className="text-sm text-loss">{error}</p>}
+          {error && <p className="text-sm font-medium text-loss">{error}</p>}
 
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-lg bg-brand px-4 py-3 font-medium text-white disabled:opacity-50"
+            className="mt-1 rounded-xl bg-brand px-4 py-3 font-semibold text-white transition-opacity disabled:opacity-50"
           >
             {submitting ? "Logging in…" : "Log in"}
           </button>
@@ -83,7 +82,7 @@ export default function LoginPage() {
 
       <p className="text-center text-sm text-ink-muted">
         New here?{" "}
-        <Link href="/register" className="text-brand underline">
+        <Link href="/register" className="font-semibold text-brand underline">
           Create an account
         </Link>
       </p>
