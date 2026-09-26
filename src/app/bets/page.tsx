@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, onSnapshot, query, where, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/auth/AuthContext";
 import type { Bet, Team, Match } from "@/types/domain";
@@ -33,6 +33,7 @@ export default function BetsPage() {
   const [matches, setMatches] = useState<Record<string, Match>>({});
   const [activeTab, setActiveTab] = useState<Tab>("open");
   const [now, setNow] = useState(() => Date.now());
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -40,12 +41,20 @@ export default function BetsPage() {
 
   useEffect(() => {
     if (!user) return;
-    
+
+    // No orderBy — avoids a composite index. Sort client-side instead.
     const unsubBets = onSnapshot(
-      query(collection(db, "bets"), where("uid", "==", user.uid), orderBy("placedAt", "desc")),
+      query(collection(db, "bets"), where("uid", "==", user.uid)),
       (snap) => {
-        const betList = snap.docs.map((d) => d.data() as Bet);
+        const betList = snap.docs
+          .map((d) => d.data() as Bet)
+          .sort((a, b) => (b.placedAt ?? 0) - (a.placedAt ?? 0));
         setBets(betList);
+        setLoadError(null);
+      },
+      (err) => {
+        console.error("bets listener failed", err);
+        setLoadError(err.message || "Could not load bets");
       }
     );
 
@@ -89,36 +98,42 @@ export default function BetsPage() {
 
   const openBets = bets.filter((b) => b.status === "open");
   const historyBets = bets.filter((b) => b.status !== "open");
-
   const displayBets = activeTab === "open" ? openBets : historyBets;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col gap-4 px-4 pt-5 pb-28">
       <h1 className="font-display text-xl font-bold">My Bets</h1>
 
-      {/* Tabs */}
       <div className="flex rounded-xl bg-surface p-1 shadow-card">
         <button
+          type="button"
           onClick={() => setActiveTab("open")}
-          className={`flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors ${
-            activeTab === "open" ? "bg-brand text-white" : "text-ink-muted"
-          }`}
+          className={
+            "flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors " +
+            (activeTab === "open" ? "bg-brand text-white" : "text-ink-muted")
+          }
         >
           Open Bets ({openBets.length})
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab("history")}
-          className={`flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors ${
-            activeTab === "history" ? "bg-brand text-white" : "text-ink-muted"
-          }`}
+          className={
+            "flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors " +
+            (activeTab === "history" ? "bg-brand text-white" : "text-ink-muted")
+          }
         >
           Bet History ({historyBets.length})
         </button>
       </div>
 
+      {loadError && (
+        <p className="rounded-lg bg-loss/10 px-3 py-2 text-sm text-loss">{loadError}</p>
+      )}
+
       {displayBets.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="text-5xl mb-4">🎫</div>
+          <div className="mb-4 text-5xl">🎫</div>
           <p className="text-ink-muted">
             {activeTab === "open" ? "No open bets" : "No bet history yet"}
           </p>
@@ -151,15 +166,14 @@ function BetCard({
   const match = matches[bet.matchId];
   const home = match?.homeTeamId ? teams[match.homeTeamId] : undefined;
   const away = match?.awayTeamId ? teams[match.awayTeamId] : undefined;
-  
+
   const isLive = match && ["live", "halftime", "second_half"].includes(match.status);
   const clock = match ? deriveClockState(match, now) : null;
 
   return (
     <div className="rounded-2xl bg-surface p-4 shadow-card">
-      {/* Header */}
       <div className="flex items-center justify-between">
-        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${STATUS_BADGE[bet.status]}`}>
+        <span className={"rounded-full px-2.5 py-1 text-xs font-bold " + STATUS_BADGE[bet.status]}>
           {STATUS_LABEL[bet.status]}
         </span>
         {isLive && clock && (
@@ -170,7 +184,6 @@ function BetCard({
         )}
       </div>
 
-      {/* Match info */}
       <div className="mt-3">
         <p className="text-sm font-semibold">
           {home?.name ?? "Home"} vs {away?.name ?? "Away"}
@@ -180,11 +193,12 @@ function BetCard({
         </p>
       </div>
 
-      {/* Bet details */}
       <div className="mt-3 flex items-center justify-between border-t border-ink-muted/10 pt-3">
         <div>
           <p className="text-xs text-ink-muted">Stake</p>
-          <p className="font-display text-sm font-bold">₦{bet.stake.toLocaleString("en-NG")}</p>
+          <p className="font-display text-sm font-bold">
+            ₦{bet.stake.toLocaleString("en-NG")}
+          </p>
         </div>
         <div className="text-center">
           <p className="text-xs text-ink-muted">Potential Win</p>
@@ -194,11 +208,15 @@ function BetCard({
         </div>
         <div className="text-right">
           <p className="text-xs text-ink-muted">Placed</p>
-          <p className="text-sm">{new Date(bet.placedAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}</p>
+          <p className="text-sm">
+            {new Date(bet.placedAt).toLocaleDateString("en-NG", {
+              day: "numeric",
+              month: "short",
+            })}
+          </p>
         </div>
       </div>
 
-      {/* Result */}
       {bet.status === "won" && (
         <div className="mt-3 rounded-lg bg-win/10 px-3 py-2 text-center">
           <p className="text-sm font-semibold text-win">
