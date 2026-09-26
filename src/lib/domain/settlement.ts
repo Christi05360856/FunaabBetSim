@@ -13,14 +13,16 @@ export function resolveMatchWinnerSelectionId(
   return "draw";
 }
 
-// Double Chance (1X, 12, X2)
-export function resolveDoubleChanceSelectionId(
+// Double Chance (1X, 12, X2) — two of the three selections win on every
+// result (e.g. a home win pays both "1X" and "12"), so this returns every
+// winning selection id, not just one.
+export function resolveDoubleChanceSelectionIds(
   homeScore: number,
   awayScore: number
-): "home_draw" | "home_away" | "draw_away" {
-  if (homeScore > awayScore) return "home_away"; // Home or Away wins
-  if (awayScore > homeScore) return "home_away"; // Home or Away wins
-  return "home_draw"; // Draw
+): ("home_draw" | "home_away" | "draw_away")[] {
+  if (homeScore > awayScore) return ["home_draw", "home_away"]; // home win: 1X + 12
+  if (awayScore > homeScore) return ["home_away", "draw_away"]; // away win: 12 + X2
+  return ["home_draw", "draw_away"]; // draw: 1X + X2
 }
 
 // Draw No Bet (refund on draw)
