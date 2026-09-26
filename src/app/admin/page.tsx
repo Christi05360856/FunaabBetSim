@@ -11,8 +11,6 @@ import { Toast } from "@/components/admin/ui";
 import AdminLayout, { AdminThemeProvider, type AdminTabId } from "@/components/admin/AdminLayout";
 import OverviewTab from "@/components/admin/OverviewTab";
 import FixturesTab from "@/components/admin/FixturesTab";
-import OddsTab from "@/components/admin/OddsTab";
-import EntitiesTab from "@/components/admin/EntitiesTab";
 import ImportTab from "@/components/admin/ImportTab";
 import DangerTab from "@/components/admin/DangerTab";
 
@@ -32,7 +30,7 @@ type ApiBody = {
   betsRefunded?: number;
 };
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const plural = (n: number, word: string) => `${n} \( {word} \){n === 1 ? "" : "s"}`;
 
 // Turns the API's raw counts into a readable toast message.
 function summarize(d: ApiBody, fallback: string): string {
@@ -142,18 +140,6 @@ function AdminApp() {
         )}
         {tab === "fixtures" && (
           <FixturesTab matches={matches} teamsById={teamsById} competitionsById={compsById} onAction={post} />
-        )}
-        {tab === "odds" && (
-          <OddsTab matches={matches} teamsById={teamsById} competitionsById={compsById} onSubmit={(b) => post("/api/admin/markets", b, "Odds saved")} />
-        )}
-        {tab === "entities" && (
-          <EntitiesTab
-            teams={teams}
-            competitions={competitions}
-            matches={matches}
-            onAddTeam={(b) => post("/api/admin/teams", b, "Team added")}
-            onAddCompetition={(b) => post("/api/admin/competitions", b, "Competition added")}
-          />
         )}
         {tab === "import" && (
           <ImportTab competitions={competitions} onSubmit={(b) => post("/api/admin/matches/bulk-import", b)} />
