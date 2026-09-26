@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useWallet } from "@/lib/hooks/useWallet";
 import { RESET_COOLDOWN_MS } from "@/types/domain";
-import type { Wallet } from "@/types/domain";
 
 export default function DashboardPage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [walletError, setWalletError] = useState<string | null>(null);
-  const [tick, setTick] = useState(0); // forces a re-render every second for the countdown
+  const { wallet, loading: walletLoading } = useWallet();
+  const [tick, setTick] = useState(0);
   const [resetSubmitting, setResetSubmitting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
 
@@ -19,37 +19,6 @@ export default function DashboardPage() {
     if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
 
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-
-    async function loadWallet() {
-      try {
-        const idToken = await user!.getIdToken();
-        const response = await fetch("/api/wallet", {
-          headers: { Authorization: `Bearer ${idToken}` },
-        });
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          throw new Error(`Could not load wallet (${response.status}): ${body.error ?? "unknown"}`);
-        }
-        const data = (await response.json()) as Wallet;
-        if (!cancelled) setWallet(data);
-      } catch (err) {
-        if (!cancelled) {
-          setWalletError(err instanceof Error ? err.message : "Something went wrong.");
-        }
-      }
-    }
-
-    loadWallet();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
-
-  // Only ticks while the countdown is actually relevant — no wasted timers
-  // once the wallet has a normal balance.
   useEffect(() => {
     if (!wallet || wallet.balance !== 0 || wallet.resetPendingSince === null) return;
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
@@ -68,7 +37,6 @@ export default function DashboardPage() {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Could not reset wallet.");
-      setWallet((prev) => (prev ? { ...prev, balance: body.balance, resetPendingSince: null } : prev));
     } catch (err) {
       setResetError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -90,7 +58,7 @@ export default function DashboardPage() {
     ? RESET_COOLDOWN_MS - (Date.now() - wallet!.resetPendingSince!)
     : 0;
   const cooldownDone = cooldownActive && remainingMs <= 0;
-  void tick; // read so the effect above isn't flagged as unused-only re-render
+  void tick;
 
   function formatRemaining(ms: number) {
     const totalMinutes = Math.max(0, Math.ceil(ms / (60 * 1000)));
@@ -100,56 +68,108 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-5 pt-6 pb-28">
-      <div className="flex items-center gap-3">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand/10 font-display text-lg font-bold text-brand">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-4 px-4 pt-5 pb-28">
+      {/* Profile Header */}
+      <div className="flex items-center gap-4">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand/10 font-display text-2xl font-bold text-brand">
           {(user.displayName ?? "P").charAt(0).toUpperCase()}
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm text-ink-muted">Welcome back</p>
-          <h1 className="truncate font-display text-xl font-bold">{user.displayName ?? "Player"}</h1>
+        </div>
+        <div className="flex-1">
+          <h1 className="font-display text-xl font-bold">{user.displayName ?? "Player"}</h1>
+          <p className="text-sm text-ink-muted">{user.email}</p>
         </div>
       </div>
 
-      <div className="rounded-2xl bg-surface p-5 shadow-card">
-        <p className="text-sm font-medium text-ink-muted">Virtual balance</p>
-        {walletError ? (
-          <p className="mt-1 text-sm text-loss">{walletError}</p>
-        ) : wallet ? (
-          <p className="mt-1 font-display text-3xl font-bold text-accent">
-            ₦{wallet.balance.toLocaleString("en-NG")}
-          </p>
-        ) : (
-          <p className="mt-1 text-ink-muted">Loading…</p>
-        )}
-
+      {/* Balance Card */}
+      <div className="rounded-2xl bg-gradient-to-br from-brand to-brand-dark p-5 text-white shadow-card">
+        <p className="text-sm font-medium text-white/70">Total Balance</p>
+        <p className="mt-1 font-display text-3xl font-bold">
+          ₦{wallet?.balance.toLocaleString("en-NG") ?? "—"}
+        </p>
+        
         {cooldownActive && (
-          <div className="mt-4 border-t border-ink-muted/15 pt-4">
+          <div className="mt-4 border-t border-white/20 pt-4">
             {cooldownDone ? (
-              <>
-                <p className="text-sm text-ink-muted">Your balance is ready to reset.</p>
-                <button
-                  onClick={handleReset}
-                  disabled={resetSubmitting}
-                  className="mt-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-                >
-                  {resetSubmitting ? "Resetting…" : "Reset to ₦100,000"}
-                </button>
-              </>
+              <button
+                onClick={handleReset}
+                disabled={resetSubmitting}
+                className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-brand disabled:opacity-50"
+              >
+                {resetSubmitting ? "Resetting…" : "Reset to ₦100,000"}
+              </button>
             ) : (
-              <p className="text-sm text-ink-muted">Reset available in {formatRemaining(remainingMs)}</p>
+              <p className="text-sm text-white/70">Reset available in {formatRemaining(remainingMs)}</p>
             )}
-            {resetError && <p className="mt-2 text-sm text-loss">{resetError}</p>}
+            {resetError && <p className="mt-2 text-sm text-white/90">{resetError}</p>}
           </div>
         )}
       </div>
 
-      <button
-        onClick={logout}
-        className="rounded-2xl bg-surface px-5 py-3.5 text-left text-sm font-semibold text-loss shadow-card"
-      >
-        Log out
-      </button>
+      {/* Quick Actions */}
+      <div className="grid grid-cols-3 gap-3">
+        <Link
+          href="/bets"
+          className="flex flex-col items-center gap-2 rounded-2xl bg-surface p-4 shadow-card"
+        >
+          <span className="text-2xl">🎫</span>
+          <span className="text-xs font-medium text-center">My Bets</span>
+        </Link>
+        <Link
+          href="/fixtures"
+          className="flex flex-col items-center gap-2 rounded-2xl bg-surface p-4 shadow-card"
+        >
+          <span className="text-2xl">⚽</span>
+          <span className="text-xs font-medium text-center">Fixtures</span>
+        </Link>
+        <button
+          onClick={logout}
+          className="flex flex-col items-center gap-2 rounded-2xl bg-surface p-4 shadow-card"
+        >
+          <span className="text-2xl">🚪</span>
+          <span className="text-xs font-medium text-loss">Log out</span>
+        </button>
+      </div>
+
+      {/* Stats Row */}
+      {wallet && (
+        <div className="rounded-2xl bg-surface p-4 shadow-card">
+          <h3 className="text-sm font-semibold text-ink-muted mb-3">Statistics</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-ink-muted">Lifetime Wagering</p>
+              <p className="font-display text-lg font-bold">
+                ₦{wallet.lifetimeWagering.toLocaleString("en-NG")}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-ink-muted">Current Balance</p>
+              <p className="font-display text-lg font-bold text-brand">
+                ₦{wallet.balance.toLocaleString("en-NG")}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Menu Items */}
+      <div className="rounded-2xl bg-surface shadow-card divide-y divide-ink-muted/10">
+        <MenuItem icon="📋" label="Bet History" href="/bets" />
+        <MenuItem icon="⚙️" label="Settings" href="#" />
+        <MenuItem icon="❓" label="How to Play" href="#" />
+        <MenuItem icon="💡" label="Share Feedback" href="#" />
+      </div>
     </main>
+  );
+}
+
+function MenuItem({ icon, label, href }: { icon: string; label: string; href: string }) {
+  return (
+    <Link href={href} className="flex items-center gap-3 px-4 py-3.5 active:bg-ink-muted/5">
+      <span className="text-xl">{icon}</span>
+      <span className="flex-1 text-sm font-medium">{label}</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-ink-muted">
+        <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </Link>
   );
 }
