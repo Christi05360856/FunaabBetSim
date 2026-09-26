@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
@@ -40,6 +40,10 @@ function matchScore(match: Match | undefined): {
     return { home: match.currentHomeScore, away: match.currentAwayScore, live: true };
   }
   return null;
+}
+
+function shortTicketId(id: string): string {
+  return id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toUpperCase() || id.slice(0, 8).toUpperCase();
 }
 
 export default function BetsPage() {
@@ -109,7 +113,6 @@ export default function BetsPage() {
     return () => clearInterval(id);
   }, []);
 
-  // One celebration for all newly settled wins since last visit
   useEffect(() => {
     if (!user || bets.length === 0) return;
     let seenAt = 0;
@@ -193,6 +196,9 @@ export default function BetsPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-3">
+          <p className="px-0.5 text-xs font-bold uppercase tracking-wide text-ink-muted">
+            Singles
+          </p>
           {displayBets.map((bet) => (
             <button
               key={bet.id}
@@ -248,85 +254,54 @@ function BetCard({
 
   return (
     <div className="rounded-2xl bg-surface p-4 shadow-card">
-      <div className="flex items-center justify-between">
-        <span className={"rounded-full px-2.5 py-1 text-xs font-bold " + STATUS_BADGE[bet.status]}>
-          {STATUS_LABEL[bet.status]}
-        </span>
-        {isLive && clock && (
-          <span className="flex items-center gap-1 text-xs font-medium text-loss">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-loss" />
-            {clock.display}
-          </span>
-        )}
-      </div>
-
-      <div className="mt-3 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-brand">
+            {bet.selectionLabel} @{bet.oddsAtPlacement.toFixed(2)}{" "}
+            <span className="font-medium text-ink-muted">1X2</span>
+          </p>
+          <p className="mt-1 truncate text-sm font-medium">
             {home?.name ?? "Home"} vs {away?.name ?? "Away"}
           </p>
-          <p className="mt-1 text-xs text-ink-muted">
-            {bet.selectionLabel} @ {bet.oddsAtPlacement.toFixed(2)}
-          </p>
-        </div>
-        {score && (
-          <span
-            className={
-              "shrink-0 font-display text-sm font-bold tabular-nums " +
-              (score.live ? "text-loss" : "text-ink")
-            }
-          >
-            {score.home} – {score.away}
-            {score.live && (
-              <span className="ml-1 text-[9px] font-semibold uppercase">Live</span>
-            )}
-          </span>
-        )}
-      </div>
-
-      <div className="mt-3 flex items-center justify-between border-t border-ink-muted/10 pt-3">
-        <div>
-          <p className="text-xs text-ink-muted">Stake</p>
-          <p className="font-display text-sm font-bold">
-            ₦{bet.stake.toLocaleString("en-NG")}
-          </p>
-        </div>
-        <div className="text-center">
-          <p className="text-xs text-ink-muted">
-            {bet.status === "won" ? "Won" : "Potential"}
-          </p>
-          <p className="font-display text-sm font-bold text-win">
-            ₦{bet.potentialPayout.toLocaleString("en-NG")}
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="text-xs text-ink-muted">Placed</p>
-          <p className="text-sm">
-            {new Date(bet.placedAt).toLocaleDateString("en-NG", {
-              day: "numeric",
-              month: "short",
+          <p className="mt-0.5 text-xs text-ink-muted">
+            {new Date(bet.placedAt).toLocaleString("en-NG", {
+              day: "2-digit",
+              month: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
             })}
+            {isLive && clock ? " · " + clock.display : ""}
           </p>
         </div>
+        <span className={"shrink-0 rounded-full px-2.5 py-1 text-xs font-bold " + STATUS_BADGE[bet.status]}>
+          {STATUS_LABEL[bet.status]}
+        </span>
       </div>
 
-      {bet.status === "won" && (
-        <div className="mt-3 rounded-lg bg-win/10 px-3 py-2 text-center">
-          <p className="text-sm font-semibold text-win">
-            +₦{bet.potentialPayout.toLocaleString("en-NG")}
-          </p>
-        </div>
+      {score && (
+        <p
+          className={
+            "mt-2 text-xs font-medium " + (score.live ? "text-loss" : "text-ink-muted")
+          }
+        >
+          {score.live ? "Live" : "FT"} {score.home}:{score.away}
+        </p>
       )}
-      {bet.status === "lost" && (
-        <div className="mt-3 rounded-lg bg-loss/10 px-3 py-2 text-center">
-          <p className="text-sm font-semibold text-loss">Lost</p>
+
+      <div className="mt-3 flex items-center justify-between border-t border-ink-muted/10 pt-3 text-sm">
+        <div>
+          <span className="text-ink-muted">Stake </span>
+          <span className="font-semibold">₦{bet.stake.toLocaleString("en-NG")}</span>
         </div>
-      )}
-      {bet.status === "void" && (
-        <div className="mt-3 rounded-lg bg-ink-muted/10 px-3 py-2 text-center">
-          <p className="text-sm font-semibold text-ink-muted">Void - Stake Refunded</p>
+        <div>
+          <span className="text-ink-muted">
+            {bet.status === "won" ? "Return " : "Pot. Win "}
+          </span>
+          <span className="font-semibold text-win">
+            ₦{bet.potentialPayout.toLocaleString("en-NG")}
+          </span>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -351,106 +326,151 @@ function BetDetailSheet({
     match && ["live", "halftime", "second_half"].includes(match.status);
   const clock = match ? deriveClockState(match, now) : null;
   const score = matchScore(match);
+  const ticketId = shortTicketId(bet.id);
 
-  const statusLine =
-    bet.status === "open" && isLive
-      ? "Live"
-      : STATUS_LABEL[bet.status];
+  const pickOk = bet.status === "won";
+  const pickFail = bet.status === "lost";
+  const pickOpen = bet.status === "open";
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
+      className="fixed inset-0 z-50 flex flex-col bg-bg"
       onClick={onClose}
     >
-      <div
-        className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-surface p-5 shadow-card sm:rounded-2xl"
+      {/* SportyBet-style red header */}
+      <header
+        className="flex items-center gap-3 bg-brand px-4 py-3 text-white"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-display text-lg font-bold">Bet details</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full bg-surface-raised px-3 py-1 text-sm text-ink-muted"
-          >
-            Close
-          </button>
+        <button type="button" onClick={onClose} className="text-white" aria-label="Back">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <h2 className="flex-1 font-display text-lg font-bold">Ticket Details</h2>
+      </header>
+
+      <div
+        className="flex-1 overflow-y-auto px-4 pb-28 pt-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Ticket summary */}
+        <div className="rounded-xl bg-surface p-4 shadow-card">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-xs text-ink-muted">Ticket ID: {ticketId}</p>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                {new Date(bet.placedAt).toLocaleString("en-NG", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </p>
+              <p className="mt-2 text-sm font-semibold">Single</p>
+            </div>
+            <div className="text-right">
+              <span
+                className={
+                  "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold " +
+                  STATUS_BADGE[bet.status]
+                }
+              >
+                {bet.status === "won" && <span>🏆</span>}
+                {STATUS_LABEL[bet.status]}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2 border-t border-ink-muted/10 pt-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-ink-muted">
+                {bet.status === "won" ? "Total Return" : "Potential Return"}
+              </span>
+              <span className="font-display font-bold text-win">
+                ₦{bet.potentialPayout.toLocaleString("en-NG")}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-ink-muted">Total Stake</span>
+              <span className="font-semibold">₦{bet.stake.toLocaleString("en-NG")}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-ink-muted">Odds</span>
+              <span className="font-semibold">{bet.oddsAtPlacement.toFixed(2)}</span>
+            </div>
+          </div>
         </div>
 
-        <div className="mb-4 flex items-center justify-between">
-          <span className={"rounded-full px-2.5 py-1 text-xs font-bold " + STATUS_BADGE[bet.status]}>
-            {statusLine}
-          </span>
-          {isLive && clock && (
-            <span className="flex items-center gap-1 text-xs font-medium text-loss">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-loss" />
-              {clock.display}
-            </span>
-          )}
-        </div>
-
-        <div className="rounded-xl bg-surface-raised p-4">
+        {/* Leg / selection block — SportyBet style */}
+        <div className="mt-4 rounded-xl bg-surface p-4 shadow-card">
           <p className="text-xs text-ink-muted">
-            {new Date(bet.placedAt).toLocaleString("en-NG", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+            {match
+              ? new Date(match.kickoffAt).toLocaleString("en-NG", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "—"}
+            {isLive && clock ? " · " + clock.display : ""}
           </p>
           <p className="mt-1 text-sm font-semibold">
             {home?.name ?? "Home"} vs {away?.name ?? "Away"}
           </p>
+
           {score && (
-            <p
-              className={
-                "mt-2 font-display text-2xl font-bold tabular-nums " +
-                (score.live ? "text-loss" : "text-ink")
-              }
-            >
-              {score.home} – {score.away}
-              {score.live && (
-                <span className="ml-2 text-xs font-semibold uppercase">Live</span>
-              )}
+            <p className="mt-1 text-xs font-medium text-ink-muted">
+              {score.live ? "Live Score" : "FT Score"}{" "}
+              <span className={score.live ? "text-loss" : "text-ink"}>
+                {score.home}:{score.away}
+              </span>
             </p>
           )}
-          <p className="mt-2 text-sm text-ink-muted">
-            {bet.selectionLabel} @ {bet.oddsAtPlacement.toFixed(2)}
-          </p>
-        </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-surface-raised p-3">
-            <p className="text-xs text-ink-muted">Odds</p>
-            <p className="font-display text-lg font-bold">
-              {bet.oddsAtPlacement.toFixed(2)}
-            </p>
-          </div>
-          <div className="rounded-xl bg-surface-raised p-3">
-            <p className="text-xs text-ink-muted">Stake</p>
-            <p className="font-display text-lg font-bold">
-              ₦{bet.stake.toLocaleString("en-NG")}
-            </p>
-          </div>
-          <div className="rounded-xl bg-surface-raised p-3">
-            <p className="text-xs text-ink-muted">
-              {bet.status === "won" ? "Winnings" : "Potential payout"}
-            </p>
-            <p className="font-display text-lg font-bold text-win">
-              ₦{bet.potentialPayout.toLocaleString("en-NG")}
-            </p>
-          </div>
-          <div className="rounded-xl bg-surface-raised p-3">
-            <p className="text-xs text-ink-muted">Status</p>
-            <p className="text-lg font-bold">{statusLine}</p>
+          <div
+            className={
+              "mt-3 rounded-lg px-3 py-3 " +
+              (pickOk
+                ? "bg-win/15"
+                : pickFail
+                  ? "bg-loss/10"
+                  : "bg-surface-raised")
+            }
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-sm">
+                  <span className="text-ink-muted">Pick </span>
+                  <span className="font-semibold">
+                    {bet.selectionLabel} @{bet.oddsAtPlacement.toFixed(2)}
+                  </span>
+                  {pickOk && <span className="ml-1 text-win">✓</span>}
+                  {pickFail && <span className="ml-1 text-loss">✗</span>}
+                </p>
+                <p className="mt-1 text-xs text-ink-muted">Market 1X2</p>
+                <p className="mt-0.5 text-xs text-ink-muted">
+                  Outcome{" "}
+                  <span className="font-medium text-ink">
+                    {pickOk
+                      ? bet.selectionLabel
+                      : pickFail
+                        ? "Lost"
+                        : pickOpen
+                          ? "Pending"
+                          : "Void"}
+                  </span>
+                </p>
+              </div>
+              {pickOk && <span className="text-2xl">🏆</span>}
+            </div>
           </div>
         </div>
 
         {bet.status === "won" && (
-          <div className="mt-4 rounded-xl bg-win/15 px-4 py-3 text-center">
-            <p className="text-sm font-semibold text-win">Paid out</p>
-            <p className="font-display text-xl font-bold text-win">
+          <div className="mt-4 rounded-xl bg-win/15 px-4 py-4 text-center">
+            <p className="text-xs font-medium uppercase tracking-wide text-win">Paid out</p>
+            <p className="mt-1 font-display text-2xl font-bold text-win">
               +₦{bet.potentialPayout.toLocaleString("en-NG")}
             </p>
           </div>
@@ -462,9 +482,7 @@ function BetDetailSheet({
         )}
         {bet.status === "void" && (
           <div className="mt-4 rounded-xl bg-ink-muted/10 px-4 py-3 text-center">
-            <p className="text-sm font-semibold text-ink-muted">
-              Void — stake refunded
-            </p>
+            <p className="text-sm font-semibold text-ink-muted">Void — stake refunded</p>
           </div>
         )}
       </div>
@@ -481,8 +499,7 @@ function WinCelebrationModal({
   total: number;
   onClose: () => void;
 }) {
-  const title =
-    count === 1 ? "YOU WON" : "YOU WON " + count + " BETS";
+  const title = count === 1 ? "YOU WON" : "YOU WON " + count + " BETS";
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4">
