@@ -15,11 +15,10 @@ function makeShortName(name: string, taken: Set<string>): string {
   for (const candidate of candidates) {
     if (candidate && !taken.has(candidate)) return candidate;
   }
-  // Last resort: numbered suffix off the first candidate.
   const base = candidates[0] || "TM";
   let n = 2;
-  while (taken.has(`${base}${n}`)) n++;
-  return `${base}${n}`;
+  while (taken.has(`\( {base} \){n}`)) n++;
+  return `\( {base} \){n}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -56,9 +55,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ---- Step 2: find or create every team referenced -------------------------
-  const teamNames = Array.from(
-    new Set(matches.flatMap((m) => [m.homeTeam, m.awayTeam]))
-  );
+  const teamNames = Array.from(new Set(matches.flatMap((m) => [m.homeTeam, m.awayTeam])));
   const existingTeamsSnap = await adminDb.collection("teams").get();
   const teamIdByName = new Map<string, string>();
   const takenShortNames = new Set<string>();
@@ -102,23 +99,24 @@ export async function POST(request: NextRequest) {
 
     const ref = adminDb.collection("matches").doc();
     const match: Match = {
-  id: ref.id,
-  competitionId,
-  round: null,
-  homeTeamId,
-  awayTeamId,
-  kickoffAt: m.kickoffAt,
-  status: "scheduled",
-  homeScore: null,
-  awayScore: null,
-  venue: null,
-  source: "bulk_import",
-  sourceEventId: null,
-  createdAt: now,
-  updatedAt: now,
-};
-    
-    
+      id: ref.id,
+      competitionId,
+      round: null,
+      homeTeamId,
+      awayTeamId,
+      kickoffAt: m.kickoffAt,
+      status: "scheduled",
+      homeScore: null,
+      awayScore: null,
+      currentHomeScore: null,
+      currentAwayScore: null,
+      venue: null,
+      source: "bulk_import",
+      sourceEventId: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
     await ref.set(match);
     matchesCreated++;
   }
