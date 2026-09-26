@@ -154,6 +154,7 @@ export default function DashboardPage() {
       {/* Menu Items */}
       <div className="rounded-2xl bg-surface shadow-card divide-y divide-ink-muted/10">
         <MenuItem icon="📋" label="Bet History" href="/bets" />
+        <MenuItem icon="🧾" label="Transaction Records" href="/transactions" />
         <MenuItem icon="⚙️" label="Settings" href="#" />
         <MenuItem icon="❓" label="How to Play" href="#" />
         <MenuItem icon="💡" label="Share Feedback" href="#" />
