@@ -4,7 +4,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { confirmResultSchema } from "@/lib/validation/schemas";
 import {
   resolveMatchWinnerSelectionId,
-  resolveDoubleChanceSelectionId,
+  resolveDoubleChanceSelectionIds,
   resolveDrawNoBetSelectionId,
   resolveOverUnderSelectionId,
   resolveBTSSelectionId,
@@ -88,33 +88,35 @@ export async function POST(request: NextRequest) {
         const marketBets = betsByMarket.get(market.id) ?? [];
         if (marketBets.length === 0) continue;
 
-        // Determine winning selection based on market type
-        let winningSelectionId: string | null = null;
+        // Determine winning selection(s) based on market type. Most markets
+        // have exactly one winning selection, but Double Chance always has
+        // two (e.g. a home win pays both "1X" and "12"), hence an array.
+        let winningSelectionIds: string[] | null = null;
         let isRefund = false;
 
         switch (market.type) {
           case "match_winner":
-            winningSelectionId = resolveMatchWinnerSelectionId(homeScore, awayScore);
+            winningSelectionIds = [resolveMatchWinnerSelectionId(homeScore, awayScore)];
             break;
           case "double_chance":
-            winningSelectionId = resolveDoubleChanceSelectionId(homeScore, awayScore);
+            winningSelectionIds = resolveDoubleChanceSelectionIds(homeScore, awayScore);
             break;
           case "draw_no_bet": {
             const result = resolveDrawNoBetSelectionId(homeScore, awayScore);
             if (result === "refund") {
               isRefund = true;
             } else {
-              winningSelectionId = result;
+              winningSelectionIds = [result];
             }
             break;
           }
           case "over_under": {
             const line = (market as any).line ?? 2.5;
-            winningSelectionId = resolveOverUnderSelectionId(homeScore, awayScore, line);
+            winningSelectionIds = [resolveOverUnderSelectionId(homeScore, awayScore, line)];
             break;
           }
           case "both_teams_to_score":
-            winningSelectionId = resolveBTSSelectionId(homeScore, awayScore);
+            winningSelectionIds = [resolveBTSSelectionId(homeScore, awayScore)];
             break;
           default:
             continue; // Skip unknown market types
@@ -150,7 +152,7 @@ export async function POST(request: NextRequest) {
             tx.set(transactionRef, transaction);
             walletsByUid.set(bet.uid, { ...wallet, balance: newBalance });
           } else {
-            const won = bet.selectionId === winningSelectionId;
+            const won = winningSelectionIds?.includes(bet.selectionId) ?? false;
             tx.update(betRef, { status: won ? "won" : "lost", settledAt: now });
 
             if (won) {
