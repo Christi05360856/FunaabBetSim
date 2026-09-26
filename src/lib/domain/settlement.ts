@@ -52,3 +52,20 @@ export function resolveBTSSelectionId(
 ): "yes" | "no" {
   return homeScore > 0 && awayScore > 0 ? "yes" : "no";
 }
+
+// Correct Score — an admin only ever offers a finite grid of scorelines
+// (e.g. up to 4-3/3-4) plus optional "any other" catch-all buckets. This
+// returns the exact scoreline id ("home-away") and, separately, which
+// catch-all bucket the result falls into — the caller checks whether the
+// exact id was actually offered as a selection on the market and falls
+// back to the bucket id if not, so an unlisted score (5-3, 6-0, 7-1…)
+// still resolves correctly as long as the "any other" selection exists.
+export function resolveCorrectScoreOutcome(
+  homeScore: number,
+  awayScore: number
+): { exactId: string; otherBucketId: "other_home" | "other_away" | "other_draw" } {
+  return {
+    exactId: `${homeScore}-${awayScore}`,
+    otherBucketId: homeScore > awayScore ? "other_home" : awayScore > homeScore ? "other_away" : "other_draw",
+  };
+}
