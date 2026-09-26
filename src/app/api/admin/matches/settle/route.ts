@@ -2,7 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { adminDb } from "@/lib/firebase/admin";
 import { confirmResultSchema } from "@/lib/validation/schemas";
-import { resolveMatchWinnerSelectionId } from "@/lib/domain/settlement";
+import {
+  resolveMatchWinnerSelectionId,
+  resolveDoubleChanceSelectionId,
+  resolveDrawNoBetSelectionId,
+  resolveOverUnderSelectionId,
+  resolveBTSSelectionId,
+} from "@/lib/domain/settlement";
 import type { Bet, Match, Market, Transaction, Wallet } from "@/types/domain";
 
 export async function POST(request: NextRequest) {
@@ -24,13 +30,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await adminDb.runTransaction(async (tx) => {
-      // ---- Reads (all of them, before any write) --------------------------
+      // ---- Reads ----------------------------------------------------------
       const matchSnap = await tx.get(matchRef);
       if (!matchSnap.exists) throw new Error("Match not found");
       const match = matchSnap.data() as Match;
 
-      // Idempotency guard (spec §16): if this match has already been
-      // settled, running this again must be a safe no-op, not a double-pay.
       if (match.status === "settled") {
         return { alreadySettled: true, betsSettled: 0 };
       }
@@ -38,26 +42,26 @@ export async function POST(request: NextRequest) {
         throw new Error(`Cannot settle — match is ${match.status}`);
       }
 
-      const marketSnap = await tx.get(
-        adminDb.collection("markets").where("matchId", "==", matchId).where("type", "==", "match_winner").limit(1)
+      // Get ALL markets for this match
+      const marketsSnap = await tx.get(
+        adminDb.collection("markets").where("matchId", "==", matchId)
       );
-      if (marketSnap.empty) throw new Error("No Match Winner market found for this match");
-      const marketDoc = marketSnap.docs[0]!;
-      const market = marketDoc.data() as Market;
 
       const openBetsSnap = await tx.get(
         adminDb.collection("bets").where("matchId", "==", matchId).where("status", "==", "open")
       );
 
-      const winningSelectionId = resolveMatchWinnerSelectionId(homeScore, awayScore);
+      // Group bets by market
+      const betsByMarket = new Map<string, Bet[]>();
+      for (const betDoc of openBetsSnap.docs) {
+        const bet = betDoc.data() as Bet;
+        if (!betsByMarket.has(bet.marketId)) betsByMarket.set(bet.marketId, []);
+        betsByMarket.get(bet.marketId)!.push(bet);
+      }
 
-      // For each winning bet we'll need to read (and later update) that
-      // bettor's wallet — a second round of reads, still before any writes.
-      const winningBets = openBetsSnap.docs.filter(
-        (d) => (d.data() as Bet).selectionId === winningSelectionId
-      );
+      // Read wallets for all bettors
       const walletRefsByUid = new Map(
-        winningBets.map((d) => {
+        openBetsSnap.docs.map((d) => {
           const uid = (d.data() as Bet).uid;
           return [uid, adminDb.collection("wallets").doc(uid)] as const;
         })
@@ -69,52 +73,115 @@ export async function POST(request: NextRequest) {
         Array.from(walletRefsByUid.keys()).map((uid, i) => [uid, walletSnaps[i]!.data() as Wallet])
       );
 
-      // ---- Writes (only after every read above has completed) -------------
+      // ---- Writes ---------------------------------------------------------
       const now = Date.now();
 
       tx.update(matchRef, { status: "settled", homeScore, awayScore, updatedAt: now });
-      tx.update(marketDoc.ref, { status: "settled", updatedAt: now });
 
-      for (const betDoc of openBetsSnap.docs) {
-        const bet = betDoc.data() as Bet;
-        const won = bet.selectionId === winningSelectionId;
+      let betsSettled = 0;
 
-        tx.update(betDoc.ref, {
-          status: won ? "won" : "lost",
-          settledAt: now,
-        });
+      // Settle each market
+      for (const marketDoc of marketsSnap.docs) {
+        const market = marketDoc.data() as Market;
+        tx.update(marketDoc.ref, { status: "settled", updatedAt: now });
 
-        if (won) {
-          const wallet = walletsByUid.get(bet.uid)!;
-          const newBalance = wallet.balance + bet.potentialPayout;
+        const marketBets = betsByMarket.get(market.id) ?? [];
+        if (marketBets.length === 0) continue;
 
-          tx.update(walletRefsByUid.get(bet.uid)!, {
-            balance: newBalance,
-            // A payout that brings the balance back above zero cancels any
-            // in-progress reset cooldown — the wallet isn't empty anymore.
-            resetPendingSince: newBalance > 0 ? null : wallet.resetPendingSince,
-            updatedAt: now,
-          });
+        // Determine winning selection based on market type
+        let winningSelectionId: string | null = null;
+        let isRefund = false;
+
+        switch (market.type) {
+          case "match_winner":
+            winningSelectionId = resolveMatchWinnerSelectionId(homeScore, awayScore);
+            break;
+          case "double_chance":
+            winningSelectionId = resolveDoubleChanceSelectionId(homeScore, awayScore);
+            break;
+          case "draw_no_bet": {
+            const result = resolveDrawNoBetSelectionId(homeScore, awayScore);
+            if (result === "refund") {
+              isRefund = true;
+            } else {
+              winningSelectionId = result;
+            }
+            break;
+          }
+          case "over_under": {
+            const line = (market as any).line ?? 2.5;
+            winningSelectionId = resolveOverUnderSelectionId(homeScore, awayScore, line);
+            break;
+          }
+          case "both_teams_to_score":
+            winningSelectionId = resolveBTSSelectionId(homeScore, awayScore);
+            break;
+          default:
+            continue; // Skip unknown market types
+        }
+
+        // Settle bets for this market
+        for (const bet of marketBets) {
+          const betRef = adminDb.collection("bets").doc(bet.id);
           
-          const transactionRef = adminDb.collection("transactions").doc();
-          const transaction: Transaction = {
-            id: transactionRef.id,
-            uid: bet.uid,
-            type: "payout",
-            amount: bet.potentialPayout,
-            balanceAfter: newBalance,
-            betId: bet.id,
-            createdAt: now,
-          };
-          tx.set(transactionRef, transaction);
+          if (isRefund) {
+            // Refund the stake
+            tx.update(betRef, { status: "void", settledAt: now });
+            
+            const wallet = walletsByUid.get(bet.uid)!;
+            const newBalance = wallet.balance + bet.stake;
 
-          // Keep this bet's own record consistent even if the wallet
-          // receives multiple payouts in the same transaction.
-          walletsByUid.set(bet.uid, { ...wallet, balance: newBalance });
+            tx.update(walletRefsByUid.get(bet.uid)!, {
+              balance: newBalance,
+              resetPendingSince: newBalance > 0 ? null : wallet.resetPendingSince,
+              updatedAt: now,
+            });
+
+            const transactionRef = adminDb.collection("transactions").doc();
+            const transaction: Transaction = {
+              id: transactionRef.id,
+              uid: bet.uid,
+              type: "refund",
+              amount: bet.stake,
+              balanceAfter: newBalance,
+              betId: bet.id,
+              createdAt: now,
+            };
+            tx.set(transactionRef, transaction);
+            walletsByUid.set(bet.uid, { ...wallet, balance: newBalance });
+          } else {
+            const won = bet.selectionId === winningSelectionId;
+            tx.update(betRef, { status: won ? "won" : "lost", settledAt: now });
+
+            if (won) {
+              const wallet = walletsByUid.get(bet.uid)!;
+              const newBalance = wallet.balance + bet.potentialPayout;
+
+              tx.update(walletRefsByUid.get(bet.uid)!, {
+                balance: newBalance,
+                resetPendingSince: newBalance > 0 ? null : wallet.resetPendingSince,
+                updatedAt: now,
+              });
+
+              const transactionRef = adminDb.collection("transactions").doc();
+              const transaction: Transaction = {
+                id: transactionRef.id,
+                uid: bet.uid,
+                type: "payout",
+                amount: bet.potentialPayout,
+                balanceAfter: newBalance,
+                betId: bet.id,
+                createdAt: now,
+              };
+              tx.set(transactionRef, transaction);
+              walletsByUid.set(bet.uid, { ...wallet, balance: newBalance });
+            }
+          }
+          betsSettled++;
         }
       }
 
-      return { alreadySettled: false, betsSettled: openBetsSnap.size };
+      return { alreadySettled: false, betsSettled };
     });
 
     return NextResponse.json({ ok: true, ...result });
