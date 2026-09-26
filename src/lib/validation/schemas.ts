@@ -48,3 +48,8 @@ export const bulkImportSchema = z.object({
     .max(200),
 });
 export type BulkImportInput = z.infer<typeof bulkImportSchema>;
+export const hideBetSchema = z.object({
+  betId: z.string().min(1),
+  hidden: z.boolean(),
+});
+export type HideBetInput = z.infer<typeof hideBetSchema>;
