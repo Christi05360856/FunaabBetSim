@@ -43,75 +43,146 @@ const SUCCESS: Record<ConfirmType, string> = {
 const isValidScore = (s: string) => /^\d{1,2}$/.test(s);
 
 // ---- Inline "Add Market" form -----------------------------------------------
-function MarketCreator({ matchId, onCreated }: { matchId: string; onCreated: () => void }) {
-  const [marketType, setMarketType] = useState<"match_winner" | "over_under" | "double_chance" | "draw_no_bet">("match_winner");
-  const [line, setLine] = useState("2.5");
-  const [odds, setOdds] = useState<Record<string, string>>({});
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const OU_LINES = [0.5, 1.5, 2.5, 3.5, 4.5];
 
-  const marketConfigs = {
-    match_winner: {
-      selections: [
-        { id: "home", label: "Home", defaultOdds: "2.00" },
-        { id: "draw", label: "Draw", defaultOdds: "3.20" },
-        { id: "away", label: "Away", defaultOdds: "3.50" },
-      ],
+// Standard grid an admin can offer Correct Score odds for, plus three
+// "any other" catch-all buckets so a scoreline outside the grid (5-3, 6-0,
+// 7-1…) still has somewhere to settle. Ids use "H-A" to match exactly what
+// settle/route.ts's resolveCorrectScoreOutcome() produces from the final score.
+const CORRECT_SCORES = [
+  "1-0", "2-0", "2-1", "3-0", "3-1", "3-2", "4-0", "4-1", "4-2", "4-3",
+  "0-0", "1-1", "2-2", "3-3", "4-4",
+  "0-1", "0-2", "1-2", "0-3", "1-3", "2-3", "0-4", "1-4", "2-4", "3-4",
+];
+
+type MarketTypeChoice = "match_winner" | "over_under" | "double_chance" | "draw_no_bet" | "both_teams_to_score" | "correct_score";
+
+function marketConfigFor(marketType: MarketTypeChoice) {
+  switch (marketType) {
+    case "match_winner":
+      return {
+        selections: [
+          { id: "home", label: "Home", defaultOdds: "2.00" },
+          { id: "draw", label: "Draw", defaultOdds: "3.20" },
+          { id: "away", label: "Away", defaultOdds: "3.50" },
+        ],
+      };
+    case "double_chance":
+      return {
+        selections: [
+          { id: "home_draw", label: "1X", defaultOdds: "1.30" },
+          { id: "home_away", label: "12", defaultOdds: "1.25" },
+          { id: "draw_away", label: "X2", defaultOdds: "1.40" },
+        ],
+      };
+    case "draw_no_bet":
+      return {
+        selections: [
+          { id: "home", label: "Home", defaultOdds: "1.80" },
+          { id: "away", label: "Away", defaultOdds: "2.10" },
+        ],
+      };
+    case "over_under":
+      return {
+        selections: [
+          { id: "over", label: "Over", defaultOdds: "1.90" },
+          { id: "under", label: "Under", defaultOdds: "1.90" },
+        ],
+      };
+    case "both_teams_to_score":
+      return {
+        selections: [
+          { id: "yes", label: "Yes", defaultOdds: "1.80" },
+          { id: "no", label: "No", defaultOdds: "1.90" },
+        ],
+      };
+    case "correct_score":
+      return {
+        selections: [
+          ...CORRECT_SCORES.map((score) => ({ id: score, label: score.replace("-", ":"), defaultOdds: "9.00" })),
+          { id: "other_home", label: "Any other home win", defaultOdds: "15.00" },
+          { id: "other_away", label: "Any other away win", defaultOdds: "17.00" },
+          { id: "other_draw", label: "Any other draw", defaultOdds: "21.00" },
+        ],
+      };
+  }
+}
+
+// Simple, standalone starting-point odds per goal line — Over/Under can't be
+// derived from 1X2 odds (they answer different questions: who wins vs. total
+// goals), so these are just a reasonable default an admin can tweak, not a
+// calculation off the 1X2 prices.
+const OU_DEFAULTS: Record<number, { over: string; under: string }> = {
+  0.5: { over: "1.25", under: "3.80" },
+  1.5: { over: "1.55", under: "2.40" },
+  2.5: { over: "1.90", under: "1.90" },
+  3.5: { over: "2.60", under: "1.45" },
+  4.5: { over: "3.60", under: "1.22" },
+};
+
+// Double Chance and Draw No Bet, unlike Over/Under, genuinely are just a
+// recombination of the same three win/draw/loss probabilities as 1X2 — so
+// these are a real derivation, not a guess.
+function deriveFromMatchWinner(homeOdds: number, drawOdds: number, awayOdds: number) {
+  const pHome = 1 / homeOdds;
+  const pDraw = 1 / drawOdds;
+  const pAway = 1 / awayOdds;
+  const round2 = (n: number) => Math.min(1000, Math.max(1.01, Math.round(n * 100) / 100));
+  return {
+    doubleChance: {
+      home_draw: round2(1 / (pHome + pDraw)),
+      home_away: round2(1 / (pHome + pAway)),
+      draw_away: round2(1 / (pDraw + pAway)),
     },
-    double_chance: {
-      selections: [
-        { id: "home_draw", label: "1X", defaultOdds: "1.30" },
-        { id: "home_away", label: "12", defaultOdds: "1.25" },
-        { id: "draw_away", label: "X2", defaultOdds: "1.40" },
-      ],
-    },
-    draw_no_bet: {
-      selections: [
-        { id: "home", label: "Home", defaultOdds: "1.80" },
-        { id: "away", label: "Away", defaultOdds: "2.10" },
-      ],
-    },
-    over_under: {
-      selections: [
-        { id: "over", label: "Over", defaultOdds: "1.90" },
-        { id: "under", label: "Under", defaultOdds: "1.90" },
-      ],
+    drawNoBet: {
+      home: round2(1 / (pHome / (pHome + pAway))),
+      away: round2(1 / (pAway / (pHome + pAway))),
     },
   };
+}
 
-  const config = marketConfigs[marketType];
+function MarketCreator({ matchId, onCreated }: { matchId: string; onCreated: () => void }) {
+  const [marketType, setMarketType] = useState<MarketTypeChoice>("match_winner");
+  const [line, setLine] = useState<number>(2.5);
+  const [odds, setOdds] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const config = marketConfigFor(marketType);
+
+  async function postMarket(type: MarketTypeChoice, selections: { id: string; label: string; odds: number }[], marketLine?: number) {
+    const idToken = await auth.currentUser?.getIdToken();
+    const body: Record<string, unknown> = { matchId, type, selections };
+    if (type === "over_under" && marketLine !== undefined) body.line = marketLine;
+    const response = await fetch("/api/admin/markets", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Failed to create market");
+    return data;
+  }
 
   async function handleCreate() {
     setSubmitting(true);
     setError(null);
+    setStatus(null);
     try {
-      const idToken = await auth.currentUser?.getIdToken();
       const selections = config.selections.map((s) => ({
         id: s.id,
         label: s.label,
         odds: parseFloat(odds[s.id] || s.defaultOdds),
       }));
-
-      const body: Record<string, unknown> = { matchId, type: marketType, selections };
-      if (marketType === "over_under") {
-        body.line = parseFloat(line);
-      }
-
-      const response = await fetch("/api/admin/markets", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to create market");
-      }
-
-      onCreated();
+      await postMarket(marketType, selections, marketType === "over_under" ? line : undefined);
+      setStatus(
+        marketType === "over_under"
+          ? `${line} goals market created — pick another line or market type to keep going.`
+          : "Market created — pick another market type to keep going."
+      );
+      setOdds({});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create market");
     } finally {
@@ -119,24 +190,111 @@ function MarketCreator({ matchId, onCreated }: { matchId: string; onCreated: () 
     }
   }
 
+  async function handleGenerateFromMatchWinner() {
+    const homeOdds = parseFloat(odds.home || config.selections[0]?.defaultOdds || "");
+    const drawOdds = parseFloat(odds.draw || config.selections[1]?.defaultOdds || "");
+    const awayOdds = parseFloat(odds.away || config.selections[2]?.defaultOdds || "");
+    if (!homeOdds || !drawOdds || !awayOdds) {
+      setError("Enter Home, Draw and Away odds first.");
+      return;
+    }
+    setGenerating(true);
+    setError(null);
+    setStatus(null);
+    const results: string[] = [];
+
+    async function attempt(label: string, fn: () => Promise<unknown>) {
+      try {
+        await fn();
+        results.push(`${label} ✓`);
+      } catch (err) {
+        results.push(`${label} — ${err instanceof Error ? err.message : "failed"}`);
+      }
+    }
+
+    await attempt("Match Winner", () =>
+      postMarket("match_winner", [
+        { id: "home", label: "Home", odds: homeOdds },
+        { id: "draw", label: "Draw", odds: drawOdds },
+        { id: "away", label: "Away", odds: awayOdds },
+      ])
+    );
+
+    const derived = deriveFromMatchWinner(homeOdds, drawOdds, awayOdds);
+
+    await attempt("Double Chance", () =>
+      postMarket("double_chance", [
+        { id: "home_draw", label: "1X", odds: derived.doubleChance.home_draw },
+        { id: "home_away", label: "12", odds: derived.doubleChance.home_away },
+        { id: "draw_away", label: "X2", odds: derived.doubleChance.draw_away },
+      ])
+    );
+
+    await attempt("Draw No Bet", () =>
+      postMarket("draw_no_bet", [
+        { id: "home", label: "Home", odds: derived.drawNoBet.home },
+        { id: "away", label: "Away", odds: derived.drawNoBet.away },
+      ])
+    );
+
+    for (const l of OU_LINES) {
+      const d = OU_DEFAULTS[l]!;
+      await attempt(`Over/Under ${l}`, () =>
+        postMarket(
+          "over_under",
+          [
+            { id: "over", label: "Over", odds: parseFloat(d.over) },
+            { id: "under", label: "Under", odds: parseFloat(d.under) },
+          ],
+          l
+        )
+      );
+    }
+
+    setGenerating(false);
+    setStatus(results.join(" · "));
+    onCreated();
+  }
+
   return (
     <div className="mt-3 rounded-lg bg-adm-raised p-3">
       <p className="mb-2 text-sm font-semibold">Add Market</p>
 
       <div className="mb-3 flex gap-2">
-        <Select value={marketType} onChange={(e) => setMarketType(e.target.value as typeof marketType)} className="flex-1">
+        <Select
+          value={marketType}
+          onChange={(e) => {
+            setMarketType(e.target.value as MarketTypeChoice);
+            setOdds({});
+            setStatus(null);
+            setError(null);
+          }}
+          className="flex-1"
+        >
           <option value="match_winner">Match Winner (1X2)</option>
           <option value="over_under">Over/Under</option>
           <option value="double_chance">Double Chance</option>
           <option value="draw_no_bet">Draw No Bet</option>
+          <option value="both_teams_to_score">Both Teams to Score</option>
+          <option value="correct_score">Correct Score</option>
         </Select>
 
         {marketType === "over_under" && (
-          <Input type="number" step="0.5" value={line} onChange={(e) => setLine(e.target.value)} placeholder="Line" className="w-20" />
+          <Select value={line} onChange={(e) => setLine(Number(e.target.value))} className="w-28">
+            {OU_LINES.map((l) => (
+              <option key={l} value={l}>{l} goals</option>
+            ))}
+          </Select>
         )}
       </div>
 
-      <div className="mb-3 grid grid-cols-2 gap-2">
+      {marketType === "match_winner" && (
+        <p className="mb-2 text-xs text-adm-muted">
+          Fill these three in, then use "Generate other markets" below to auto-create Double Chance, Draw No Bet and all five Over/Under lines from them.
+        </p>
+      )}
+
+      <div className={`mb-3 grid gap-2 ${marketType === "correct_score" ? "grid-cols-3" : "grid-cols-2"}`}>
         {config.selections.map((s) => (
           <div key={s.id}>
             <label className="text-xs text-adm-muted">{s.label}</label>
@@ -152,10 +310,18 @@ function MarketCreator({ matchId, onCreated }: { matchId: string; onCreated: () 
       </div>
 
       {error && <p className="mb-2 text-sm text-adm-bad">{error}</p>}
+      {status && <p className="mb-2 text-sm text-adm-ok">{status}</p>}
 
-      <Button onClick={handleCreate} disabled={submitting} className="w-full">
-        {submitting ? "Creating…" : "Create Market"}
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={handleCreate} disabled={submitting || generating} className="flex-1">
+          {submitting ? "Creating…" : "Create Market"}
+        </Button>
+        {marketType === "match_winner" && (
+          <Button variant="secondary" onClick={handleGenerateFromMatchWinner} disabled={submitting || generating} className="flex-1">
+            {generating ? "Generating…" : "Generate other markets"}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
