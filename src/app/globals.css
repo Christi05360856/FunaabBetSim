@@ -30,6 +30,44 @@
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Admin theme — driven by data-admin-theme on the AdminThemeProvider */
+/* ------------------------------------------------------------------ */
+
+[data-admin-theme="dark"] {
+  --adm-color-bg: #0B1210;
+  --adm-color-surface: #151F1A;
+  --adm-color-raised: #1C2820;
+  --adm-color-ink: #F2F4F3;
+  --adm-color-muted: #93A398;
+  --adm-color-faint: #6B7B70;
+  --adm-color-line: #243028;
+  --adm-color-line-strong: #2E3D34;
+  --adm-color-brand: #34A874;
+  --adm-color-brand-ink: #5BC98A;
+  --adm-color-ok: #34A874;
+  --adm-color-warn: #E0BB63;
+  --adm-color-bad: #E14848;
+  --adm-color-info: #5B9BD5;
+}
+
+[data-admin-theme="light"] {
+  --adm-color-bg: #F4F5F3;
+  --adm-color-surface: #FFFFFF;
+  --adm-color-raised: #F0F2EF;
+  --adm-color-ink: #14181B;
+  --adm-color-muted: #667066;
+  --adm-color-faint: #8A968A;
+  --adm-color-line: #E2E6E0;
+  --adm-color-line-strong: #C8D0C6;
+  --adm-color-brand: #1F7A4D;
+  --adm-color-brand-ink: #155C39;
+  --adm-color-ok: #1E9E5A;
+  --adm-color-warn: #C89B3C;
+  --adm-color-bad: #E14848;
+  --adm-color-info: #3B7EA1;
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
 }
