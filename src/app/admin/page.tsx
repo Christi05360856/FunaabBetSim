@@ -30,7 +30,8 @@ type ApiBody = {
   betsRefunded?: number;
 };
 
-const plural = (n: number, word: string) => `${n} \( {word} \){n === 1 ? "" : "s"}`;
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 // Turns the API's raw counts into a readable toast message.
 function summarize(d: ApiBody, fallback: string): string {
