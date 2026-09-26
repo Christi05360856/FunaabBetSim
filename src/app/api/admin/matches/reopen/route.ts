@@ -15,21 +15,22 @@ export async function POST(request: NextRequest) {
   const { matchId } = parsed.data;
   const ref = adminDb.collection("matches").doc(matchId);
   const snap = await ref.get();
-  
+
   if (!snap.exists) return NextResponse.json({ error: "Match not found" }, { status: 404 });
-  
+
   const match = snap.data()!;
   if (!["settled", "voided"].includes(match.status)) {
     return NextResponse.json({ error: "Match is not in a final state" }, { status: 400 });
   }
 
   // Note: This does not reverse bet settlements. Use only for testing corrections.
-  await ref.update({ 
-    status: "open", 
-    homeScore: null, 
+  await ref.update({
+    status: "open",
+    homeScore: null,
     awayScore: null,
-    updatedAt: Date.now() 
+    currentHomeScore: null,
+    currentAwayScore: null,
+    updatedAt: Date.now(),
   });
   return NextResponse.json({ ok: true, message: "Match reopened" });
 }
-
