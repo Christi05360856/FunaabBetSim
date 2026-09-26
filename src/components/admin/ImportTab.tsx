@@ -17,23 +17,32 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
  * Avoids browser-timezone drift from `new Date("...T...")`.
  */
 function parseWatKickoff(dateStr: string): number {
-  const [datePart, timePart] = dateStr.split(" ");
-  const [y, mo, d] = datePart.split("-").map(Number);
-  const [h, mi] = timePart.split(":").map(Number);
-  // WAT = UTC+1 → UTC ms = Date.UTC(...) minus 1 hour
+  const parts = dateStr.split(" ");
+  const datePart = parts[0] ?? "";
+  const timePart = parts[1] ?? "";
+  const dateBits = datePart.split("-").map(Number);
+  const timeBits = timePart.split(":").map(Number);
+  const y = dateBits[0] ?? 0;
+  const mo = dateBits[1] ?? 1;
+  const d = dateBits[2] ?? 1;
+  const h = timeBits[0] ?? 0;
+  const mi = timeBits[1] ?? 0;
+  // WAT = UTC+1 → store as UTC ms
   return Date.UTC(y, mo - 1, d, h - 1, mi, 0, 0);
 }
 
 function formatWatPreview(ts: number): string {
-  return new Date(ts).toLocaleString("en-NG", {
-    timeZone: "Africa/Lagos",
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  }) + " WAT";
+  return (
+    new Date(ts).toLocaleString("en-NG", {
+      timeZone: "Africa/Lagos",
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    }) + " WAT"
+  );
 }
 
 function parseLine(raw: string, line: number): ParsedLine {
@@ -41,7 +50,9 @@ function parseLine(raw: string, line: number): ParsedLine {
   if (parts.length !== 3) {
     return { line, error: "Use: Home; Away; YYYY-MM-DD HH:mm (24-hour, WAT)" };
   }
-  const [home, away, date] = parts as [string, string, string];
+  const home = parts[0] ?? "";
+  const away = parts[1] ?? "";
+  const date = parts[2] ?? "";
   if (!home || !away) return { line, error: "Both team names are required" };
   if (home.toLowerCase() === away.toLowerCase()) return { line, error: "A team can't play itself" };
   if (!DATE_RE.test(date)) {
