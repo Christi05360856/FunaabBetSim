@@ -60,6 +60,35 @@ export function resolveBTSSelectionId(
   return homeScore > 0 && awayScore > 0 ? "yes" : "no";
 }
 
+// ---- Early ("clinched") settlement from an interim live score ------------
+// Goals only ever increase during a match, so some outcomes become
+// mathematically locked in before full time — e.g. once the live score
+// already totals 4 goals, an Over 3.5 bet has won no matter what happens
+// afterward, and Under 3.5 has lost. This is ONLY true in the "already
+// happened" direction: a total of 2 goals does NOT mean Under 3.5 has won,
+// because more goals can still be scored. Same logic for Both Teams to
+// Score: once both sides have scored, "Yes" is locked in; "No" is never
+// clinched early, since the team that hasn't scored yet still can.
+// Match Winner, Double Chance, Draw No Bet, and Correct Score are never
+// safe to clinch early — a scoreline can still change before full time.
+
+/** Only the "over" side of a line can ever be clinched mid-match — never "under". */
+export function resolveClinchedOverUnderWinners(currentTotalGoals: number, selectionIds: string[]): string[] {
+  const winners: string[] = [];
+  for (const id of selectionIds) {
+    const match = /^over_(\d+(?:\.\d+)?)$/.exec(id);
+    if (!match) continue;
+    const line = Number(match[1]);
+    if (currentTotalGoals > line) winners.push(id);
+  }
+  return winners;
+}
+
+/** Only "yes" can ever be clinched mid-match — "no" always stays open until full time. */
+export function resolveClinchedBTS(currentHomeScore: number, currentAwayScore: number): "yes" | null {
+  return currentHomeScore > 0 && currentAwayScore > 0 ? "yes" : null;
+}
+
 // Correct Score — an admin only ever offers a finite grid of scorelines
 // (e.g. up to 4-3/3-4) plus optional "any other" catch-all buckets. This
 // returns the exact scoreline id ("home-away") and, separately, which
