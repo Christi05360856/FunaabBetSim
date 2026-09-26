@@ -6,7 +6,7 @@ import {
   resolveMatchWinnerSelectionId,
   resolveDoubleChanceSelectionIds,
   resolveDrawNoBetSelectionId,
-  resolveOverUnderSelectionId,
+  resolveOverUnderLadderWinners,
   resolveBTSSelectionId,
   resolveCorrectScoreOutcome,
 } from "@/lib/domain/settlement";
@@ -112,8 +112,8 @@ export async function POST(request: NextRequest) {
             break;
           }
           case "over_under": {
-            const line = (market as any).line ?? 2.5;
-            winningSelectionIds = [resolveOverUnderSelectionId(homeScore, awayScore, line)];
+            const totalGoals = homeScore + awayScore;
+            winningSelectionIds = resolveOverUnderLadderWinners(totalGoals, market.selections.map((s) => s.id));
             break;
           }
           case "both_teams_to_score":
