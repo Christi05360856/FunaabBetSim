@@ -7,6 +7,7 @@ import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/auth/AuthContext";
 import type { Bet, Team, Match } from "@/types/domain";
 import { deriveClockState } from "@/lib/domain/matchClock";
+import Link from "next/link";
 
 const STATUS_BADGE: Record<Bet["status"], string> = {
   open: "bg-ink-muted/15 text-ink-muted",
