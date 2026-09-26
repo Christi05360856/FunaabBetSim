@@ -150,14 +150,10 @@ export interface Transaction {
   createdAt: number;
 }
 
-// Add Over/Under line type:
-export interface OverUnderMarket extends Market {
-  type: "over_under";
-  line: number; // e.g., 2.5 goals
-}
-
 // Selection IDs for different market types:
 // match_winner: "home" | "draw" | "away"
 // double_chance: "home_draw" | "home_away" | "draw_away"
 // draw_no_bet: "home" | "away"
-// over_under: "over" | "under"
+// over_under: "over_<line>" | "under_<line>" (one market holds every line, e.g. "over_2.5", "under_2.5")
+// both_teams_to_score: "yes" | "no"
+// correct_score: "<home>-<away>" | "other_home" | "other_away" | "other_draw"
