@@ -9,15 +9,6 @@ import { deriveClockState, isBettingOpen } from "@/lib/domain/matchClock";
 import { BetPanel } from "@/components/BetPanel";
 import { usePlaceBet } from "@/lib/hooks/usePlaceBet";
 
-type MarketTab = "match_winner" | "over_under" | "double_chance" | "draw_no_bet";
-
-const MARKET_TABS: { key: MarketTab; label: string }[] = [
-  { key: "match_winner", label: "1X2" },
-  { key: "over_under", label: "O/U" },
-  { key: "double_chance", label: "DC" },
-  { key: "draw_no_bet", label: "DNB" },
-];
-
 export default function MatchDetailPage({ params }: { params: { matchId: string } }) {
   const { matchId } = params;
   const router = useRouter();
@@ -27,7 +18,6 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
   const [away, setAway] = useState<Team | null>(null);
   const [competition, setCompetition] = useState<Competition | null>(null);
   const [markets, setMarkets] = useState<Market[]>([]);
-  const [activeTab, setActiveTab] = useState<MarketTab>("match_winner");
   const bet = usePlaceBet();
 
   useEffect(() => {
@@ -38,15 +28,11 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
   }, [matchId]);
 
   useEffect(() => {
-    if (!match || !match.homeTeamId || !match.awayTeamId || !match.competitionId) return;
-    const unsubHome = onSnapshot(doc(db, "teams", match.homeTeamId), (s) => setHome(s.exists() ? (s.data() as Team) : null));
-    const unsubAway = onSnapshot(doc(db, "teams", match.awayTeamId), (s) => setAway(s.exists() ? (s.data() as Team) : null));
-    const unsubComp = onSnapshot(doc(db, "competitions", match.competitionId), (s) => setCompetition(s.exists() ? (s.data() as Competition) : null));
-    return () => {
-      unsubHome();
-      unsubAway();
-      unsubComp();
-    };
+    if (!match?.homeTeamId || !match?.awayTeamId || !match?.competitionId) return;
+    const u1 = onSnapshot(doc(db, "teams", match.homeTeamId), (s) => setHome(s.exists() ? (s.data() as Team) : null));
+    const u2 = onSnapshot(doc(db, "teams", match.awayTeamId), (s) => setAway(s.exists() ? (s.data() as Team) : null));
+    const u3 = onSnapshot(doc(db, "competitions", match.competitionId), (s) => setCompetition(s.exists() ? (s.data() as Competition) : null));
+    return () => { u1(); u2(); u3(); };
   }, [match]);
 
   useEffect(() => {
@@ -72,7 +58,7 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
     );
   }
 
-  if (match === null || !match.homeTeamId || !match.awayTeamId || !match.competitionId || !match.kickoffAt) {
+  if (match === null || !match.homeTeamId || !match.awayTeamId || !match.competitionId) {
     return (
       <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 px-4 text-center">
         <p className="font-medium">Fixture not found</p>
@@ -85,110 +71,127 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
 
   const clock = deriveClockState(match, now);
   const canBet = isBettingOpen(match, now);
-  const isLive = clock.phase === "first_half" || clock.phase === "second_half";
-  
-  const activeMarket = markets.find((m) => m.type === activeTab);
+  const isLive = ["live", "halftime", "second_half"].includes(match.status);
+
+  const hasLiveScore = match.currentHomeScore != null && match.currentAwayScore != null;
+  const hasFinalScore = match.status === "settled" && match.homeScore != null;
+  const displayScore = hasFinalScore
+    ? `${match.homeScore} – ${match.awayScore}`
+    : hasLiveScore
+      ? `${match.currentHomeScore} – ${match.currentAwayScore}`
+      : null;
+
+  // Group markets by type for display
+  const marketByType = (type: string) => markets.find((m) => m.type === type);
+  const ouMarkets = markets.filter((m) => m.type === "over_under");
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col pb-28">
-      {/* Hero */}
-      <div className="bg-gradient-to-b from-brand to-brand-dark px-4 pb-6 pt-4 text-white">
-        <button onClick={() => router.back()} className="mb-3 flex items-center gap-1 text-sm text-white/80">
-          <BackIcon /> Back
-        </button>
-        <p className="text-center text-xs font-medium uppercase tracking-wide text-white/70">
-          {competition?.name ?? "…"}
-        </p>
-        <div className="mt-3 flex items-center justify-center gap-4">
-          <p className="flex-1 text-right text-base font-semibold leading-tight">{home?.name ?? "Home"}</p>
-          <span className="shrink-0 rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
-            {clock.display}
-          </span>
-          <p className="flex-1 text-left text-base font-semibold leading-tight">{away?.name ?? "Away"}</p>
+      {/* Header — SportyBet style */}
+      <div className="bg-brand px-4 pb-5 pt-4 text-white">
+        <div className="flex items-center gap-3">
+          <button onClick={() => router.back()} className="text-white" aria-label="Back">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <p className="flex-1 text-center text-xs font-medium uppercase tracking-wide text-white/70">
+            {competition?.name ?? "…"}
+          </p>
+          <div className="w-[22px]" />
         </div>
-        {isLive && (
-          <p className="mt-2 flex items-center justify-center gap-1.5 text-xs font-medium text-white/80">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" /> Live now
-          </p>
-        )}
-        {match.status === "settled" && match.homeScore !== null && (
-          <p className="mt-2 text-center font-display text-2xl font-bold">
-            {match.homeScore} – {match.awayScore}
-          </p>
-        )}
-      </div>
 
-      {/* Market Tabs */}
-      <div className="flex border-b border-ink-muted/10 bg-surface">
-        {MARKET_TABS.map((tab) => {
-          const hasMarket = markets.some((m) => m.type === tab.key);
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex-1 py-3 text-sm font-semibold transition-colors ${
-                activeTab === tab.key
-                  ? "text-brand border-b-2 border-brand"
-                  : "text-ink-muted"
-              } ${!hasMarket ? "opacity-50" : ""}`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Market Content */}
-      <div className="flex flex-col gap-3 px-4 pt-4">
-        {!activeMarket ? (
-          <div className="rounded-2xl bg-surface p-4 text-center text-sm text-ink-muted shadow-card">
-            Odds haven&apos;t been set for this market yet.
-          </div>
-        ) : (
-          <div className="rounded-2xl bg-surface p-4 shadow-card">
-            {/* Market header with line for O/U */}
-            {activeMarket.type === "over_under" && (
-              <p className="mb-3 text-center text-xs font-medium text-ink-muted">
-                Total Goals Line: {(activeMarket as any).line ?? 2.5}
+        <div className="mt-4 flex items-center justify-center gap-4">
+          <p className="flex-1 text-right text-base font-semibold leading-tight">
+            {home?.name ?? "Home"}
+          </p>
+          <div className="shrink-0 text-center">
+            {displayScore ? (
+              <p className="font-display text-2xl font-bold">{displayScore}</p>
+            ) : (
+              <p className="text-sm font-bold">{clock.display}</p>
+            )}
+            {isLive && (
+              <p className="mt-0.5 flex items-center justify-center gap-1 text-[10px] font-medium text-white/80">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" /> Live
               </p>
             )}
-            
-            <div className="flex gap-2">
-              {activeMarket.selections.map((selection) => {
-                const isPicked = bet.picked?.selection.id === selection.id;
+          </div>
+          <p className="flex-1 text-left text-base font-semibold leading-tight">
+            {away?.name ?? "Away"}
+          </p>
+        </div>
+      </div>
+
+      {/* All Markets — stacked vertically like SportyBet */}
+      <div className="flex flex-col gap-4 px-4 pt-4">
+        {/* 1X2 */}
+        <MarketSection title="1X2" market={marketByType("match_winner")} canBet={canBet} bet={bet} matchId={match.id} />
+
+        {/* Double Chance */}
+        <MarketSection title="Double Chance" market={marketByType("double_chance")} canBet={canBet} bet={bet} matchId={match.id} />
+
+        {/* Draw No Bet */}
+        <MarketSection title="Draw No Bet" market={marketByType("draw_no_bet")} canBet={canBet} bet={bet} matchId={match.id} />
+
+        {/* Over/Under — all lines */}
+        {ouMarkets.length > 0 && (
+          <div className="rounded-2xl bg-surface p-4 shadow-card">
+            <p className="mb-3 text-sm font-bold">Over/Under</p>
+            <div className="flex flex-col gap-2">
+              {ouMarkets.map((m) => {
+                const line = (m as any).line ?? 2.5;
                 return (
-                  <button
-                    key={selection.id}
-                    disabled={!canBet}
-                    onClick={() => bet.pick(match.id, activeMarket.id, selection)}
-                    className={`flex flex-1 flex-col items-center gap-0.5 rounded-xl py-3 transition-colors ${
-                      !canBet
-                        ? "bg-ink-muted/10 text-ink-muted"
-                        : isPicked
-                          ? "bg-brand text-white"
-                          : "bg-brand/10 text-brand active:bg-brand/20"
-                    }`}
-                  >
-                    <span className={`text-xs font-medium ${isPicked ? "text-white/80" : "text-ink-muted"}`}>
-                      {selection.label}
-                    </span>
-                    <span className="flex items-center gap-1 font-display text-lg font-bold tabular-nums">
-                      {!canBet && <LockIcon />}
-                      {selection.odds.toFixed(2)}
-                    </span>
-                  </button>
+                  <div key={m.id} className="flex items-center gap-2">
+                    <span className="w-12 text-xs font-medium text-ink-muted">{line}</span>
+                    <div className="flex flex-1 gap-2">
+                      {m.selections.map((s) => (
+                        <SelectionButton
+                          key={s.id}
+                          selection={s}
+                          canBet={canBet}
+                          isPicked={bet.picked?.selection.id === s.id && bet.picked?.marketId === m.id}
+                          onPick={() => bet.pick(match.id, m.id, s)}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 );
               })}
             </div>
-            {!canBet && (
-              <p className="mt-2.5 text-center text-xs text-ink-muted">
-                {match.status === "settled" ? "This match has been settled." : "Betting is closed for this match."}
-              </p>
-            )}
           </div>
         )}
 
-        {bet.picked && (
+        {/* Both Teams to Score */}
+        <MarketSection title="Both Teams to Score" market={marketByType("both_teams_to_score")} canBet={canBet} bet={bet} matchId={match.id} />
+
+        {/* Correct Score */}
+        {marketByType("correct_score") && (
+          <div className="rounded-2xl bg-surface p-4 shadow-card">
+            <p className="mb-3 text-sm font-bold">Correct Score</p>
+            <div className="grid grid-cols-3 gap-2">
+              {marketByType("correct_score")!.selections.map((s) => (
+                <SelectionButton
+                  key={s.id}
+                  selection={s}
+                  canBet={canBet}
+                  isPicked={bet.picked?.selection.id === s.id && bet.picked?.marketId === marketByType("correct_score")!.id}
+                  onPick={() => bet.pick(match.id, marketByType("correct_score")!.id, s)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {markets.length === 0 && (
+          <div className="rounded-2xl bg-surface p-4 text-center text-sm text-ink-muted shadow-card">
+            Odds haven&apos;t been set for this match yet.
+          </div>
+        )}
+      </div>
+
+      {bet.picked && (
+        <div className="fixed inset-x-4 bottom-20 z-40 mx-auto max-w-md">
           <BetPanel
             picked={bet.picked}
             homeLabel={home?.name ?? "Home"}
@@ -199,8 +202,8 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
             submitting={bet.submitting}
             onConfirm={bet.confirmBet}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       {bet.feedback && (
         <div className="fixed inset-x-4 bottom-20 z-40 mx-auto max-w-md animate-fade-in rounded-xl bg-ink px-4 py-3 text-center text-sm text-bg shadow-card">
@@ -211,18 +214,74 @@ export default function MatchDetailPage({ params }: { params: { matchId: string 
   );
 }
 
-function BackIcon() {
+function MarketSection({
+  title,
+  market,
+  canBet,
+  bet,
+  matchId,
+}: {
+  title: string;
+  market: Market | undefined;
+  canBet: boolean;
+  bet: ReturnType<typeof usePlaceBet>;
+  matchId: string;
+}) {
+  if (!market) return null;
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-      <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <div className="rounded-2xl bg-surface p-4 shadow-card">
+      <p className="mb-3 text-sm font-bold">{title}</p>
+      <div className="flex gap-2">
+        {market.selections.map((s) => (
+          <SelectionButton
+            key={s.id}
+            selection={s}
+            canBet={canBet}
+            isPicked={bet.picked?.selection.id === s.id && bet.picked?.marketId === market.id}
+            onPick={() => bet.pick(matchId, market.id, s)}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
-function LockIcon() {
+function SelectionButton({
+  selection,
+  canBet,
+  isPicked,
+  onPick,
+}: {
+  selection: { id: string; label: string; odds: number };
+  canBet: boolean;
+  isPicked: boolean;
+  onPick: () => void;
+}) {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" className="opacity-70">
-      <path d="M17 9V7a5 5 0 00-10 0v2a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2v-8a2 2 0 00-2-2zm-8-2a3 3 0 016 0v2H9V7z" />
-    </svg>
+    <button
+      type="button"
+      disabled={!canBet}
+      onClick={onPick}
+      className={
+        "flex flex-1 flex-col items-center gap-0.5 rounded-xl py-2.5 transition-colors " +
+        (!canBet
+          ? "bg-ink-muted/10 text-ink-muted"
+          : isPicked
+            ? "bg-brand text-white"
+            : "bg-brand/10 text-brand active:bg-brand/20")
+      }
+    >
+      <span className={"text-[11px] font-medium " + (isPicked ? "text-white/80" : "text-ink-muted")}>
+        {selection.label}
+      </span>
+      <span className="flex items-center gap-1 font-display text-base font-bold tabular-nums">
+        {!canBet && (
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" className="opacity-70">
+            <path d="M17 9V7a5 5 0 00-10 0v2a2 2 0 00-2 2v8a2 2 0 002 2h10a2 2 0 002-2v-8a2 2 0 00-2-2zm-8-2a3 3 0 016 0v2H9V7z" />
+          </svg>
+        )}
+        {selection.odds.toFixed(2)}
+      </span>
+    </button>
   );
 }
