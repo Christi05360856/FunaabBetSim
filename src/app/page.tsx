@@ -1,139 +1,177 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useAuth } from "@/lib/auth/AuthContext";
-import { useWallet } from "@/lib/hooks/useWallet";
+import { db } from "@/lib/firebase/client";
+import type { Team, Competition, Match } from "@/types/domain";
+import { Toast } from "@/components/admin/ui";
+import AdminLayout, { AdminThemeProvider, type AdminTabId } from "@/components/admin/AdminLayout";
+import OverviewTab from "@/components/admin/OverviewTab";
+import FixturesTab, { type FixtureFilter } from "@/components/admin/FixturesTab";
+import ImportTab from "@/components/admin/ImportTab";
+import DangerTab from "@/components/admin/DangerTab";
 
-export default function HomePage() {
+type AdminStatus = "checking" | "admin" | "not-admin";
+type PostResult = { ok: boolean; message: string };
+
+type ApiBody = {
+  message?: string;
+  error?: string;
+  teamsCreated?: number;
+  matchesCreated?: number;
+  matchesSkipped?: number;
+  alreadySettled?: boolean;
+  betsSettled?: number;
+  alreadyFinal?: boolean;
+  betsRefunded?: number;
+};
+
+const plural = (n: number, word: string) => `${n} \( {word} \){n === 1 ? "" : "s"}`;
+
+function summarize(d: ApiBody, fallback: string): string {
+  if (d.message) return d.message;
+  if (typeof d.matchesCreated === "number") {
+    const parts = [`${plural(d.matchesCreated, "fixture")} imported`];
+    if (d.matchesSkipped) parts.push(`${plural(d.matchesSkipped, "duplicate")} skipped`);
+    if (d.teamsCreated) parts.push(`${plural(d.teamsCreated, "new team")} added`);
+    return parts.join(" · ");
+  }
+  if (d.alreadySettled) return "Already settled — nothing changed";
+  if (typeof d.betsSettled === "number") return `Match settled · ${plural(d.betsSettled, "bet")} processed`;
+  if (d.alreadyFinal) return "Match was already final — nothing changed";
+  if (typeof d.betsRefunded === "number") return `Match voided · ${plural(d.betsRefunded, "bet")} refunded`;
+  return fallback;
+}
+
+export default function AdminPage() {
+  return (
+    <AdminThemeProvider>
+      <AdminApp />
+    </AdminThemeProvider>
+  );
+}
+
+function AdminApp() {
   const { user, loading } = useAuth();
-  const { wallet } = useWallet();
+  const router = useRouter();
+  const [adminStatus, setAdminStatus] = useState<AdminStatus>("checking");
+  const [tab, setTab] = useState<AdminTabId>("overview");
+  const [fixturesFilter, setFixturesFilter] = useState<FixtureFilter>("all");
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+    user
+      .getIdTokenResult(true)
+      .then((r) => setAdminStatus(r.claims.admin === true ? "admin" : "not-admin"))
+      .catch(() => setAdminStatus("not-admin"));
+  }, [user, loading, router]);
+
+  useEffect(() => {
+    if (adminStatus !== "admin") return;
+    const fail = (what: string) => (err: Error) => setToast({ msg: `Could not load ${what}: ${err.message}`, type: "error" });
+    const un = [
+      onSnapshot(query(collection(db, "teams"), orderBy("name")), (s) => setTeams(s.docs.map((d) => d.data() as Team)), fail("teams")),
+      onSnapshot(
+        query(collection(db, "competitions"), orderBy("name")),
+        (s) => setCompetitions(s.docs.map((d) => d.data() as Competition)),
+        fail("competitions")
+      ),
+      onSnapshot(query(collection(db, "matches"), orderBy("kickoffAt")), (s) => setMatches(s.docs.map((d) => d.data() as Match)), fail("fixtures")),
+    ];
+    return () => un.forEach((u) => u());
+  }, [adminStatus]);
+
+  function report(result: PostResult): PostResult {
+    setToast({ msg: result.message, type: result.ok ? "success" : "error" });
+    return result;
+  }
+
+  async function post(path: string, body: unknown, successMessage = "Done"): Promise<PostResult> {
+    if (!user) return report({ ok: false, message: "Not logged in" });
+    try {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${await user.getIdToken()}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json().catch(() => ({}))) as ApiBody;
+      return report(
+        res.ok ? { ok: true, message: summarize(data, successMessage) } : { ok: false, message: data.error ?? `Request failed (${res.status})` }
+      );
+    } catch {
+      return report({ ok: false, message: "Network problem — check your connection and try again" });
+    }
+  }
+
+  function goToFixtures(filter: FixtureFilter = "all") {
+    setFixturesFilter(filter);
+    setTab("fixtures");
+  }
+
+  const teamsById = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t])) as Record<string, Team>, [teams]);
+  const compsById = useMemo(
+    () => Object.fromEntries(competitions.map((c) => [c.id, c])) as Record<string, Competition>,
+    [competitions]
+  );
+
+  if (loading || adminStatus === "checking") {
+    return (
+      <main className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-adm-brand border-t-transparent" />
+      </main>
+    );
+  }
+
+  if (adminStatus === "not-admin") {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-3 px-4 text-center">
+        <p className="text-lg font-semibold">Access denied</p>
+        <p className="text-sm text-adm-muted">This account doesn&apos;t have admin access.</p>
+        <Link href="/" className="text-sm font-medium text-adm-brand-ink hover:underline">
+          Back to the app
+        </Link>
+      </main>
+    );
+  }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pt-5 pb-28">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-accent">Play money only</p>
-          <h1 className="font-display text-2xl font-bold">FUNAAB BetSim</h1>
-        </div>
-        {user && wallet && (
-          <Link
-            href="/dashboard"
-            className="rounded-full bg-surface px-4 py-2 font-display text-sm font-bold text-brand shadow-card"
-          >
-            ₦{wallet.balance.toLocaleString("en-NG")}
-          </Link>
+    <>
+      <AdminLayout tab={tab} onTabChange={setTab} email={user?.email ?? ""}>
+        {tab === "overview" && (
+          <OverviewTab
+            matches={matches}
+            teams={teams}
+            competitions={competitions}
+            teamsById={teamsById}
+            competitionsById={compsById}
+            onNavigateToFixtures={goToFixtures}
+          />
         )}
-      </div>
-
-      {/* Quick Action Icons */}
-      <div className="grid grid-cols-4 gap-3">
-        <QuickAction icon="⚽" label="All Sports" href="/fixtures" />
-        <QuickAction icon="🔴" label="Live" href="/fixtures?filter=live" />
-        <QuickAction icon="🎫" label="My Bets" href="/bets" />
-        <QuickAction icon="👤" label="Account" href="/dashboard" />
-      </div>
-
-      {/* Featured Section */}
-      <div className="rounded-2xl bg-gradient-to-br from-brand to-brand-dark p-5 text-white shadow-card">
-        <p className="text-sm font-medium text-white/70">Virtual Balance</p>
-        <p className="mt-1 font-display text-3xl font-bold">
-          {user && wallet ? `₦${wallet.balance.toLocaleString("en-NG")}` : "₦100,000"}
-        </p>
-        <p className="mt-2 text-sm text-white/70">
-          Practice betting with zero risk
-        </p>
-        {!user && !loading && (
-          <Link
-            href="/register"
-            className="mt-4 inline-block rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-brand"
-          >
-            Get Started
-          </Link>
+        {tab === "fixtures" && (
+          <FixturesTab
+            matches={matches}
+            teamsById={teamsById}
+            competitionsById={compsById}
+            onAction={post}
+            initialFilter={fixturesFilter}
+          />
         )}
-      </div>
+        {tab === "import" && <ImportTab competitions={competitions} onSubmit={(b) => post("/api/admin/matches/bulk-import", b)} />}
+        {tab === "danger" && <DangerTab onReset={() => post("/api/admin/dev/reset", {}, "Platform reset complete")} />}
+      </AdminLayout>
 
-      {/* Quick Filter Chips */}
-      <div>
-        <h2 className="mb-3 text-sm font-semibold text-ink-muted">Quick Filters</h2>
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
-          <FilterChip label="Today's Football" href="/fixtures?filter=today" />
-          <FilterChip label="Live Now" href="/fixtures?filter=live" />
-          <FilterChip label="Hot Matches" href="/fixtures?filter=hot" />
-          <FilterChip label="All Fixtures" href="/fixtures" />
-        </div>
-      </div>
-
-      {/* CTA for logged out users */}
-      {!user && !loading && (
-        <div className="flex flex-col gap-3">
-          <Link
-            href="/register"
-            className="rounded-xl bg-brand px-4 py-3 text-center font-medium text-white"
-          >
-            Create account
-          </Link>
-          <Link
-            href="/login"
-            className="rounded-xl border border-ink-muted px-4 py-3 text-center font-medium"
-          >
-            Log in
-          </Link>
-        </div>
-      )}
-
-      {/* Recent Activity placeholder */}
-      {user && (
-        <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-ink-muted">Quick Access</h2>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Link
-              href="/fixtures"
-              className="flex items-center gap-3 rounded-2xl bg-surface p-4 shadow-card"
-            >
-              <span className="text-2xl">⚽</span>
-              <div>
-                <p className="text-sm font-semibold">Fixtures</p>
-                <p className="text-xs text-ink-muted">Browse matches</p>
-              </div>
-            </Link>
-            <Link
-              href="/bets"
-              className="flex items-center gap-3 rounded-2xl bg-surface p-4 shadow-card"
-            >
-              <span className="text-2xl">🎫</span>
-              <div>
-                <p className="text-sm font-semibold">My Bets</p>
-                <p className="text-xs text-ink-muted">View history</p>
-              </div>
-            </Link>
-          </div>
-        </div>
-      )}
-    </main>
+      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+    </>
   );
-}
-
-function QuickAction({ icon, label, href }: { icon: string; label: string; href: string }) {
-  return (
-    <Link href={href} className="flex flex-col items-center gap-2">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface text-2xl shadow-card">
-        {icon}
-      </div>
-      <span className="text-xs font-medium text-ink-muted">{label}</span>
-    </Link>
-  );
-}
-
-function FilterChip({ label, href }: { label: string; href: string }) {
-  return (
-    <Link
-      href={href}
-      className="shrink-0 rounded-full bg-surface px-4 py-2 text-sm font-medium text-ink-muted shadow-card"
-    >
-      {label}
-    </Link>
-  );
-}
+        }
