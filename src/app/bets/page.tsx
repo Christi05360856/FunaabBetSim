@@ -183,7 +183,7 @@ export default function MyBetsPage() {
                     {homeName} vs {awayName}
                   </p>
                   <p className="text-xs text-gray-500 capitalize mt-0.5">
-                    Selection: <strong className="text-gray-800 dark:text-gray-200">{bet.selection}</strong>
+                    Selection: <strong className="text-gray-800 dark:text-gray-200">{bet.selectionId}</strong>
                   </p>
                 </div>
 
@@ -247,7 +247,7 @@ export default function MyBetsPage() {
         )}
       </main>
 
-      {/* DIGITAL SHARE MODAL (PariPesa Digital Style) */}
+      {/* DIGITAL SHARE MODAL */}
       {sharingBet && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-in fade-in duration-200">
           <div className="relative w-full max-w-sm overflow-hidden rounded-2xl bg-[#0e1e38] text-white shadow-2xl border border-blue-900/40">
@@ -305,7 +305,7 @@ export default function MyBetsPage() {
                     : "Match Event"}
                 </p>
                 <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between items-center font-semibold">
-                  <span className="capitalize text-gray-700">Selection: {sharingBet.selection}</span>
+                  <span className="capitalize text-gray-700">Selection: {sharingBet.selectionId}</span>
                   <span className="text-emerald-700 font-bold text-sm">{sharingBet.odds.toFixed(2)}</span>
                 </div>
               </div>
@@ -333,7 +333,7 @@ export default function MyBetsPage() {
         </div>
       )}
 
-      {/* PRINT RECEIPT (Hidden on web UI, active during window.print()) */}
+      {/* PRINT RECEIPT */}
       {printingBet && (
         <PrintableTicket
           bet={printingBet}
@@ -398,7 +398,7 @@ function PrintableTicket({
               {homeTeam ?? "Home"} vs {awayTeam ?? "Away"}
             </td>
             <td className="p-2 border-r border-gray-200 capitalize">
-              {bet.selection}
+              {bet.selectionId}
             </td>
             <td className="p-2 text-right font-bold">{bet.odds.toFixed(2)}</td>
           </tr>
