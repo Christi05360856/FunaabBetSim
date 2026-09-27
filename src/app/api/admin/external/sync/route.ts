@@ -111,89 +111,95 @@ export async function POST(request: NextRequest) {
     summary.push({ code, upserted, finished, errors });
   }
 
-  // ---- OddsPapi: fill markets for external matches missing odds ----------
+  // ---- Odds: fill markets for external matches missing odds --------------
   let oddsFilled = 0;
   let oddsSkipped = 0;
   const oddsErrors: string[] = [];
 
-  if (process.env.ODDSPAPI_API_KEY) {
-    try {
-      const fromIso = new Date(now - 1 * 24 * 60 * 60 * 1000).toISOString();
-      const toIso = new Date(now + 14 * 24 * 60 * 60 * 1000).toISOString();
-      const opFixtures: OpFixture[] = await fetchSoccerFixtures(fromIso, toIso);
+  try {
+    let opFixtures: OpFixture[] = [];
+    if (process.env.ODDSPAPI_API_KEY) {
+      try {
+        const fromIso = new Date(now - 1 * 24 * 60 * 60 * 1000).toISOString();
+        const toIso = new Date(now + 14 * 24 * 60 * 60 * 1000).toISOString();
+        opFixtures = await fetchSoccerFixtures(fromIso, toIso);
+      } catch (e) {
+        oddsErrors.push(
+          "OddsPapi fixtures: " + (e instanceof Error ? e.message : "fail")
+        );
+      }
+    } else {
+      oddsErrors.push("ODDSPAPI_API_KEY not set — using default 1X2");
+    }
 
-      const extSnap = await adminDb
-        .collection("matches")
-        .where("source", "==", "external")
-        .get();
+    const extSnap = await adminDb
+      .collection("matches")
+      .where("source", "==", "external")
+      .get();
 
-      const teamCache = new Map<string, string>();
+    const teamCache = new Map<string, string>();
 
-      for (const doc of extSnap.docs) {
-        const match = doc.data() as Match;
-        if (
-          match.status === "settled" ||
-          match.status === "finished" ||
-          match.status === "voided" ||
-          match.status === "postponed"
-        ) {
-          continue;
+    for (const doc of extSnap.docs) {
+      const match = doc.data() as Match;
+      if (
+        match.status === "settled" ||
+        match.status === "finished" ||
+        match.status === "voided" ||
+        match.status === "postponed"
+      ) {
+        continue;
+      }
+      if (await matchHasAnyMarket(match.id)) {
+        oddsSkipped++;
+        continue;
+      }
+
+      try {
+        let homeName = teamCache.get(match.homeTeamId);
+        let awayName = teamCache.get(match.awayTeamId);
+        if (!homeName) {
+          const t = await adminDb.collection("teams").doc(match.homeTeamId).get();
+          homeName = (t.data() as { name?: string } | undefined)?.name ?? "";
+          teamCache.set(match.homeTeamId, homeName);
         }
-        if (await matchHasAnyMarket(match.id)) {
-          oddsSkipped++;
-          continue;
+        if (!awayName) {
+          const t = await adminDb.collection("teams").doc(match.awayTeamId).get();
+          awayName = (t.data() as { name?: string } | undefined)?.name ?? "";
+          teamCache.set(match.awayTeamId, awayName);
         }
 
-        try {
-          let homeName = teamCache.get(match.homeTeamId);
-          let awayName = teamCache.get(match.awayTeamId);
-          if (!homeName) {
-            const t = await adminDb
-              .collection("teams")
-              .doc(match.homeTeamId)
-              .get();
-            homeName =
-              (t.data() as { name?: string } | undefined)?.name ?? "";
-            teamCache.set(match.homeTeamId, homeName);
-          }
-          if (!awayName) {
-            const t = await adminDb
-              .collection("teams")
-              .doc(match.awayTeamId)
-              .get();
-            awayName =
-              (t.data() as { name?: string } | undefined)?.name ?? "";
-            teamCache.set(match.awayTeamId, awayName);
-          }
-
+        let oneXTwo = DEFAULT_1X2;
+        if (opFixtures.length > 0) {
           const fid = matchFixtureId(
             opFixtures,
             homeName,
             awayName,
             match.kickoffAt
           );
-
-          let oneXTwo = DEFAULT_1X2;
           if (fid) {
-            const live = await fetch1x2(fid);
-            if (live) oneXTwo = live;
+            try {
+              const live = await fetch1x2(fid);
+              if (live) oneXTwo = live;
+            } catch (e) {
+              oddsErrors.push(
+                match.id +
+                  " odds: " +
+                  (e instanceof Error ? e.message : "fail")
+              );
+            }
           }
-
-          const { written } = await writeMarketsFrom1x2(
-            match.id,
-            oneXTwo,
-            now
-          );
-          if (written.length) oddsFilled++;
-        } catch (e) {
-          oddsErrors.push(
-            match.id + ": " + (e instanceof Error ? e.message : "odds fail")
-          );
         }
+
+        const { written } = await writeMarketsFrom1x2(match.id, oneXTwo, now);
+        if (written.length) oddsFilled++;
+      } catch (e) {
+        oddsErrors.push(
+          match.id + ": " + (e instanceof Error ? e.message : "odds fail")
+        );
       }
-    } catch (e) {
-      oddsErrors.push(e instanceof Error ? e.message : "odds batch failed");
     }
+  } catch (e) {
+    oddsErrors.push(e instanceof Error ? e.message : "odds batch failed");
   }
 
   return NextResponse.json({
@@ -203,7 +209,6 @@ export async function POST(request: NextRequest) {
     summary,
     odds: { filled: oddsFilled, skipped: oddsSkipped, errors: oddsErrors },
   });
-}
 
 async function upsertMatch(m: FdMatch, competitionId: string, now: number) {
   const homeId = teamDocId(m.homeTeam.id);
