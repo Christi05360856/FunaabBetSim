@@ -147,6 +147,7 @@ export default function MyBetsPage() {
             const match = matches[bet.matchId];
             const homeName = match ? teams[match.homeTeamId]?.name ?? "Home Team" : "Home Team";
             const awayName = match ? teams[match.awayTeamId]?.name ?? "Away Team" : "Away Team";
+            const odds = bet.stake > 0 ? bet.potentialPayout / bet.stake : 1.0;
 
             return (
               <div
@@ -191,7 +192,7 @@ export default function MyBetsPage() {
                 <div className="flex items-center justify-between text-xs pt-2 border-t border-gray-100 dark:border-gray-800">
                   <div>
                     <span className="text-gray-500 block text-[10px]">Odds</span>
-                    <span className="font-bold">{bet.odds.toFixed(2)}</span>
+                    <span className="font-bold">{odds.toFixed(2)}</span>
                   </div>
                   <div>
                     <span className="text-gray-500 block text-[10px]">Stake</span>
@@ -200,7 +201,7 @@ export default function MyBetsPage() {
                   <div className="text-right">
                     <span className="text-gray-500 block text-[10px]">Return</span>
                     <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                      ₦{(bet.stake * bet.odds).toLocaleString()}
+                      ₦{bet.potentialPayout.toLocaleString()}
                     </span>
                   </div>
                 </div>
@@ -278,7 +279,9 @@ export default function MyBetsPage() {
                   </div>
                   <div>
                     <span className="text-blue-300 block text-[10px] uppercase tracking-wider">Odds</span>
-                    <strong className="text-sm text-white">{sharingBet.odds.toFixed(2)}</strong>
+                    <strong className="text-sm text-white">
+                      {(sharingBet.stake > 0 ? sharingBet.potentialPayout / sharingBet.stake : 1.0).toFixed(2)}
+                    </strong>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
@@ -288,7 +291,7 @@ export default function MyBetsPage() {
                   </div>
                   <div>
                     <span className="text-blue-300 block text-[10px] uppercase tracking-wider">Potential Return</span>
-                    <span className="font-semibold text-emerald-400">₦{(sharingBet.stake * sharingBet.odds).toLocaleString()}</span>
+                    <span className="font-semibold text-emerald-400">₦{sharingBet.potentialPayout.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -306,7 +309,9 @@ export default function MyBetsPage() {
                 </p>
                 <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between items-center font-semibold">
                   <span className="capitalize text-gray-700">Selection: {sharingBet.selectionId}</span>
-                  <span className="text-emerald-700 font-bold text-sm">{sharingBet.odds.toFixed(2)}</span>
+                  <span className="text-emerald-700 font-bold text-sm">
+                    {(sharingBet.stake > 0 ? sharingBet.potentialPayout / sharingBet.stake : 1.0).toFixed(2)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -365,6 +370,7 @@ function PrintableTicket({
     hour: "2-digit",
     minute: "2-digit",
   });
+  const odds = bet.stake > 0 ? bet.potentialPayout / bet.stake : 1.0;
 
   return (
     <div className="printable-ticket hidden print:block bg-white text-black p-6 font-sans text-xs">
@@ -400,7 +406,7 @@ function PrintableTicket({
             <td className="p-2 border-r border-gray-200 capitalize">
               {bet.selectionId}
             </td>
-            <td className="p-2 text-right font-bold">{bet.odds.toFixed(2)}</td>
+            <td className="p-2 text-right font-bold">{odds.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>
@@ -408,7 +414,7 @@ function PrintableTicket({
       <div className="flex flex-col gap-1 items-end border-t border-gray-300 pt-3 mb-6 text-xs">
         <div className="flex justify-between w-full max-w-[200px]">
           <span className="text-gray-600">Total Odds:</span>
-          <span className="font-bold">{bet.odds.toFixed(2)}</span>
+          <span className="font-bold">{odds.toFixed(2)}</span>
         </div>
         <div className="flex justify-between w-full max-w-[200px]">
           <span className="text-gray-600">Stake:</span>
@@ -416,7 +422,7 @@ function PrintableTicket({
         </div>
         <div className="flex justify-between w-full max-w-[200px] text-sm border-t border-gray-300 pt-1 mt-1 font-black text-emerald-800">
           <span>Potential Return:</span>
-          <span>₦{(bet.stake * bet.odds).toLocaleString()}</span>
+          <span>₦{bet.potentialPayout.toLocaleString()}</span>
         </div>
       </div>
 
