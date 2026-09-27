@@ -20,7 +20,7 @@ import {
 } from "./helpers";
 
 type PostResult = { ok: boolean; message: string };
-type ConfirmType = "open" | "close" | "settle" | "void" | "delete" | "reopen";
+type ConfirmType = "open" | "close" | "settle" | "void" | "delete" | "reopen" | "revert_live";
 export type FixtureFilter = "all" | "active" | "final" | "open" | "live" | "scheduled" | "settled";
 
 const ENDPOINTS: Record<ConfirmType, string> = {
@@ -30,6 +30,7 @@ const ENDPOINTS: Record<ConfirmType, string> = {
   void: "/api/admin/matches/void",
   delete: "/api/admin/matches/delete",
   reopen: "/api/admin/matches/reopen",
+  revert_live: "/api/admin/matches/reopen",
 };
 
 const SUCCESS: Record<ConfirmType, string> = {
@@ -39,6 +40,7 @@ const SUCCESS: Record<ConfirmType, string> = {
   void: "Match voided",
   delete: "Fixture deleted",
   reopen: "Match reopened",
+  revert_live: "Live start undone",
 };
 
 const isValidScore = (s: string) => /^\d{1,2}$/.test(s);
@@ -547,6 +549,7 @@ export default function FixturesTab({
     void: { title: "Void match", message: `Void ${h} vs ${a}? Every open bet on it is refunded its stake.`, label: "Void" },
     delete: { title: "Delete fixture", message: `Delete ${h} vs ${a}? This only works if nobody has bet on it.`, label: "Delete" },
     reopen: { title: "Reopen match", message: `Reopen ${h} vs ${a}? Scores are cleared. Bets that were already settled are NOT reversed.`, label: "Reopen" },
+    revert_live: { title: "Undo live start", message: `Cancel the live start for ${h} vs ${a} and return it to Open? Only works if no bets have been auto-settled from the live score yet.`, label: "Undo" },
   };
   const copy = confirm && confirm.type !== "settle" ? confirmCopy[confirm.type] : null;
 
@@ -653,6 +656,9 @@ export default function FixturesTab({
                           </Button>
                           <Button size="sm" onClick={() => setConfirm({ type: "settle", match: m })}>
                             Settle
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setConfirm({ type: "revert_live", match: m })}>
+                            Undo live start
                           </Button>
                         </>
                       )}
