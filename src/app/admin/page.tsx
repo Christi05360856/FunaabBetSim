@@ -11,7 +11,15 @@ import { Toast } from "@/components/admin/ui";
 import AdminLayout, { AdminThemeProvider, type AdminTabId } from "@/components/admin/AdminLayout";
 import OverviewTab from "@/components/admin/OverviewTab";
 import FixturesTab from "@/components/admin/FixturesTab";
-import ImportTab from "@/components/admin/ImportTab";
+{tab === "import" && (
+          <ImportTab
+            competitions={competitions}
+            matches={matches}
+            teamsById={teamsById}
+            onSubmit={(b) => post("/api/admin/matches/bulk-import", b)}
+            onGenerateOdds={(b) => post("/api/admin/markets/bulk-generate", b)}
+          />
+        )}
 import DangerTab from "@/components/admin/DangerTab";
 
 type AdminStatus = "checking" | "admin" | "not-admin";
