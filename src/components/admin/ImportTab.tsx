@@ -63,12 +63,12 @@ function parseLine(raw: string, line: number): ParsedLine {
   return { line, match: { homeTeam: home, awayTeam: away, kickoffAt } };
 }
 
-export default function ImportTab({
-  competitions,
-  onSubmit,
-}: {
+export default function ImportTab({ competitions, matches, teamsById, onSubmit, onGenerateOdds }: {
   competitions: Competition[];
+  matches: import("@/types/domain").Match[];
+  teamsById: Record<string, import("@/types/domain").Team>;
   onSubmit: (b: unknown) => Promise<PostResult>;
+  onGenerateOdds: (b: unknown) => Promise<PostResult>;
 }) {
   const [choice, setChoice] = useState("");
   const [newName, setNewName] = useState("");
@@ -90,6 +90,75 @@ export default function ImportTab({
       errors: parsed.filter((p) => p.error),
     };
   }, [text]);
+
+  function BulkOddsCard({ matches, teamsById, onSubmit }: {
+  matches: import("@/types/domain").Match[];
+  teamsById: Record<string, import("@/types/domain").Team>;
+  onSubmit: (b: unknown) => Promise<PostResult>;
+}) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function findMatch(home: string, away: string) {
+    const cands = matches.filter(
+      (m) =>
+        (teamsById[m.homeTeamId]?.name ?? "").toLowerCase() === home.toLowerCase() &&
+        (teamsById[m.awayTeamId]?.name ?? "").toLowerCase() === away.toLowerCase() &&
+        m.status !== "settled" && m.status !== "voided"
+    );
+    return cands.sort((a, b) => a.kickoffAt - b.kickoffAt)[0] ?? null;
+  }
+
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const parsed = lines.map((line) => {
+    const parts = line.split(";").map((p) => p.trim());
+    if (parts.length !== 5) return { line, error: "Use: Home; Away; home odds; draw odds; away odds" };
+    const [home, away, h, d, a] = parts;
+    const match = findMatch(home!, away!);
+    if (!match) return { line, error: `No open fixture found for "${home} v ${away}"` };
+    const ho = Number(h), dr = Number(d), ao = Number(a);
+    if (!ho || !dr || !ao) return { line, error: "Odds must be numbers" };
+    return { line, entry: { matchId: match.id, home: ho, draw: dr, away: ao }, label: `${home} v ${away}` };
+  });
+  const valid = parsed.flatMap((p) => ("entry" in p ? [p.entry] : []));
+  const errors = parsed.filter((p) => "error" in p);
+
+  async function submit() {
+    if (valid.length === 0) return;
+    setBusy(true);
+    const r = await onSubmit({ entries: valid });
+    if (r.ok) setText("");
+    setBusy(false);
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Bulk odds" subtitle="Generates all 6 markets per line, from 1X2 odds." />
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-adm-muted">One per line: Home Team; Away Team; home; draw; away</p>
+        <textarea
+          rows={8}
+          className="w-full rounded-lg border border-adm-line-strong bg-adm-raised px-3 py-2 font-mono text-xs text-adm-ink outline-none focus:border-adm-brand"
+          placeholder="Hydro; Legend fc; 1.55; 3.60; 5.50"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <div className="text-sm">
+          <span className="text-adm-ok">{valid.length} matched</span>
+          {errors.length > 0 && <span className="text-adm-bad"> · {errors.length} with problems</span>}
+        </div>
+        {errors.length > 0 && (
+          <ul className="flex flex-col gap-1 rounded-lg bg-adm-bad/10 p-3 text-xs text-adm-bad">
+            {errors.slice(0, 5).map((p, i) => <li key={i}>{p.line}: {(p as { error: string }).error}</li>)}
+          </ul>
+        )}
+        <Button onClick={submit} disabled={busy || valid.length === 0}>
+          {busy ? "Generating…" : `Generate odds for ${valid.length} match${valid.length === 1 ? "" : "es"}`}
+        </Button>
+      </div>
+    </Card>
+  );
+  }
 
   const tooMany = valid.length > MAX_MATCHES;
   const canSubmit = !busy && competitionName.length >= 2 && valid.length > 0 && !tooMany;
@@ -183,6 +252,7 @@ export default function ImportTab({
           </Button>
         </form>
       </Card>
+      <BulkOddsCard matches={matches} teamsById={teamsById} onSubmit={onGenerateOdds} />
     </div>
   );
 }
