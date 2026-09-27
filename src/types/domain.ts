@@ -1,178 +1,104 @@
-/**
- * Core domain types for FUNAAB BetSim.
- * Milestones 1–6 plus the match lifecycle engine (live clock, halftime,
- * second half, source tracking for future fixture-import adapters).
- */
+export type MatchStatus = "scheduled" | "live" | "finished" | "cancelled";
 
-export type UserRole = "user" | "admin";
+export type MarketType =
+  | "1X2"
+  | "double_chance"
+  | "draw_no_bet"
+  | "over_under"
+  | "both_teams_score"
+  | "correct_score";
 
-export interface AppUser {
-  uid: string;
-  email: string;
-  displayName: string;
-  role: UserRole;
-  createdAt: number;
-}
-
-export interface Wallet {
-  uid: string;
-  balance: number;
-  lifetimeWagering: number;
-  resetPendingSince: number | null;
-  updatedAt: number;
-}
-
-export const STARTING_BALANCE = 100_000;
-export const MINIMUM_STAKE = 1_000;
-export const RESET_COOLDOWN_MS = 24 * 60 * 60 * 1000;
-
-// ---- Sports domain ----------------------------------------------------------
+export type OptionId =
+  | "home"
+  | "draw"
+  | "away"
+  | "1X"
+  | "12"
+  | "X2"
+  | "dnb_home"
+  | "dnb_away"
+  | "over_0.5"
+  | "under_0.5"
+  | "over_1.5"
+  | "under_1.5"
+  | "over_2.5"
+  | "under_2.5"
+  | "over_3.5"
+  | "under_3.5"
+  | "over_4.5"
+  | "under_4.5"
+  | "btts_yes"
+  | "btts_no"
+  | "cs_1_0"
+  | "cs_2_0"
+  | "cs_2_1"
+  | "cs_3_0"
+  | "cs_3_1"
+  | "cs_3_2"
+  | "cs_0_0"
+  | "cs_1_1"
+  | "cs_2_2"
+  | "cs_3_3"
+  | "cs_0_1"
+  | "cs_0_2"
+  | "cs_1_2"
+  | "cs_0_3"
+  | "cs_1_3"
+  | "cs_2_3"
+  | "cs_other";
 
 export interface Team {
   id: string;
   name: string;
   shortName: string;
+  logoUrl?: string;
   createdAt: number;
-  updatedAt: number;
 }
-
-export interface Competition {
-  id: string;
-  name: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export type MatchStatus =
-  | "draft"
-  | "scheduled"
-  | "open"
-  | "locked"
-  | "live"
-  | "halftime"
-  | "second_half"
-  | "finished"
-  | "result_confirmed"
-  | "settled"
-  | "postponed"
-  | "voided";
 
 export interface Match {
   id: string;
-  competitionId: string;
-  round: number | null; // e.g. "Round 7" — optional, for imported/leagued fixtures
   homeTeamId: string;
   awayTeamId: string;
   kickoffAt: number;
   status: MatchStatus;
-  /** Final score — set only by settlement. Never updated by live-score. */
-  homeScore: number | null;
-  awayScore: number | null;
-  /**
-   * Interim / in-play score. Updated repeatedly while the match is
-   * live / halftime / second_half. Independent of settlement.
-   * Existing documents may lack these fields — treat missing as null.
-   */
-  currentHomeScore: number | null;
-  currentAwayScore: number | null;
-  venue: string | null;
-  source: "manual" | "bulk_import"; // where this fixture came from — extensible for future providers
-  sourceEventId: string | null; // an external id, if ever imported from a real provider
+  homeScore?: number;
+  awayScore?: number;
   createdAt: number;
-  updatedAt: number;
 }
 
-// Simulated match-clock timing (spec: "this is a simulation rule", not real football).
-export const FIRST_HALF_MINUTES = 45;
-export const HALFTIME_MINUTES = 15;
-export const SECOND_HALF_MINUTES = 45;
-export const FIRST_HALF_ADDED_TIME = 2;
-export const SECOND_HALF_ADDED_TIME = 2;
-
-// ---- Markets & odds ----------------------------------------------------
-
-export type MarketStatus = "draft" | "active" | "locked" | "settled" | "disabled";
-
-export type MarketType =
-  | "match_winner"
-  | "double_chance"
-  | "draw_no_bet"
-  | "over_under"
-  | "both_teams_to_score"
-  | "correct_score";
-
-export interface Selection {
-  id: string;
+export interface MarketOption {
+  id: OptionId;
   label: string;
   odds: number;
+  status: "open" | "suspended" | "settled";
+  result?: "won" | "lost" | "void";
 }
 
 export interface Market {
   id: string;
   matchId: string;
   type: MarketType;
-  status: MarketStatus;
-  selections: Selection[];
+  options: MarketOption[];
+  status: "open" | "suspended" | "settled";
   createdAt: number;
-  updatedAt: number;
 }
-
-// ---- Bets & transactions --------------------------------------------------------
 
 export type BetStatus = "open" | "won" | "lost" | "void";
 
-export interface Bet {
-  id: string;
-  uid: string;
-  matchId: string;
-  marketId: string;
-  selectionId: string;
-  selectionLabel: string;
-  oddsAtPlacement: number;
-  stake: number;
-  potentialPayout: number;
-  status: BetStatus;
-  placedAt: number;
-  settledAt: number | null;
-  /** Set by the bettor to remove a ticket from their own history view. Never affects settlement. */
-  hidden?: boolean;
-}
-
-export type TransactionType = "debit_bet" | "payout" | "refund" | "reset";
-
-export interface Transaction {
-  id: string;
-  uid: string;
-  type: TransactionType;
-  amount: number;
-  balanceAfter: number;
-  betId: string | null;
-  createdAt: number;
-}
-
-// Selection IDs for different market types:
-// match_winner: "home" | "draw" | "away"
-// double_chance: "home_draw" | "home_away" | "draw_away"
-// draw_no_bet: "home" | "away"
-// over_under: "over_<line>" | "under_<line>" (one market holds every line, e.g. "over_2.5", "under_2.5")
-// both_teams_to_score: "yes" | "no"
-// correct_score: "<home>-<away>" | "other_home" | "other_away" | "other_draw"
-
-export type BetLeg = {
+export interface BetLeg {
   matchId: string;
   marketId: string;
   selectionId: string;
   selectionLabel: string;
   odds: number;
-};
+}
 
-export type Bet = {
+export interface Bet {
   id: string;
   userId?: string;
   uid: string;
   type?: "single" | "accumulator";
   legs?: BetLeg[];
-  // Legacy single-bet fallback fields for backwards compatibility
   matchId: string;
   marketId: string;
   selectionId: string;
@@ -184,11 +110,30 @@ export type Bet = {
   settledAt?: number;
   payout?: number;
   hidden?: boolean;
-};
+}
 
-export type BookingCode = {
-  id: string; // Short code e.g. "FB-89X2"
+export interface BookingCode {
+  id: string;
   legs: BetLeg[];
   totalOdds: number;
   createdAt: number;
-};
+}
+
+export interface WalletTransaction {
+  id: string;
+  uid: string;
+  type: "deposit" | "withdrawal" | "bet_placed" | "bet_payout" | "admin_adjustment";
+  amount: number;
+  betId?: string;
+  description?: string;
+  createdAt: number;
+}
+
+export interface UserProfile {
+  uid: string;
+  displayName: string;
+  email: string;
+  walletBalance: number;
+  role: "user" | "admin";
+  createdAt: number;
+}
