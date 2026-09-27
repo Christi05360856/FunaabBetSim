@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import type { Competition } from "@/types/domain";
+import type { Competition, Match, Team } from "@/types/domain";
 import { Card, CardHeader, Button, Input, Select, Field } from "./ui";
 
 type PostResult = { ok: boolean; message: string };
@@ -63,37 +63,9 @@ function parseLine(raw: string, line: number): ParsedLine {
   return { line, match: { homeTeam: home, awayTeam: away, kickoffAt } };
 }
 
-export default function ImportTab({ competitions, matches, teamsById, onSubmit, onGenerateOdds }: {
-  competitions: Competition[];
-  matches: import("@/types/domain").Match[];
-  teamsById: Record<string, import("@/types/domain").Team>;
-  onSubmit: (b: unknown) => Promise<PostResult>;
-  onGenerateOdds: (b: unknown) => Promise<PostResult>;
-}) {
-  const [choice, setChoice] = useState("");
-  const [newName, setNewName] = useState("");
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const mode = competitions.length === 0 ? NEW : choice;
-  const competitionName =
-    mode === NEW ? newName.trim() : competitions.find((c) => c.id === mode)?.name ?? "";
-
-  const { valid, errors } = useMemo(() => {
-    const lines = text
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-    const parsed = lines.map((l, i) => parseLine(l, i + 1));
-    return {
-      valid: parsed.flatMap((p) => (p.match ? [p.match] : [])),
-      errors: parsed.filter((p) => p.error),
-    };
-  }, [text]);
-
-  function BulkOddsCard({ matches, teamsById, onSubmit }: {
-  matches: import("@/types/domain").Match[];
-  teamsById: Record<string, import("@/types/domain").Team>;
+function BulkOddsCard({ matches, teamsById, onSubmit }: {
+  matches: Match[];
+  teamsById: Record<string, Team>;
   onSubmit: (b: unknown) => Promise<PostResult>;
 }) {
   const [text, setText] = useState("");
@@ -158,7 +130,35 @@ export default function ImportTab({ competitions, matches, teamsById, onSubmit, 
       </div>
     </Card>
   );
-  }
+}
+
+export default function ImportTab({ competitions, matches, teamsById, onSubmit, onGenerateOdds }: {
+  competitions: Competition[];
+  matches: Match[];
+  teamsById: Record<string, Team>;
+  onSubmit: (b: unknown) => Promise<PostResult>;
+  onGenerateOdds: (b: unknown) => Promise<PostResult>;
+}) {
+  const [choice, setChoice] = useState("");
+  const [newName, setNewName] = useState("");
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const mode = competitions.length === 0 ? NEW : choice;
+  const competitionName =
+    mode === NEW ? newName.trim() : competitions.find((c) => c.id === mode)?.name ?? "";
+
+  const { valid, errors } = useMemo(() => {
+    const lines = text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const parsed = lines.map((l, i) => parseLine(l, i + 1));
+    return {
+      valid: parsed.flatMap((p) => (p.match ? [p.match] : [])),
+      errors: parsed.filter((p) => p.error),
+    };
+  }, [text]);
 
   const tooMany = valid.length > MAX_MATCHES;
   const canSubmit = !busy && competitionName.length >= 2 && valid.length > 0 && !tooMany;
@@ -255,4 +255,5 @@ export default function ImportTab({ competitions, matches, teamsById, onSubmit, 
       <BulkOddsCard matches={matches} teamsById={teamsById} onSubmit={onGenerateOdds} />
     </div>
   );
-}
+    }
+              
