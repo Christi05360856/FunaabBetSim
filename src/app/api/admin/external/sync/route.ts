@@ -9,6 +9,17 @@ import {
   teamDocId,
   type FdMatch,
 } from "@/lib/external/footballData";
+import {
+  DEFAULT_1X2,
+  fetch1x2,
+  fetchSoccerFixtures,
+  matchFixtureId,
+  type OpFixture,
+} from "@/lib/external/oddsPapi";
+import {
+  matchHasAnyMarket,
+  writeMarketsFrom1x2,
+} from "@/lib/domain/ensureExternalMarkets";
 import type { Competition, Match, Team } from "@/types/domain";
 
 const CODES = ["PL", "PD"] as const;
@@ -17,12 +28,18 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function authorize(request: NextRequest, decoded: { uid: string } | null): boolean {
+function authorize(
+  request: NextRequest,
+  decoded: { uid: string } | null
+): boolean {
   const cron = request.headers.get("x-external-sync-secret");
-  if (cron && process.env.EXTERNAL_SYNC_SECRET && cron === process.env.EXTERNAL_SYNC_SECRET) {
+  if (
+    cron &&
+    process.env.EXTERNAL_SYNC_SECRET &&
+    cron === process.env.EXTERNAL_SYNC_SECRET
+  ) {
     return true;
   }
-  // Fallback: any authenticated admin (extend if you store role on user)
   return Boolean(decoded);
 }
 
@@ -33,8 +50,8 @@ export async function POST(request: NextRequest) {
   }
 
   const now = Date.now();
-  const from = isoDate(new Date(now - 2 * 24 * 60 * 60 * 1000)); // 2 days back (FT catch-up)
-  const to = isoDate(new Date(now + 14 * 24 * 60 * 60 * 1000)); // 14 days ahead
+  const from = isoDate(new Date(now - 2 * 24 * 60 * 60 * 1000));
+  const to = isoDate(new Date(now + 14 * 24 * 60 * 60 * 1000));
 
   const summary: {
     code: string;
@@ -94,7 +111,98 @@ export async function POST(request: NextRequest) {
     summary.push({ code, upserted, finished, errors });
   }
 
-  return NextResponse.json({ ok: true, from, to, summary });
+  // ---- OddsPapi: fill markets for external matches missing odds ----------
+  let oddsFilled = 0;
+  let oddsSkipped = 0;
+  const oddsErrors: string[] = [];
+
+  if (process.env.ODDSPAPI_API_KEY) {
+    try {
+      const fromIso = new Date(now - 1 * 24 * 60 * 60 * 1000).toISOString();
+      const toIso = new Date(now + 14 * 24 * 60 * 60 * 1000).toISOString();
+      const opFixtures: OpFixture[] = await fetchSoccerFixtures(fromIso, toIso);
+
+      const extSnap = await adminDb
+        .collection("matches")
+        .where("source", "==", "external")
+        .get();
+
+      const teamCache = new Map<string, string>();
+
+      for (const doc of extSnap.docs) {
+        const match = doc.data() as Match;
+        if (
+          match.status === "settled" ||
+          match.status === "finished" ||
+          match.status === "voided" ||
+          match.status === "postponed"
+        ) {
+          continue;
+        }
+        if (await matchHasAnyMarket(match.id)) {
+          oddsSkipped++;
+          continue;
+        }
+
+        try {
+          let homeName = teamCache.get(match.homeTeamId);
+          let awayName = teamCache.get(match.awayTeamId);
+          if (!homeName) {
+            const t = await adminDb
+              .collection("teams")
+              .doc(match.homeTeamId)
+              .get();
+            homeName =
+              (t.data() as { name?: string } | undefined)?.name ?? "";
+            teamCache.set(match.homeTeamId, homeName);
+          }
+          if (!awayName) {
+            const t = await adminDb
+              .collection("teams")
+              .doc(match.awayTeamId)
+              .get();
+            awayName =
+              (t.data() as { name?: string } | undefined)?.name ?? "";
+            teamCache.set(match.awayTeamId, awayName);
+          }
+
+          const fid = matchFixtureId(
+            opFixtures,
+            homeName,
+            awayName,
+            match.kickoffAt
+          );
+
+          let oneXTwo = DEFAULT_1X2;
+          if (fid) {
+            const live = await fetch1x2(fid);
+            if (live) oneXTwo = live;
+          }
+
+          const { written } = await writeMarketsFrom1x2(
+            match.id,
+            oneXTwo,
+            now
+          );
+          if (written.length) oddsFilled++;
+        } catch (e) {
+          oddsErrors.push(
+            match.id + ": " + (e instanceof Error ? e.message : "odds fail")
+          );
+        }
+      }
+    } catch (e) {
+      oddsErrors.push(e instanceof Error ? e.message : "odds batch failed");
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    from,
+    to,
+    summary,
+    odds: { filled: oddsFilled, skipped: oddsSkipped, errors: oddsErrors },
+  });
 }
 
 async function upsertMatch(m: FdMatch, competitionId: string, now: number) {
@@ -116,11 +224,9 @@ async function upsertMatch(m: FdMatch, competitionId: string, now: number) {
   const ftAway = m.score.fullTime.away;
   const isFinished = status === "finished" || status === "settled";
 
-  // Never overwrite a match already fully settled by us
   if (existing.exists) {
     const prev = existing.data() as Match;
     if (prev.status === "settled") {
-      // Still allow live score refresh only if not settled — skip
       return;
     }
   }
@@ -186,8 +292,7 @@ async function upsertTeam(
 
 /**
  * Write FT scores and mark finished.
- * Full wallet settlement stays on the existing admin settle route
- * (or a shared settleMatch helper we can extract later).
+ * Wallet payout still uses admin settle until settleMatch is extracted.
  */
 async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
   const home = m.score.fullTime.home;
@@ -212,4 +317,4 @@ async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
   });
 
   return true;
-}
+    }
