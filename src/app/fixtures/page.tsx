@@ -176,7 +176,7 @@ export default function FixturesPage() {
       selection.id,
       selection.label
     );
-    slip.addItem({
+    slip.toggleItem({
       matchId: match.id,
       marketId: market.id,
       selectionId: selection.id,
