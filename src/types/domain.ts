@@ -72,8 +72,9 @@ export interface Match {
   currentHomeScore: number | null;
   currentAwayScore: number | null;
   venue: string | null;
-  source: "manual" | "bulk_import";
-  sourceEventId: string | null;
+  source: "manual" | "bulk_import" | "external";
+  sourceEventId: string | null; // football-data match id as string
+  provider?: "football-data" | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -170,6 +171,16 @@ export interface Transaction {
   balanceAfter: number;
   betId: string | null;
   createdAt: number;
+}
+
+export interface Competition {
+  id: string;
+  name: string;
+  /** football-data.org code e.g. PL, PD */
+  providerCode?: string | null;
+  provider?: "football-data" | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /**
