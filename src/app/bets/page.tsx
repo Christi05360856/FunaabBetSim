@@ -15,9 +15,9 @@ export default function MyBetsPage() {
   const [activeTab, setActiveTab] = useState<"open" | "settled">("open");
   const [activeMenuBetId, setActiveMenuBetId] = useState<string | null>(null);
   
-  // State for the digital share modal
+  // State for digital share modal
   const [sharingBet, setSharingBet] = useState<Bet | null>(null);
-  // State for controlling the printable ticket render
+  // State for printable ticket render
   const [printingBet, setPrintingBet] = useState<Bet | null>(null);
 
   useEffect(() => {
@@ -30,7 +30,7 @@ export default function MyBetsPage() {
       setBets(docs);
     });
 
-    // Fetch matches map for names
+    // Fetch matches map
     const unsubscribeMatches = onSnapshot(collection(db, "matches"), (snapshot) => {
       const matchMap: Record<string, Match> = {};
       snapshot.docs.forEach((doc) => {
@@ -183,7 +183,7 @@ export default function MyBetsPage() {
                     {homeName} vs {awayName}
                   </p>
                   <p className="text-xs text-gray-500 capitalize mt-0.5">
-                    {bet.marketType.replace("_", " ")}: <strong className="text-gray-800 dark:text-gray-200">{bet.outcome}</strong>
+                    {bet.market.replace("_", " ")}: <strong className="text-gray-800 dark:text-gray-200">{bet.selection}</strong>
                   </p>
                 </div>
 
@@ -262,7 +262,7 @@ export default function MyBetsPage() {
               <h2 className="text-xl font-black tracking-wider text-amber-400 uppercase">FUNAAB BetSim</h2>
               <p className="text-xs text-blue-200 mt-1 font-mono">Bet slip ID: {sharingBet.id.slice(0, 12).toUpperCase()}</p>
               <p className="text-[11px] text-blue-300/80">
-                Single Bet • {new Date(sharingBet.createdAt).toLocaleString("en-GB")}
+                Single Bet • {new Date(sharingBet.placedAt).toLocaleString("en-GB")}
               </p>
             </div>
 
@@ -305,7 +305,7 @@ export default function MyBetsPage() {
                     : "Match Event"}
                 </p>
                 <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between items-center font-semibold">
-                  <span className="capitalize text-gray-700">{sharingBet.marketType.replace("_", " ")}: {sharingBet.outcome}</span>
+                  <span className="capitalize text-gray-700">{sharingBet.market.replace("_", " ")}: {sharingBet.selection}</span>
                   <span className="text-emerald-700 font-bold text-sm">{sharingBet.odds.toFixed(2)}</span>
                 </div>
               </div>
@@ -358,7 +358,7 @@ function PrintableTicket({
   homeTeam?: string;
   awayTeam?: string;
 }) {
-  const createdDate = new Date(bet.createdAt).toLocaleString("en-GB", {
+  const createdDate = new Date(bet.placedAt).toLocaleString("en-GB", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -398,7 +398,7 @@ function PrintableTicket({
               {homeTeam ?? "Home"} vs {awayTeam ?? "Away"}
             </td>
             <td className="p-2 border-r border-gray-200 capitalize">
-              {bet.marketType.replace("_", " ")} — {bet.outcome}
+              {bet.market.replace("_", " ")} — {bet.selection}
             </td>
             <td className="p-2 text-right font-bold">{bet.odds.toFixed(2)}</td>
           </tr>
