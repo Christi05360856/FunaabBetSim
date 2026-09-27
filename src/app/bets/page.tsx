@@ -24,7 +24,7 @@ export default function MyBetsPage() {
     if (!user) return;
 
     // Fetch user bets
-    const q = query(collection(db, "bets"), where("userId", "==", user.uid));
+    const q = query(collection(db, "bets"), where("uid", "==", user.uid));
     const unsubscribeBets = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map((doc) => doc.data() as Bet);
       setBets(docs);
@@ -65,7 +65,7 @@ export default function MyBetsPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({ betId }),
+        body: JSON.stringify({ betId, hidden: true }),
       });
       setActiveMenuBetId(null);
     } catch (err) {
@@ -184,7 +184,7 @@ export default function MyBetsPage() {
                     {homeName} vs {awayName}
                   </p>
                   <p className="text-xs text-gray-500 capitalize mt-0.5">
-                    Selection: <strong className="text-gray-800 dark:text-gray-200">{bet.selectionId}</strong>
+                    Selection: <strong className="text-gray-800 dark:text-gray-200">{bet.selectionLabel}</strong>
                   </p>
                 </div>
 
@@ -308,7 +308,7 @@ export default function MyBetsPage() {
                     : "Match Event"}
                 </p>
                 <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between items-center font-semibold">
-                  <span className="capitalize text-gray-700">Selection: {sharingBet.selectionId}</span>
+                  <span className="capitalize text-gray-700">Selection: {sharingBet.selectionLabel}</span>
                   <span className="text-emerald-700 font-bold text-sm">
                     {(sharingBet.stake > 0 ? sharingBet.potentialPayout / sharingBet.stake : 1.0).toFixed(2)}
                   </span>
@@ -351,7 +351,6 @@ export default function MyBetsPage() {
   );
 }
 
-{/* PRINT COMPONENT */}
 function PrintableTicket({
   bet,
   match,
@@ -404,7 +403,7 @@ function PrintableTicket({
               {homeTeam ?? "Home"} vs {awayTeam ?? "Away"}
             </td>
             <td className="p-2 border-r border-gray-200 capitalize">
-              {bet.selectionId}
+              {bet.selectionLabel}
             </td>
             <td className="p-2 text-right font-bold">{odds.toFixed(2)}</td>
           </tr>
