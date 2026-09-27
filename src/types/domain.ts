@@ -157,3 +157,38 @@ export interface Transaction {
 // over_under: "over_<line>" | "under_<line>" (one market holds every line, e.g. "over_2.5", "under_2.5")
 // both_teams_to_score: "yes" | "no"
 // correct_score: "<home>-<away>" | "other_home" | "other_away" | "other_draw"
+
+export type BetLeg = {
+  matchId: string;
+  marketId: string;
+  selectionId: string;
+  selectionLabel: string;
+  odds: number;
+};
+
+export type Bet = {
+  id: string;
+  userId?: string;
+  uid: string;
+  type?: "single" | "accumulator";
+  legs?: BetLeg[];
+  // Legacy single-bet fallback fields for backwards compatibility
+  matchId: string;
+  marketId: string;
+  selectionId: string;
+  selectionLabel?: string;
+  stake: number;
+  potentialPayout: number;
+  status: "open" | "won" | "lost" | "voided";
+  placedAt: number;
+  settledAt?: number;
+  payout?: number;
+  hidden?: boolean;
+};
+
+export type BookingCode = {
+  id: string; // Short code e.g. "FB-89X2"
+  legs: BetLeg[];
+  totalOdds: number;
+  createdAt: number;
+};
