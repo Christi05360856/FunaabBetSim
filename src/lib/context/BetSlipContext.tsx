@@ -19,6 +19,8 @@ export type SlipItem = BetLeg & {
 type BetSlipContextType = {
   items: SlipItem[];
   addItem: (item: SlipItem) => void;
+  /** Same pick again → remove. Other pick on same match → replace. */
+  toggleItem: (item: SlipItem) => void;
   removeItem: (matchId: string) => void;
   clearSlip: () => void;
   loadLegs: (legs: SlipItem[]) => void;
@@ -28,7 +30,6 @@ type BetSlipContextType = {
 };
 
 const BetSlipContext = createContext<BetSlipContextType | undefined>(undefined);
-
 const STORAGE_KEY = "funaab_betslip";
 
 export function BetSlipProvider({ children }: { children: React.ReactNode }) {
@@ -57,11 +58,25 @@ export function BetSlipProvider({ children }: { children: React.ReactNode }) {
 
   const addItem = useCallback((newItem: SlipItem) => {
     setItems((prev) => {
-      // One selection per match (standard sportsbook)
       const filtered = prev.filter((i) => i.matchId !== newItem.matchId);
       return [...filtered, newItem];
     });
-    setIsOpen(true);
+  }, []);
+
+  const toggleItem = useCallback((newItem: SlipItem) => {
+    setItems((prev) => {
+      const same = prev.find(
+        (i) =>
+          i.matchId === newItem.matchId &&
+          i.selectionId === newItem.selectionId
+      );
+      if (same) {
+        // Unpick
+        return prev.filter((i) => i.matchId !== newItem.matchId);
+      }
+      // Replace any other pick on this match
+      return [...prev.filter((i) => i.matchId !== newItem.matchId), newItem];
+    });
   }, []);
 
   const removeItem = useCallback((matchId: string) => {
@@ -84,6 +99,7 @@ export function BetSlipProvider({ children }: { children: React.ReactNode }) {
     () => ({
       items,
       addItem,
+      toggleItem,
       removeItem,
       clearSlip,
       loadLegs,
@@ -91,7 +107,16 @@ export function BetSlipProvider({ children }: { children: React.ReactNode }) {
       isOpen,
       setIsOpen,
     }),
-    [items, addItem, removeItem, clearSlip, loadLegs, totalOdds, isOpen]
+    [
+      items,
+      addItem,
+      toggleItem,
+      removeItem,
+      clearSlip,
+      loadLegs,
+      totalOdds,
+      isOpen,
+    ]
   );
 
   return (
