@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useWallet } from "@/lib/hooks/useWallet";
 import { RESET_COOLDOWN_MS } from "@/types/domain";
+import { formatMoney } from "@/lib/domain/selectionLabel";
 
 export default function DashboardPage() {
   const { user, loading, logout } = useAuth();
@@ -20,7 +21,8 @@ export default function DashboardPage() {
   }, [loading, user, router]);
 
   useEffect(() => {
-    if (!wallet || wallet.balance !== 0 || wallet.resetPendingSince === null) return;
+    if (!wallet || wallet.balance !== 0 || wallet.resetPendingSince === null)
+      return;
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
   }, [wallet]);
@@ -33,12 +35,14 @@ export default function DashboardPage() {
       const idToken = await user.getIdToken();
       const response = await fetch("/api/wallet/reset", {
         method: "POST",
-        headers: { Authorization: `Bearer ${idToken}` },
+        headers: { Authorization: "Bearer " + idToken },
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Could not reset wallet.");
     } catch (err) {
-      setResetError(err instanceof Error ? err.message : "Something went wrong.");
+      setResetError(
+        err instanceof Error ? err.message : "Something went wrong."
+      );
     } finally {
       setResetSubmitting(false);
     }
@@ -64,33 +68,57 @@ export default function DashboardPage() {
     const totalMinutes = Math.max(0, Math.ceil(ms / (60 * 1000)));
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
-    return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+    return hours > 0 ? hours + "h " + minutes + "m" : minutes + "m";
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-4 px-4 pt-5 pb-28">
-      {/* Profile Header */}
-      <div className="flex items-center gap-4">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand/10 font-display text-2xl font-bold text-brand">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-4 overflow-x-hidden px-4 pb-28 pt-5">
+      {/* Profile */}
+      <div className="flex items-center gap-3">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-brand/15 font-display text-xl font-bold text-brand">
           {(user.displayName ?? "P").charAt(0).toUpperCase()}
         </div>
-        <div className="flex-1">
-          <h1 className="font-display text-xl font-bold">{user.displayName ?? "Player"}</h1>
-          <p className="text-sm text-ink-muted">{user.email}</p>
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate font-display text-lg font-bold">
+            {user.displayName ?? "Player"}
+          </h1>
+          <p className="truncate text-xs text-ink-muted">{user.email}</p>
         </div>
+        <Link
+          href="/account/settings"
+          className="rounded-full bg-surface p-2.5 shadow-card"
+          aria-label="Settings"
+        >
+          ⚙️
+        </Link>
       </div>
 
-      {/* Balance Card */}
-      <div className="rounded-2xl bg-gradient-to-br from-brand to-brand-dark p-5 text-white shadow-card">
-        <p className="text-sm font-medium text-white/70">Total Balance</p>
-        <p className="mt-1 font-display text-3xl font-bold">
-          ₦{wallet?.balance.toLocaleString("en-NG") ?? "—"}
+      {/* Balance */}
+      <div className="rounded-2xl bg-gradient-to-br from-brand to-emerald-800 p-5 text-white shadow-card">
+        <p className="text-xs font-medium text-white/70">Play-money balance</p>
+        <p
+          className="mt-1 break-all font-display text-2xl font-bold tabular-nums"
+          title={
+            wallet
+              ? "₦" + wallet.balance.toLocaleString("en-NG")
+              : undefined
+          }
+        >
+          {walletLoading
+            ? "…"
+            : wallet
+              ? formatMoney(wallet.balance)
+              : "—"}
         </p>
-        
+        <p className="mt-1 text-[10px] text-white/50">
+          Virtual funds only · Nothing is real money
+        </p>
+
         {cooldownActive && (
           <div className="mt-4 border-t border-white/20 pt-4">
             {cooldownDone ? (
               <button
+                type="button"
                 onClick={handleReset}
                 disabled={resetSubmitting}
                 className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-brand disabled:opacity-50"
@@ -98,77 +126,119 @@ export default function DashboardPage() {
                 {resetSubmitting ? "Resetting…" : "Reset to ₦100,000"}
               </button>
             ) : (
-              <p className="text-sm text-white/70">Reset available in {formatRemaining(remainingMs)}</p>
+              <p className="text-sm text-white/70">
+                Reset available in {formatRemaining(remainingMs)}
+              </p>
             )}
-            {resetError && <p className="mt-2 text-sm text-white/90">{resetError}</p>}
+            {resetError && (
+              <p className="mt-2 text-sm text-white/90">{resetError}</p>
+            )}
           </div>
         )}
       </div>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Quick actions */}
+      <div className="grid grid-cols-3 gap-2">
         <Link
           href="/bets"
-          className="flex flex-col items-center gap-2 rounded-2xl bg-surface p-4 shadow-card"
+          className="flex flex-col items-center gap-1.5 rounded-2xl bg-surface p-3 shadow-card"
         >
-          <span className="text-2xl">🎫</span>
-          <span className="text-xs font-medium text-center">My Bets</span>
+          <span className="text-xl">🎫</span>
+          <span className="text-[11px] font-medium">My Bets</span>
         </Link>
         <Link
           href="/fixtures"
-          className="flex flex-col items-center gap-2 rounded-2xl bg-surface p-4 shadow-card"
+          className="flex flex-col items-center gap-1.5 rounded-2xl bg-surface p-3 shadow-card"
         >
-          <span className="text-2xl">⚽</span>
-          <span className="text-xs font-medium text-center">Fixtures</span>
+          <span className="text-xl">⚽</span>
+          <span className="text-[11px] font-medium">Fixtures</span>
         </Link>
-        <button
-          onClick={logout}
-          className="flex flex-col items-center gap-2 rounded-2xl bg-surface p-4 shadow-card"
+        <Link
+          href="/transactions"
+          className="flex flex-col items-center gap-1.5 rounded-2xl bg-surface p-3 shadow-card"
         >
-          <span className="text-2xl">🚪</span>
-          <span className="text-xs font-medium text-loss">Log out</span>
-        </button>
+          <span className="text-xl">📋</span>
+          <span className="text-[11px] font-medium">Transactions</span>
+        </Link>
       </div>
 
-      {/* Stats Row */}
+      {/* Stats */}
       {wallet && (
         <div className="rounded-2xl bg-surface p-4 shadow-card">
-          <h3 className="text-sm font-semibold text-ink-muted mb-3">Statistics</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs text-ink-muted">Lifetime Wagering</p>
-              <p className="font-display text-lg font-bold">
-                ₦{wallet.lifetimeWagering.toLocaleString("en-NG")}
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            Statistics
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] text-ink-muted">Lifetime wagered</p>
+              <p
+                className="truncate font-display text-base font-bold tabular-nums"
+                title={"₦" + wallet.lifetimeWagering.toLocaleString("en-NG")}
+              >
+                {formatMoney(wallet.lifetimeWagering)}
               </p>
             </div>
-            <div>
-              <p className="text-xs text-ink-muted">Current Balance</p>
-              <p className="font-display text-lg font-bold text-brand">
-                ₦{wallet.balance.toLocaleString("en-NG")}
+            <div className="min-w-0">
+              <p className="text-[11px] text-ink-muted">Current balance</p>
+              <p
+                className="truncate font-display text-base font-bold tabular-nums text-brand"
+                title={"₦" + wallet.balance.toLocaleString("en-NG")}
+              >
+                {formatMoney(wallet.balance)}
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Menu Items */}
-      <div className="rounded-2xl bg-surface shadow-card divide-y divide-ink-muted/10">
-        <MenuItem icon="📋" label="Bet History" href="/bets" />
-        <MenuItem icon="🧾" label="Transaction Records" href="/transactions" />
-        <MenuItem icon="⚙️" label="Settings" href="#" />
-        <MenuItem icon="❓" label="How to Play" href="#" />
-        <MenuItem icon="💡" label="Share Feedback" href="#" />
+      {/* Menu */}
+      <div className="overflow-hidden rounded-2xl bg-surface shadow-card">
+        <MenuItem icon="👤" label="Profile" href="/account/profile" />
+        <MenuItem icon="🎫" label="Bet history" href="/bets" />
+        <MenuItem icon="📋" label="Transaction records" href="/transactions" />
+        <MenuItem icon="⚙️" label="Settings" href="/account/settings" />
+        <MenuItem icon="❓" label="How to play" href="/how-to-play" />
+        <MenuItem icon="ℹ️" label="About FUNAAB BetSim" href="/about" />
+        <MenuItem icon="📄" label="Terms of use" href="/terms" />
+        <MenuItem icon="🔒" label="Privacy policy" href="/privacy" />
+        <button
+          type="button"
+          onClick={logout}
+          className="flex w-full items-center gap-3 border-t border-ink-muted/10 px-4 py-3.5 text-left active:bg-ink-muted/5"
+        >
+          <span className="text-xl">🚪</span>
+          <span className="flex-1 text-sm font-medium text-loss">Log out</span>
+        </button>
       </div>
     </main>
   );
 }
 
-function MenuItem({ icon, label, href }: { icon: string; label: string; href: string }) {
+function MenuItem({
+  icon,
+  label,
+  href,
+}: {
+  icon: string;
+  label: string;
+  href: string;
+}) {
   return (
-    <Link href={href} className="flex items-center gap-3 px-4 py-3.5 active:bg-ink-muted/5">
+    <Link
+      href={href}
+      className="flex items-center gap-3 border-b border-ink-muted/10 px-4 py-3.5 last:border-0 active:bg-ink-muted/5"
+    >
       <span className="text-xl">{icon}</span>
       <span className="flex-1 text-sm font-medium">{label}</span>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-ink-muted">
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        className="text-ink-muted"
+      >
         <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </Link>
