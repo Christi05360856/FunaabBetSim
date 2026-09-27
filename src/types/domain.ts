@@ -39,6 +39,9 @@ export interface Team {
 export interface Competition {
   id: string;
   name: string;
+  /** football-data.org code e.g. PL, PD — set only for externally-synced competitions. */
+  providerCode?: string | null;
+  provider?: "football-data" | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -171,16 +174,6 @@ export interface Transaction {
   balanceAfter: number;
   betId: string | null;
   createdAt: number;
-}
-
-export interface Competition {
-  id: string;
-  name: string;
-  /** football-data.org code e.g. PL, PD */
-  providerCode?: string | null;
-  provider?: "football-data" | null;
-  createdAt: number;
-  updatedAt: number;
 }
 
 /**
