@@ -17,8 +17,8 @@ function makeShortName(name: string, taken: Set<string>): string {
   }
   const base = candidates[0] || "TM";
   let n = 2;
-  while (taken.has(`\( {base} \){n}`)) n++;
-  return `\( {base} \){n}`;
+  while (taken.has(`${base}${n}`)) n++;
+  return `${base}${n}`;
 }
 
 export async function POST(request: NextRequest) {
