@@ -1,664 +1,430 @@
 "use client";
 
-import { useEffect, useState, type MouseEvent } from "react";
-import { useRouter } from "next/navigation";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
-import { useAuth } from "@/lib/auth/AuthContext";
-import type { Bet, Team, Match } from "@/types/domain";
-import { deriveClockState } from "@/lib/domain/matchClock";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { useAuth } from "@/lib/auth/AuthContext";
+import { db } from "@/lib/firebase/client";
+import type { Bet, Match, Team } from "@/types/domain";
 
-const STATUS_BADGE: Record<Bet["status"], string> = {
-  open: "bg-ink-muted/15 text-ink-muted",
-  won: "bg-win/15 text-win",
-  lost: "bg-loss/15 text-loss",
-  void: "bg-ink-muted/15 text-ink-muted",
-};
-
-const STATUS_LABEL: Record<Bet["status"], string> = {
-  open: "Open",
-  won: "Won",
-  lost: "Lost",
-  void: "Void",
-};
-
-const SEEN_WINS_KEY = "funaab-bets-seen-won-at";
-
-type Tab = "open" | "history";
-
-function matchScore(match: Match | undefined): {
-  home: number;
-  away: number;
-  live: boolean;
-} | null {
-  if (!match) return null;
-  if (match.status === "settled" && match.homeScore != null && match.awayScore != null) {
-    return { home: match.homeScore, away: match.awayScore, live: false };
-  }
-  if (match.currentHomeScore != null && match.currentAwayScore != null) {
-    return { home: match.currentHomeScore, away: match.currentAwayScore, live: true };
-  }
-  return null;
-}
-
-function shortTicketId(id: string): string {
-  return id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toUpperCase() || id.slice(0, 8).toUpperCase();
-}
-
-export default function BetsPage() {
+export default function MyBetsPage() {
   const { user, loading } = useAuth();
-  const router = useRouter();
   const [bets, setBets] = useState<Bet[]>([]);
-  const [teams, setTeams] = useState<Record<string, Team>>({});
   const [matches, setMatches] = useState<Record<string, Match>>({});
-  const [activeTab, setActiveTab] = useState<Tab>("open");
-  const [now, setNow] = useState(() => Date.now());
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [selectedBet, setSelectedBet] = useState<Bet | null>(null);
-  const [actionSheetBet, setActionSheetBet] = useState<Bet | null>(null);
-  const [winCelebration, setWinCelebration] = useState<{
-    count: number;
-    total: number;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!loading && !user) router.replace("/login");
-  }, [loading, user, router]);
+  const [teams, setTeams] = useState<Record<string, Team>>({});
+  const [activeTab, setActiveTab] = useState<"open" | "settled">("open");
+  const [activeMenuBetId, setActiveMenuBetId] = useState<string | null>(null);
+  
+  // State for the digital share modal
+  const [sharingBet, setSharingBet] = useState<Bet | null>(null);
+  // State for controlling the printable ticket render
+  const [printingBet, setPrintingBet] = useState<Bet | null>(null);
 
   useEffect(() => {
     if (!user) return;
 
-    const unsubBets = onSnapshot(
-      query(collection(db, "bets"), where("uid", "==", user.uid)),
-      (snap) => {
-        const betList = snap.docs
-          .map((d) => d.data() as Bet)
-          .sort((a, b) => (b.placedAt ?? 0) - (a.placedAt ?? 0));
-        setBets(betList);
-        setLoadError(null);
-      },
-      (err) => {
-        console.error("bets listener failed", err);
-        setLoadError(err.message || "Could not load bets");
-      }
-    );
-
-    const unsubTeams = onSnapshot(collection(db, "teams"), (snap) => {
-      const map: Record<string, Team> = {};
-      snap.docs.forEach((d) => {
-        const team = d.data() as Team;
-        if (team?.id) map[team.id] = team;
-      });
-      setTeams(map);
+    // Fetch user bets
+    const q = query(collection(db, "bets"), where("userId", "==", user.uid));
+    const unsubscribeBets = onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map((doc) => doc.data() as Bet);
+      setBets(docs);
     });
 
-    const unsubMatches = onSnapshot(collection(db, "matches"), (snap) => {
-      const map: Record<string, Match> = {};
-      snap.docs.forEach((d) => {
-        const match = d.data() as Match;
-        if (match?.id) map[match.id] = match;
+    // Fetch matches map for names
+    const unsubscribeMatches = onSnapshot(collection(db, "matches"), (snapshot) => {
+      const matchMap: Record<string, Match> = {};
+      snapshot.docs.forEach((doc) => {
+        matchMap[doc.id] = doc.data() as Match;
       });
-      setMatches(map);
+      setMatches(matchMap);
+    });
+
+    // Fetch teams map
+    const unsubscribeTeams = onSnapshot(collection(db, "teams"), (snapshot) => {
+      const teamMap: Record<string, Team> = {};
+      snapshot.docs.forEach((doc) => {
+        teamMap[doc.id] = doc.data() as Team;
+      });
+      setTeams(teamMap);
     });
 
     return () => {
-      unsubBets();
-      unsubTeams();
-      unsubMatches();
+      unsubscribeBets();
+      unsubscribeMatches();
+      unsubscribeTeams();
     };
   }, [user]);
 
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    if (!user || bets.length === 0) return;
-    let seenAt = 0;
+  async function handleHideBet(betId: string) {
     try {
-      seenAt = Number(localStorage.getItem(SEEN_WINS_KEY) || "0");
-    } catch {
-      /* ignore */
+      if (!user) return;
+      const idToken = await user.getIdToken();
+      await fetch("/api/bets/hide", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ betId }),
+      });
+      setActiveMenuBetId(null);
+    } catch (err) {
+      console.error("Failed to hide bet", err);
     }
-    const freshWins = bets.filter(
-      (b) => b.status === "won" && (b.settledAt ?? 0) > seenAt
-    );
-    if (freshWins.length === 0) return;
-    const total = freshWins.reduce((s, b) => s + (b.potentialPayout || 0), 0);
-    setWinCelebration({ count: freshWins.length, total });
-  }, [user, bets]);
-
-  function dismissWinCelebration() {
-    const maxSettled = bets
-      .filter((b) => b.status === "won")
-      .reduce((m, b) => Math.max(m, b.settledAt ?? 0), 0);
-    try {
-      localStorage.setItem(SEEN_WINS_KEY, String(maxSettled || Date.now()));
-    } catch {
-      /* ignore */
-    }
-    setWinCelebration(null);
   }
 
-  if (loading || !user) {
+  function handleTriggerPrint(bet: Bet) {
+    setPrintingBet(bet);
+    setActiveMenuBetId(null);
+    setTimeout(() => {
+      window.print();
+    }, 150);
+  }
+
+  if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center">
-        <p className="text-ink-muted">Loading…</p>
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
       </main>
     );
   }
 
-  const openBets = bets.filter((b) => b.status === "open" && !b.hidden);
-  const historyBets = bets.filter((b) => b.status !== "open" && !b.hidden);
-  const displayBets = activeTab === "open" ? openBets : historyBets;
+  if (!user) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-4 text-center bg-gray-50 dark:bg-gray-900">
+        <p className="text-lg font-bold text-gray-800 dark:text-gray-100">Please sign in to view your bets</p>
+        <Link href="/login" className="mt-3 text-sm font-semibold text-emerald-600 hover:underline">
+          Go to Login
+        </Link>
+      </main>
+    );
+  }
+
+  const visibleBets = bets.filter((b) => !b.hidden);
+  const openBets = visibleBets.filter((b) => b.status === "open");
+  const settledBets = visibleBets.filter((b) => b.status !== "open");
+  const currentList = activeTab === "open" ? openBets : settledBets;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-4 px-4 pb-28 pt-5">
-      <h1 className="font-display text-xl font-bold">My Bets</h1>
-
-      <div className="flex rounded-xl bg-surface p-1 shadow-card">
-        <button
-          type="button"
-          onClick={() => setActiveTab("open")}
-          className={
-            "flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors " +
-            (activeTab === "open" ? "bg-brand text-white" : "text-ink-muted")
-          }
-        >
-          Open Bets ({openBets.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("history")}
-          className={
-            "flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors " +
-            (activeTab === "history" ? "bg-brand text-white" : "text-ink-muted")
-          }
-        >
-          Bet History ({historyBets.length})
-        </button>
-      </div>
-
-      {loadError && (
-        <p className="rounded-lg bg-loss/10 px-3 py-2 text-sm text-loss">{loadError}</p>
-      )}
-
-      {displayBets.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="mb-4 text-5xl">🎫</div>
-          <p className="text-ink-muted">
-            {activeTab === "open" ? "No open bets" : "No bet history yet"}
-          </p>
-          <Link href="/fixtures" className="mt-4 text-sm font-medium text-brand underline">
-            Browse fixtures
-          </Link>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          <p className="px-0.5 text-xs font-bold uppercase tracking-wide text-ink-muted">
-            Singles
-          </p>
-          {displayBets.map((bet) => (
-            <div
-              key={bet.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => setSelectedBet(bet)}
-              onKeyDown={(e) => { if (e.key === "Enter") setSelectedBet(bet); }}
-              className="w-full text-left"
-            >
-              <BetCard bet={bet} teams={teams} matches={matches} now={now} onOpenActions={(e) => { e.stopPropagation(); setActionSheetBet(bet); }} />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {selectedBet && (
-        <BetDetailSheet
-          bet={selectedBet}
-          teams={teams}
-          matches={matches}
-          now={now}
-          onClose={() => setSelectedBet(null)}
-        />
-      )}
-
-      {actionSheetBet && (
-        <BetActionSheet bet={actionSheetBet} onClose={() => setActionSheetBet(null)} />
-      )}
-
-      {winCelebration && (
-        <WinCelebrationModal
-          count={winCelebration.count}
-          total={winCelebration.total}
-          onClose={dismissWinCelebration}
-        />
-      )}
-    </main>
-  );
-}
-
-function BetCard({
-  bet,
-  teams,
-  matches,
-  now,
-  onOpenActions,
-}: {
-  bet: Bet;
-  teams: Record<string, Team>;
-  matches: Record<string, Match>;
-  now: number;
-  onOpenActions: (e: MouseEvent) => void;
-}) {
-  const match = matches[bet.matchId];
-  const home = match?.homeTeamId ? teams[match.homeTeamId] : undefined;
-  const away = match?.awayTeamId ? teams[match.awayTeamId] : undefined;
-  const isLive =
-    match && ["live", "halftime", "second_half"].includes(match.status);
-  const clock = match ? deriveClockState(match, now) : null;
-  const score = matchScore(match);
-
-  return (
-    <div className="rounded-2xl bg-surface p-4 shadow-card">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-brand">
-            {bet.selectionLabel} @{bet.oddsAtPlacement.toFixed(2)}{" "}
-            <span className="font-medium text-ink-muted">1X2</span>
-          </p>
-          <p className="mt-1 truncate text-sm font-medium">
-            {home?.name ?? "Home"} vs {away?.name ?? "Away"}
-          </p>
-          <p className="mt-0.5 text-xs text-ink-muted">
-            {new Date(bet.placedAt).toLocaleString("en-NG", {
-              day: "2-digit",
-              month: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-            {isLive && clock ? " · " + clock.display : ""}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-start gap-1">
-          <span className={"rounded-full px-2.5 py-1 text-xs font-bold " + STATUS_BADGE[bet.status]}>
-            {STATUS_LABEL[bet.status]}
-          </span>
-          <button
-            type="button"
-            onClick={onOpenActions}
-            aria-label="Ticket options"
-            className="rounded-full p-1 text-ink-muted active:bg-ink-muted/10"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="5" cy="12" r="1.8" />
-              <circle cx="12" cy="12" r="1.8" />
-              <circle cx="19" cy="12" r="1.8" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {score && (
-        <p
-          className={
-            "mt-2 text-xs font-medium " + (score.live ? "text-loss" : "text-ink-muted")
-          }
-        >
-          {score.live ? "Live" : "FT"} {score.home}:{score.away}
-        </p>
-      )}
-
-      <div className="mt-3 flex items-center justify-between border-t border-ink-muted/10 pt-3 text-sm">
-        <div>
-          <span className="text-ink-muted">Stake </span>
-          <span className="font-semibold">₦{bet.stake.toLocaleString("en-NG")}</span>
-        </div>
-        <div>
-          <span className="text-ink-muted">
-            {bet.status === "won" ? "Return " : "Pot. Win "}
-          </span>
-          <span className="font-semibold text-win">
-            ₦{bet.potentialPayout.toLocaleString("en-NG")}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BetDetailSheet({
-  bet,
-  teams,
-  matches,
-  now,
-  onClose,
-}: {
-  bet: Bet;
-  teams: Record<string, Team>;
-  matches: Record<string, Match>;
-  now: number;
-  onClose: () => void;
-}) {
-  const match = matches[bet.matchId];
-  const home = match?.homeTeamId ? teams[match.homeTeamId] : undefined;
-  const away = match?.awayTeamId ? teams[match.awayTeamId] : undefined;
-  const isLive =
-    match && ["live", "halftime", "second_half"].includes(match.status);
-  const clock = match ? deriveClockState(match, now) : null;
-  const score = matchScore(match);
-  const ticketId = shortTicketId(bet.id);
-
-  const pickOk = bet.status === "won";
-  const pickFail = bet.status === "lost";
-  const pickOpen = bet.status === "open";
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex flex-col bg-bg"
-      onClick={onClose}
-    >
-      {/* SportyBet-style red header */}
-      <header
-        className="flex items-center gap-3 bg-brand px-4 py-3 text-white"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button type="button" onClick={onClose} className="text-white" aria-label="Back">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        <h2 className="flex-1 font-display text-lg font-bold">Ticket Details</h2>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 pb-20">
+      {/* Top Header */}
+      <header className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 py-3">
+        <h1 className="text-lg font-bold">My Bets</h1>
       </header>
 
-      <div
-        className="flex-1 overflow-y-auto px-4 pb-28 pt-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Ticket summary */}
-        <div className="rounded-xl bg-surface p-4 shadow-card">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="text-xs text-ink-muted">Ticket ID: {ticketId}</p>
-              <p className="mt-0.5 text-xs text-ink-muted">
-                {new Date(bet.placedAt).toLocaleString("en-NG", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </p>
-              <p className="mt-2 text-sm font-semibold">Single</p>
-            </div>
-            <div className="text-right">
-              <span
-                className={
-                  "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold " +
-                  STATUS_BADGE[bet.status]
-                }
+      {/* Tabs */}
+      <div className="flex border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+        <button
+          onClick={() => setActiveTab("open")}
+          className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition ${
+            activeTab === "open"
+              ? "border-emerald-600 text-emerald-600 dark:text-emerald-400"
+              : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"
+          }`}
+        >
+          Open ({openBets.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("settled")}
+          className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition ${
+            activeTab === "settled"
+              ? "border-emerald-600 text-emerald-600 dark:text-emerald-400"
+              : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"
+          }`}
+        >
+          Settled ({settledBets.length})
+        </button>
+      </div>
+
+      {/* List */}
+      <main className="p-4 max-w-lg mx-auto flex flex-col gap-3">
+        {currentList.length === 0 ? (
+          <div className="text-center py-12 text-sm text-gray-500 dark:text-gray-400">
+            No {activeTab} bets found.
+          </div>
+        ) : (
+          currentList.map((bet) => {
+            const match = matches[bet.matchId];
+            const homeName = match ? teams[match.homeTeamId]?.name ?? "Home Team" : "Home Team";
+            const awayName = match ? teams[match.awayTeamId]?.name ?? "Away Team" : "Away Team";
+
+            return (
+              <div
+                key={bet.id}
+                className="relative rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 shadow-sm"
               >
-                {bet.status === "won" && <span>🏆</span>}
-                {STATUS_LABEL[bet.status]}
-              </span>
-            </div>
-          </div>
+                {/* Header row */}
+                <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-2 mb-2 text-xs">
+                  <span className="font-mono text-gray-500">ID: {bet.id.slice(0, 8)}</span>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] ${
+                        bet.status === "won"
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                          : bet.status === "lost"
+                          ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                          : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                      }`}
+                    >
+                      {bet.status}
+                    </span>
+                    <button
+                      onClick={() => setActiveMenuBetId(activeMenuBetId === bet.id ? null : bet.id)}
+                      className="p-1 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 text-base"
+                    >
+                      ⋮
+                    </button>
+                  </div>
+                </div>
 
-          <div className="mt-4 space-y-2 border-t border-ink-muted/10 pt-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-ink-muted">
-                {bet.status === "won" ? "Total Return" : "Potential Return"}
-              </span>
-              <span className="font-display font-bold text-win">
-                ₦{bet.potentialPayout.toLocaleString("en-NG")}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-ink-muted">Total Stake</span>
-              <span className="font-semibold">₦{bet.stake.toLocaleString("en-NG")}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-ink-muted">Odds</span>
-              <span className="font-semibold">{bet.oddsAtPlacement.toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
+                {/* Match details */}
+                <div className="mb-3">
+                  <p className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                    {homeName} vs {awayName}
+                  </p>
+                  <p className="text-xs text-gray-500 capitalize mt-0.5">
+                    {bet.marketType.replace("_", " ")}: <strong className="text-gray-800 dark:text-gray-200">{bet.outcome}</strong>
+                  </p>
+                </div>
 
-        {/* Leg / selection block — SportyBet style */}
-        <div className="mt-4 rounded-xl bg-surface p-4 shadow-card">
-          <p className="text-xs text-ink-muted">
-            {match
-              ? new Date(match.kickoffAt).toLocaleString("en-NG", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : "—"}
-            {isLive && clock ? " · " + clock.display : ""}
-          </p>
-          <p className="mt-1 text-sm font-semibold">
-            {home?.name ?? "Home"} vs {away?.name ?? "Away"}
-          </p>
+                {/* Bottom values */}
+                <div className="flex items-center justify-between text-xs pt-2 border-t border-gray-100 dark:border-gray-800">
+                  <div>
+                    <span className="text-gray-500 block text-[10px]">Odds</span>
+                    <span className="font-bold">{bet.odds.toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 block text-[10px]">Stake</span>
+                    <span className="font-semibold">₦{bet.stake.toLocaleString()}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-gray-500 block text-[10px]">Return</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      ₦{(bet.stake * bet.odds).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
 
-          {score && (
-            <p className="mt-1 text-xs font-medium text-ink-muted">
-              {score.live ? "Live Score" : "FT Score"}{" "}
-              <span className={score.live ? "text-loss" : "text-ink"}>
-                {score.home}:{score.away}
-              </span>
-            </p>
-          )}
-
-          <div
-            className={
-              "mt-3 rounded-lg px-3 py-3 " +
-              (pickOk
-                ? "bg-win/15"
-                : pickFail
-                  ? "bg-loss/10"
-                  : "bg-surface-raised")
-            }
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-sm">
-                  <span className="text-ink-muted">Pick </span>
-                  <span className="font-semibold">
-                    {bet.selectionLabel} @{bet.oddsAtPlacement.toFixed(2)}
-                  </span>
-                  {pickOk && <span className="ml-1 text-win">✓</span>}
-                  {pickFail && <span className="ml-1 text-loss">✗</span>}
-                </p>
-                <p className="mt-1 text-xs text-ink-muted">Market 1X2</p>
-                <p className="mt-0.5 text-xs text-ink-muted">
-                  Outcome{" "}
-                  <span className="font-medium text-ink">
-                    {pickOk
-                      ? bet.selectionLabel
-                      : pickFail
-                        ? "Lost"
-                        : pickOpen
-                          ? "Pending"
-                          : "Void"}
-                  </span>
-                </p>
+                {/* Dropdown Action Menu */}
+                {activeMenuBetId === bet.id && (
+                  <div className="absolute right-4 top-10 z-20 w-44 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl py-1 text-xs">
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(bet.id);
+                        alert("Bet ID copied to clipboard!");
+                        setActiveMenuBetId(null);
+                      }}
+                      className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
+                    >
+                      📋 Copy number
+                    </button>
+                    <button
+                      onClick={() => handleTriggerPrint(bet)}
+                      className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
+                    >
+                      🖨️ Print / Save as PDF
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSharingBet(bet);
+                        setActiveMenuBetId(null);
+                      }}
+                      className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
+                    >
+                      🔗 Share
+                    </button>
+                    <button
+                      onClick={() => handleHideBet(bet.id)}
+                      className="w-full px-4 py-2 text-left hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 flex items-center gap-2"
+                    >
+                      🙈 Hide bet
+                    </button>
+                  </div>
+                )}
               </div>
-              {pickOk && <span className="text-2xl">🏆</span>}
+            );
+          })
+        )}
+      </main>
+
+      {/* DIGITAL SHARE MODAL (PariPesa Digital Style) */}
+      {sharingBet && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-sm overflow-hidden rounded-2xl bg-[#0e1e38] text-white shadow-2xl border border-blue-900/40">
+            {/* Header Banner */}
+            <div className="relative bg-gradient-to-r from-blue-900 to-indigo-950 p-5 text-center border-b border-blue-800/50">
+              <button
+                onClick={() => setSharingBet(null)}
+                className="absolute right-4 top-4 text-gray-300 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+              <h2 className="text-xl font-black tracking-wider text-amber-400 uppercase">FUNAAB BetSim</h2>
+              <p className="text-xs text-blue-200 mt-1 font-mono">Bet slip ID: {sharingBet.id.slice(0, 12).toUpperCase()}</p>
+              <p className="text-[11px] text-blue-300/80">
+                Single Bet • {new Date(sharingBet.createdAt).toLocaleString("en-GB")}
+              </p>
+            </div>
+
+            {/* Main Summary Card */}
+            <div className="p-4">
+              <div className="rounded-xl bg-[#172a4a] p-4 text-center border border-blue-800/40 mb-4 shadow-inner">
+                <div className="grid grid-cols-2 gap-2 text-xs mb-2 pb-2 border-b border-blue-800/30">
+                  <div>
+                    <span className="text-blue-300 block text-[10px] uppercase tracking-wider">Status</span>
+                    <strong className={`uppercase text-sm ${sharingBet.status === "won" ? "text-emerald-400" : sharingBet.status === "lost" ? "text-rose-400" : "text-amber-300"}`}>
+                      {sharingBet.status === "won" ? "Paid Out" : sharingBet.status}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-blue-300 block text-[10px] uppercase tracking-wider">Odds</span>
+                    <strong className="text-sm text-white">{sharingBet.odds.toFixed(2)}</strong>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-blue-300 block text-[10px] uppercase tracking-wider">Stake</span>
+                    <span className="font-semibold text-white">₦{sharingBet.stake.toLocaleString()}</span>
+                  </div>
+                  <div>
+                    <span className="text-blue-300 block text-[10px] uppercase tracking-wider">Potential Return</span>
+                    <span className="font-semibold text-emerald-400">₦{(sharingBet.stake * sharingBet.odds).toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Match Card */}
+              <div className="rounded-xl bg-white text-black p-3 text-xs shadow-md">
+                <div className="flex justify-between items-center text-[10px] font-bold text-blue-700 uppercase mb-1">
+                  <span>Football</span>
+                  <span>{matches[sharingBet.matchId] ? new Date(matches[sharingBet.matchId].kickoffAt).toLocaleDateString("en-GB") : ""}</span>
+                </div>
+                <p className="font-bold text-sm text-gray-900">
+                  {matches[sharingBet.matchId]
+                    ? `${teams[matches[sharingBet.matchId].homeTeamId]?.name ?? "Home"} vs ${teams[matches[sharingBet.matchId].awayTeamId]?.name ?? "Away"}`
+                    : "Match Event"}
+                </p>
+                <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between items-center font-semibold">
+                  <span className="capitalize text-gray-700">{sharingBet.marketType.replace("_", " ")}: {sharingBet.outcome}</span>
+                  <span className="text-emerald-700 font-bold text-sm">{sharingBet.odds.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="p-4 pt-0 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(sharingBet.id);
+                  alert("Ticket ID copied to clipboard!");
+                }}
+                className="w-full rounded-xl bg-blue-900/60 py-2.5 text-xs font-bold text-blue-200 hover:bg-blue-800 transition"
+              >
+                📋 Copy ID
+              </button>
+              <button
+                onClick={() => setSharingBet(null)}
+                className="w-full rounded-xl bg-emerald-600 py-2.5 text-xs font-bold text-white hover:bg-emerald-500 transition"
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>
+      )}
 
-        {bet.status === "won" && (
-          <div className="mt-4 rounded-xl bg-win/15 px-4 py-4 text-center">
-            <p className="text-xs font-medium uppercase tracking-wide text-win">Paid out</p>
-            <p className="mt-1 font-display text-2xl font-bold text-win">
-              +₦{bet.potentialPayout.toLocaleString("en-NG")}
-            </p>
-          </div>
-        )}
-        {bet.status === "lost" && (
-          <div className="mt-4 rounded-xl bg-loss/10 px-4 py-3 text-center">
-            <p className="text-sm font-semibold text-loss">Lost</p>
-          </div>
-        )}
-        {bet.status === "void" && (
-          <div className="mt-4 rounded-xl bg-ink-muted/10 px-4 py-3 text-center">
-            <p className="text-sm font-semibold text-ink-muted">Void — stake refunded</p>
-          </div>
-        )}
-      </div>
+      {/* PRINT RECEIPT (Hidden on web UI, active during window.print()) */}
+      {printingBet && (
+        <PrintableTicket
+          bet={printingBet}
+          match={matches[printingBet.matchId]}
+          homeTeam={matches[printingBet.matchId] ? teams[matches[printingBet.matchId].homeTeamId]?.name : "Home Team"}
+          awayTeam={matches[printingBet.matchId] ? teams[matches[printingBet.matchId].awayTeamId]?.name : "Away Team"}
+        />
+      )}
     </div>
   );
 }
 
-function BetActionSheet({ bet, onClose }: { bet: Bet; onClose: () => void }) {
-  const { user } = useAuth();
-  const [busy, setBusy] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const ticketId = shortTicketId(bet.id);
-
-  function shareText() {
-    return `FUNAAB BetSim ticket ${ticketId} — ${bet.selectionLabel} @${bet.oddsAtPlacement.toFixed(2)}, stake ₦${bet.stake.toLocaleString("en-NG")}.`;
-  }
-
-  async function copyNumber() {
-    try {
-      await navigator.clipboard.writeText(ticketId);
-      setFeedback("Ticket number copied");
-    } catch {
-      setFeedback("Could not copy — try again");
-    }
-  }
-
-  async function share() {
-    const text = shareText();
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: "FUNAAB BetSim ticket", text });
-      } else {
-        await navigator.clipboard.writeText(text);
-        setFeedback("Sharing isn't available here — copied instead");
-      }
-    } catch {
-      /* user cancelled the share sheet — not an error */
-    }
-  }
-
-  function print() {
-    window.print();
-  }
-
-  async function hideBet() {
-    if (!user) return;
-    setBusy(true);
-    try {
-      const idToken = await user.getIdToken();
-      const response = await fetch("/api/bets/hide", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ betId: bet.id, hidden: true }),
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Could not hide this ticket");
-      }
-      onClose();
-    } catch (err) {
-      setFeedback(err instanceof Error ? err.message : "Could not hide this ticket");
-      setBusy(false);
-    }
-  }
+{/* PRINT COMPONENT */}
+function PrintableTicket({
+  bet,
+  match,
+  homeTeam,
+  awayTeam,
+}: {
+  bet: Bet;
+  match?: Match;
+  homeTeam?: string;
+  awayTeam?: string;
+}) {
+  const createdDate = new Date(bet.createdAt).toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end bg-black/40" onClick={onClose}>
-      <div
-        className="w-full rounded-t-2xl bg-surface pb-[env(safe-area-inset-bottom,0px)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-ink-muted/25" />
-        <p className="px-4 pb-2 pt-3 text-center text-sm font-semibold">Select</p>
-        {feedback && (
-          <p className="px-4 pb-2 text-center text-xs text-ink-muted">{feedback}</p>
-        )}
-        <div className="divide-y divide-ink-muted/10">
-          <SheetAction icon="📋" label="Copy number" onClick={copyNumber} />
-          <SheetAction icon="🖨️" label="Print" onClick={print} />
-          <SheetAction icon="↗️" label="Share" onClick={share} />
-          <SheetAction icon="🙈" label={busy ? "Hiding…" : "Hide bet"} onClick={hideBet} disabled={busy} />
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="mx-4 my-3 w-[calc(100%-2rem)] rounded-xl bg-ink-muted/10 py-3 text-sm font-semibold"
-        >
-          Cancel
-        </button>
+    <div className="printable-ticket hidden print:block bg-white text-black p-6 font-sans text-xs">
+      <div className="text-center border-b border-gray-300 pb-3 mb-3">
+        <h1 className="text-xl font-black tracking-wider text-emerald-800">FUNAAB BetSim</h1>
+        <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-0.5">Official Simulation Ticket</p>
+        <p className="text-[11px] font-semibold text-gray-700 mt-2">{createdDate}</p>
+        <p className="text-sm font-bold mt-1">Bet slip № {bet.id.slice(0, 12).toUpperCase()}</p>
       </div>
-    </div>
-  );
-}
 
-function SheetAction({
-  icon,
-  label,
-  onClick,
-  disabled,
-}: {
-  icon: string;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex w-full items-center gap-3 px-4 py-3.5 text-left disabled:opacity-50"
-    >
-      <span className="text-lg">{icon}</span>
-      <span className="text-sm font-medium">{label}</span>
-    </button>
-  );
-}
-function WinCelebrationModal({
-  count,
-  total,
-  onClose,
-}: {
-  count: number;
-  total: number;
-  onClose: () => void;
-}) {
-  const title = count === 1 ? "YOU WON" : "YOU WON " + count + " BETS";
+      <div className="flex justify-between items-center mb-3 text-[11px] font-medium border-b border-gray-200 pb-2">
+        <span>Type: Single Bet</span>
+        <span>Status: <strong className="uppercase">{bet.status}</strong></span>
+      </div>
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4">
-      <div className="w-full max-w-sm rounded-2xl bg-surface p-6 text-center shadow-card">
-        <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-win/15 text-3xl">
-          🏆
+      <table className="w-full border-collapse border border-gray-300 text-left mb-4 text-[11px]">
+        <thead>
+          <tr className="bg-gray-100 text-gray-700 border-b border-gray-300">
+            <th className="p-2 border-r border-gray-300">Date/Time</th>
+            <th className="p-2 border-r border-gray-300">Event</th>
+            <th className="p-2 border-r border-gray-300">Selection</th>
+            <th className="p-2 text-right">Odds</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-b border-gray-200">
+            <td className="p-2 border-r border-gray-200 whitespace-nowrap">
+              {match ? new Date(match.kickoffAt).toLocaleDateString("en-GB") : "-"}
+            </td>
+            <td className="p-2 border-r border-gray-200 font-semibold">
+              {homeTeam ?? "Home"} vs {awayTeam ?? "Away"}
+            </td>
+            <td className="p-2 border-r border-gray-200 capitalize">
+              {bet.marketType.replace("_", " ")} — {bet.outcome}
+            </td>
+            <td className="p-2 text-right font-bold">{bet.odds.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div className="flex flex-col gap-1 items-end border-t border-gray-300 pt-3 mb-6 text-xs">
+        <div className="flex justify-between w-full max-w-[200px]">
+          <span className="text-gray-600">Total Odds:</span>
+          <span className="font-bold">{bet.odds.toFixed(2)}</span>
         </div>
-        <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
-          Great result
-        </p>
-        <h2 className="mt-1 font-display text-2xl font-bold text-win">{title}</h2>
-        <p className="mt-3 font-display text-3xl font-bold tabular-nums">
-          ₦{total.toLocaleString("en-NG")}
-        </p>
-        <p className="mt-1 text-sm text-ink-muted">
-          {count === 1
-            ? "Payout added to your balance"
-            : "Total payout added to your balance"}
-        </p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-6 w-full rounded-xl bg-brand py-3 text-sm font-semibold text-white"
-        >
-          Nice!
-        </button>
+        <div className="flex justify-between w-full max-w-[200px]">
+          <span className="text-gray-600">Stake:</span>
+          <span className="font-bold">₦{bet.stake.toLocaleString()}</span>
+        </div>
+        <div className="flex justify-between w-full max-w-[200px] text-sm border-t border-gray-300 pt-1 mt-1 font-black text-emerald-800">
+          <span>Potential Return:</span>
+          <span>₦{(bet.stake * bet.odds).toLocaleString()}</span>
+        </div>
+      </div>
+
+      <div className="flex flex-col items-center justify-center pt-4 border-t border-dashed border-gray-400">
+        <div className="font-mono text-2xl tracking-[0.2em] font-bold text-gray-800 border-x-4 border-black px-4 py-1 my-1">
+          |||| | ||||| ||| |||| ||
+        </div>
+        <span className="font-mono text-[10px] text-gray-500 tracking-widest">{bet.id.toUpperCase()}</span>
       </div>
     </div>
   );
