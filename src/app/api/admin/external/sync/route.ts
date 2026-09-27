@@ -185,9 +185,9 @@ async function upsertTeam(
 }
 
 /**
- * When FT is known and match not yet settled, call the same settle path
- * you use in admin (import your settle helper if extracted).
- * For v1: mark finished + scores; trigger settle via internal call.
+ * Write FT scores and mark finished.
+ * Full wallet settlement stays on the existing admin settle route
+ * (or a shared settleMatch helper we can extract later).
  */
 async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
   const home = m.score.fullTime.home;
@@ -198,10 +198,10 @@ async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
   const ref = adminDb.collection("matches").doc(id);
   const snap = await ref.get();
   if (!snap.exists) return false;
+
   const match = snap.data() as Match;
   if (match.status === "settled") return false;
 
-  // Write FT first
   await ref.update({
     homeScore: home,
     awayScore: away,
@@ -211,15 +211,5 @@ async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
     updatedAt: now,
   });
 
-  // Reuse admin settle by invoking shared logic if you have it.
-  // Minimal: set result_confirmed and leave settle to existing admin route
-  // OR POST internally to settle. Prefer extracting settleMatch(matchId).
-  try {
-    const { settleMatchById } = await import("@/lib/domain/settleMatch");
-    await settleMatchById(id);
-    return true;
-  } catch {
-    // settle helper may not exist yet — match stays "finished" for admin settle
-    return false;
-  }
+  return true;
 }
