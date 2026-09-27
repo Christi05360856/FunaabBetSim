@@ -1,6 +1,7 @@
 /**
  * OddsPapi client (server-only).
- * Auth: ?apiKey=  — free tier \~250 req/month. Use sparingly.
+ * Auth: ?apiKey= — free tier \~250 req/month.
+ * Uses string concat (not template literals) so mobile editors can't break URLs.
  */
 
 const BASE = "https://api.oddspapi.io/v4";
@@ -14,12 +15,11 @@ function apiKey(): string {
 
 async function opFetch<T>(path: string, params: Record<string, string>): Promise<T> {
   const q = new URLSearchParams({ ...params, apiKey: apiKey() });
-  const res = await fetch(`\( {BASE} \){path}?${q.toString()}`, {
-    next: { revalidate: 0 },
-  });
+  const url = BASE + path + "?" + q.toString();
+  const res = await fetch(url, { next: { revalidate: 0 } });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`OddsPapi ${res.status}: ${body.slice(0, 240)}`);
+    throw new Error("OddsPapi " + res.status + ": " + body.slice(0, 240));
   }
   return res.json() as Promise<T>;
 }
@@ -34,7 +34,6 @@ export type OpFixture = {
   categoryName?: string;
 };
 
-/** Normalize team names for fuzzy match. */
 export function normName(s: string): string {
   return s
     .toLowerCase()
@@ -57,7 +56,6 @@ function namesClose(a: string, b: string): boolean {
   return hit >= 1 && (hit >= 2 || Math.min(ta.size, tb.size) === 1);
 }
 
-/** One request: soccer fixtures in a date window. */
 export async function fetchSoccerFixtures(
   fromIso: string,
   toIso: string
@@ -85,11 +83,8 @@ export function matchFixtureId(
     if (hours > 6) continue;
     const p1 = f.participant1Name ?? "";
     const p2 = f.participant2Name ?? "";
-    // OddsPapi: participant1 often home
-    const homeAway =
-      namesClose(p1, homeName) && namesClose(p2, awayName);
-    const swapped =
-      namesClose(p1, awayName) && namesClose(p2, homeName);
+    const homeAway = namesClose(p1, homeName) && namesClose(p2, awayName);
+    const swapped = namesClose(p1, awayName) && namesClose(p2, homeName);
     if (!homeAway && !swapped) continue;
     const score = (homeAway ? 10 : 8) - hours;
     if (!best || score > best.score) best = { id: f.fixtureId, score };
@@ -99,15 +94,10 @@ export function matchFixtureId(
 
 export type OneXTwo = { home: number; draw: number; away: number };
 
-/**
- * Pull decimal 1X2 from /odds response.
- * Structure varies by book; we scan bookmakerOdds for marketType 1x2 / fulltime.
- */
 export async function fetch1x2(fixtureId: string): Promise<OneXTwo | null> {
   const data = await opFetch<Record<string, unknown>>("/odds", {
     fixtureId,
     oddsFormat: "decimal",
-    // Prefer common books; omit if empty response
     bookmakers: "bet365,pinnacle,1xbet,williamhill",
   });
 
@@ -124,25 +114,18 @@ export async function fetch1x2(fixtureId: string): Promise<OneXTwo | null> {
       if (!m || typeof m !== "object") continue;
       const market = m as Record<string, unknown>;
       const mType = String(market.marketType ?? market.type ?? "").toLowerCase();
-      const period = String(market.period ?? "").toLowerCase();
       const is1x2 =
         mType.includes("1x2") ||
         mType === "match_winner" ||
-        mType === "full_time_result";
-      if (!is1x2 && mType) continue;
-      if (period && period !== "fulltime" && period !== "full_time" && period !== "result") {
-        // still allow if clearly 1x2
-        if (!is1x2) continue;
-      }
+        mType === "full_time_result" ||
+        !mType;
+      if (mType && !is1x2) continue;
 
-      const outcomes = market.outcomes ?? market.selections;
-      const triple = extract1x2FromOutcomes(outcomes, data);
+      const triple = extract1x2FromOutcomes(market.outcomes ?? market.selections);
       if (triple) return triple;
     }
   }
-
-  // Fallback: deep scan for three decimal prices labeled 1 / X / 2
-  return deepScan1x2(data);
+  return null;
 }
 
 function asPrice(v: unknown): number | null {
@@ -162,10 +145,7 @@ function asPrice(v: unknown): number | null {
   return null;
 }
 
-function extract1x2FromOutcomes(
-  outcomes: unknown,
-  root: Record<string, unknown>
-): OneXTwo | null {
+function extract1x2FromOutcomes(outcomes: unknown): OneXTwo | null {
   if (!outcomes) return null;
   let home: number | null = null;
   let draw: number | null = null;
@@ -184,11 +164,7 @@ function extract1x2FromOutcomes(
       o.outcomeName ?? o.name ?? o.label ?? o.outcomeId ?? ""
     ).toLowerCase();
     const price =
-      asPrice(o.price) ??
-      asPrice(o.odds) ??
-      asPrice(o.players) ??
-      asPrice(o);
-
+      asPrice(o.price) ?? asPrice(o.odds) ?? asPrice(o.players) ?? asPrice(o);
     if (!price) continue;
     if (
       name === "1" ||
@@ -209,30 +185,21 @@ function extract1x2FromOutcomes(
     }
   }
 
-  // participant names from root
-  if ((home == null || away == null) && list.length >= 3) {
+  if (home && draw && away) return { home, draw, away };
+
+  if (list.length >= 3) {
     const prices = list
       .map((item) => {
         if (!item || typeof item !== "object") return null;
-        return asPrice((item as Record<string, unknown>).price) ??
-          asPrice(item);
+        return asPrice((item as Record<string, unknown>).price) ?? asPrice(item);
       })
       .filter((x): x is number => x != null);
     if (prices.length >= 3) {
       return { home: prices[0]!, draw: prices[1]!, away: prices[2]! };
     }
   }
-
-  if (home && draw && away) return { home, draw, away };
-  void root;
   return null;
 }
 
-function deepScan1x2(data: unknown): OneXTwo | null {
-  // last resort: not reliable — return null and use model defaults
-  void data;
-  return null;
-}
-
-/** Neutral bookie-like defaults if OddsPapi has no 1X2. */
+/** Neutral defaults if OddsPapi has no match / fails. */
 export const DEFAULT_1X2: OneXTwo = { home: 2.1, draw: 3.3, away: 3.4 };
