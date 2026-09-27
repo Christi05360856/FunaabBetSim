@@ -7,8 +7,11 @@ import { useAuth } from "@/lib/auth/AuthContext";
 import { db } from "@/lib/firebase/client";
 import type { Bet, BetLeg, Match, Team } from "@/types/domain";
 import {
-  formatSelectionLabel,
+  formatMoney,
+  formatMoneyFull,
   matchFinalScore,
+  outcomeLabel,
+  resolveSelection,
 } from "@/lib/domain/selectionLabel";
 
 function betLegs(bet: Bet): BetLeg[] {
@@ -19,7 +22,9 @@ function betLegs(bet: Bet): BetLeg[] {
       marketId: bet.marketId,
       selectionId: bet.selectionId,
       selectionLabel: bet.selectionLabel || "",
-      odds: bet.oddsAtPlacement || (bet.stake > 0 ? bet.potentialPayout / bet.stake : 1),
+      odds:
+        bet.oddsAtPlacement ||
+        (bet.stake > 0 ? bet.potentialPayout / bet.stake : 1),
     },
   ];
 }
@@ -30,16 +35,22 @@ function totalOdds(bet: Bet): number {
   return legs.reduce((acc, l) => acc * (l.odds || 1), 1);
 }
 
+function statusStyle(status: string): string {
+  if (status === "won") return "bg-emerald-100 text-emerald-800";
+  if (status === "lost") return "bg-rose-100 text-rose-800";
+  if (status === "void") return "bg-gray-100 text-gray-600";
+  return "bg-amber-100 text-amber-800";
+}
+
 export default function MyBetsPage() {
   const { user, loading } = useAuth();
   const [bets, setBets] = useState<Bet[]>([]);
   const [matches, setMatches] = useState<Record<string, Match>>({});
   const [teams, setTeams] = useState<Record<string, Team>>({});
   const [activeTab, setActiveTab] = useState<"open" | "settled">("open");
-  const [activeMenuBetId, setActiveMenuBetId] = useState<string | null>(null);
+  const [menuId, setMenuId] = useState<string | null>(null);
   const [detailBet, setDetailBet] = useState<Bet | null>(null);
   const [sharingBet, setSharingBet] = useState<Bet | null>(null);
-  const [printingBet, setPrintingBet] = useState<Bet | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -47,10 +58,11 @@ export default function MyBetsPage() {
     const unsubBets = onSnapshot(
       query(collection(db, "bets"), where("uid", "==", user.uid)),
       (snap) => {
-        const list = snap.docs
-          .map((d) => d.data() as Bet)
-          .sort((a, b) => (b.placedAt ?? 0) - (a.placedAt ?? 0));
-        setBets(list);
+        setBets(
+          snap.docs
+            .map((d) => d.data() as Bet)
+            .sort((a, b) => (b.placedAt ?? 0) - (a.placedAt ?? 0))
+        );
       }
     );
 
@@ -77,37 +89,37 @@ export default function MyBetsPage() {
     };
   }, [user]);
 
-  async function handleHideBet(betId: string) {
+  async function hideBet(betId: string) {
     if (!user) return;
     try {
-      const idToken = await user.getIdToken();
+      const token = await user.getIdToken();
       await fetch("/api/bets/hide", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: "Bearer " + idToken,
+          Authorization: "Bearer " + token,
         },
         body: JSON.stringify({ betId, hidden: true }),
       });
     } catch (e) {
       console.error(e);
     }
-    setActiveMenuBetId(null);
+    setMenuId(null);
   }
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center">
-        <p className="text-ink-muted">Loading…</p>
+      <main className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
       </main>
     );
   }
 
   if (!user) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-3 p-4">
-        <p className="font-semibold">Sign in to view your bets</p>
-        <Link href="/login" className="text-brand underline">
+      <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-gray-50 p-4">
+        <p className="font-semibold text-gray-800">Sign in to view your bets</p>
+        <Link href="/login" className="text-sm font-semibold text-emerald-600">
           Go to Login
         </Link>
       </main>
@@ -120,16 +132,20 @@ export default function MyBetsPage() {
   const list = activeTab === "open" ? openBets : settledBets;
 
   return (
-    <main className="mx-auto min-h-screen max-w-md px-4 pb-28 pt-5">
-      <h1 className="font-display text-xl font-bold">My Bets</h1>
+    <div className="min-h-screen overflow-x-hidden bg-gray-50 pb-24 text-gray-900">
+      <header className="sticky top-0 z-20 border-b border-gray-200 bg-white px-4 py-3">
+        <h1 className="text-lg font-bold">My Bets</h1>
+      </header>
 
-      <div className="mt-4 flex rounded-xl bg-surface p-1 shadow-card">
+      <div className="flex border-b border-gray-200 bg-white">
         <button
           type="button"
           onClick={() => setActiveTab("open")}
           className={
-            "flex-1 rounded-lg py-2.5 text-sm font-semibold " +
-            (activeTab === "open" ? "bg-brand text-white" : "text-ink-muted")
+            "flex-1 py-3 text-center text-sm font-semibold border-b-2 " +
+            (activeTab === "open"
+              ? "border-emerald-600 text-emerald-600"
+              : "border-transparent text-gray-500")
           }
         >
           Open ({openBets.length})
@@ -138,30 +154,38 @@ export default function MyBetsPage() {
           type="button"
           onClick={() => setActiveTab("settled")}
           className={
-            "flex-1 rounded-lg py-2.5 text-sm font-semibold " +
-            (activeTab === "settled" ? "bg-brand text-white" : "text-ink-muted")
+            "flex-1 py-3 text-center text-sm font-semibold border-b-2 " +
+            (activeTab === "settled"
+              ? "border-emerald-600 text-emerald-600"
+              : "border-transparent text-gray-500")
           }
         >
           Settled ({settledBets.length})
         </button>
       </div>
 
-      <div className="mt-4 flex flex-col gap-3">
+      <main className="mx-auto flex max-w-lg flex-col gap-3 p-3">
         {list.length === 0 ? (
-          <p className="py-12 text-center text-sm text-ink-muted">
+          <p className="py-16 text-center text-sm text-gray-500">
             No {activeTab} bets.
           </p>
         ) : (
           list.map((bet) => {
             const legs = betLegs(bet);
             const first = legs[0];
-            const match = first ? matches[first.matchId] : matches[bet.matchId];
-            const home = match ? teams[match.homeTeamId]?.name ?? "Home" : "Home";
-            const away = match ? teams[match.awayTeamId]?.name ?? "Away" : "Away";
+            const match = first
+              ? matches[first.matchId]
+              : matches[bet.matchId];
+            const home = match
+              ? teams[match.homeTeamId]?.name ?? "Home"
+              : "Home";
+            const away = match
+              ? teams[match.awayTeamId]?.name ?? "Away"
+              : "Away";
             const score = matchFinalScore(match);
             const odds = totalOdds(bet);
             const isAcca = legs.length > 1;
-            const selText = formatSelectionLabel(
+            const { market, pick } = resolveSelection(
               first?.selectionId ?? bet.selectionId,
               first?.selectionLabel ?? bet.selectionLabel
             );
@@ -169,68 +193,73 @@ export default function MyBetsPage() {
             return (
               <div
                 key={bet.id}
-                className="relative rounded-2xl bg-surface p-4 shadow-card"
+                className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
               >
                 <button
                   type="button"
-                  className="w-full text-left"
+                  className="w-full p-3.5 text-left"
                   onClick={() => {
                     setDetailBet(bet);
-                    setActiveMenuBetId(null);
+                    setMenuId(null);
                   }}
                 >
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-mono text-ink-muted">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate font-mono text-[11px] text-gray-400">
                       ID: {bet.id.slice(0, 8)}
                     </span>
                     <span
                       className={
-                        "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase " +
-                        (bet.status === "won"
-                          ? "bg-win/15 text-win"
-                          : bet.status === "lost"
-                            ? "bg-loss/15 text-loss"
-                            : "bg-ink-muted/15 text-ink-muted")
+                        "shrink-0 rounded px-2 py-0.5 text-[10px] font-bold uppercase " +
+                        statusStyle(bet.status)
                       }
                     >
                       {bet.status}
                     </span>
                   </div>
 
-                  <p className="mt-2 text-sm font-semibold">
+                  <p className="mt-2 truncate text-[15px] font-bold leading-snug">
                     {isAcca
                       ? "Accumulator · " + legs.length + " legs"
                       : home + " vs " + away}
                   </p>
-                  <p className="mt-0.5 text-xs text-ink-muted">
-                    {isAcca ? legs.length + " selections" : "Selection: " + selText}
+                  <p className="mt-0.5 truncate text-xs text-gray-500">
+                    {isAcca
+                      ? legs.length + " selections"
+                      : market + " · " + pick}
                   </p>
                   {score && !isAcca && (
-                    <p className="mt-1 text-xs font-medium">
+                    <p className="mt-1 text-xs font-medium text-gray-600">
                       {score.live ? "Live " : "FT "}
-                      <span className={score.live ? "text-loss" : ""}>
-                        {score.text}
-                      </span>
+                      {score.text}
                     </p>
                   )}
 
-                  <div className="mt-3 flex justify-between border-t border-ink-muted/10 pt-3 text-sm">
-                    <div>
-                      <p className="text-[10px] text-ink-muted">Odds</p>
-                      <p className="font-semibold">{odds.toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-ink-muted">Stake</p>
-                      <p className="font-semibold">
-                        ₦{bet.stake.toLocaleString("en-NG")}
+                  {/* 3-col grid — numbers wrap / shrink, never blow the card */}
+                  <div className="mt-3 grid grid-cols-3 gap-1 border-t border-gray-100 pt-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-gray-400">Odds</p>
+                      <p className="truncate text-sm font-semibold tabular-nums">
+                        {odds.toFixed(2)}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-[10px] text-ink-muted">
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-gray-400">Stake</p>
+                      <p
+                        className="truncate text-sm font-semibold tabular-nums"
+                        title={formatMoneyFull(bet.stake)}
+                      >
+                        {formatMoney(bet.stake)}
+                      </p>
+                    </div>
+                    <div className="min-w-0 text-right">
+                      <p className="text-[10px] text-gray-400">
                         {bet.status === "won" ? "Return" : "Pot. win"}
                       </p>
-                      <p className="font-semibold text-win">
-                        ₦{bet.potentialPayout.toLocaleString("en-NG")}
+                      <p
+                        className="truncate text-sm font-semibold tabular-nums text-emerald-600"
+                        title={formatMoneyFull(bet.potentialPayout)}
+                      >
+                        {formatMoney(bet.potentialPayout)}
                       </p>
                     </div>
                   </div>
@@ -238,54 +267,41 @@ export default function MyBetsPage() {
 
                 <button
                   type="button"
-                  className="absolute right-3 top-3 rounded p-1 text-ink-muted"
+                  className="absolute right-2 top-2 rounded-md p-1.5 text-gray-400 hover:bg-gray-100"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setActiveMenuBetId(
-                      activeMenuBetId === bet.id ? null : bet.id
-                    );
+                    setMenuId(menuId === bet.id ? null : bet.id);
                   }}
                 >
                   ⋮
                 </button>
 
-                {activeMenuBetId === bet.id && (
-                  <div className="absolute right-3 top-10 z-20 w-36 rounded-lg bg-surface py-1 shadow-card ring-1 ring-ink-muted/15">
+                {menuId === bet.id && (
+                  <div className="absolute right-2 top-10 z-30 w-40 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
                     <button
                       type="button"
-                      className="block w-full px-3 py-2 text-left text-sm"
+                      className="block w-full px-3 py-2.5 text-left text-sm"
                       onClick={() => {
                         setDetailBet(bet);
-                        setActiveMenuBetId(null);
+                        setMenuId(null);
                       }}
                     >
                       View details
                     </button>
                     <button
                       type="button"
-                      className="block w-full px-3 py-2 text-left text-sm"
+                      className="block w-full px-3 py-2.5 text-left text-sm"
                       onClick={() => {
                         setSharingBet(bet);
-                        setActiveMenuBetId(null);
+                        setMenuId(null);
                       }}
                     >
                       Share
                     </button>
                     <button
                       type="button"
-                      className="block w-full px-3 py-2 text-left text-sm"
-                      onClick={() => {
-                        setPrintingBet(bet);
-                        setActiveMenuBetId(null);
-                        setTimeout(() => window.print(), 150);
-                      }}
-                    >
-                      Print
-                    </button>
-                    <button
-                      type="button"
-                      className="block w-full px-3 py-2 text-left text-sm text-loss"
-                      onClick={() => handleHideBet(bet.id)}
+                      className="block w-full px-3 py-2.5 text-left text-sm text-rose-600"
+                      onClick={() => hideBet(bet.id)}
                     >
                       Hide
                     </button>
@@ -295,7 +311,7 @@ export default function MyBetsPage() {
             );
           })
         )}
-      </div>
+      </main>
 
       {detailBet && (
         <TicketDetail
@@ -314,17 +330,7 @@ export default function MyBetsPage() {
           onClose={() => setSharingBet(null)}
         />
       )}
-
-      {printingBet && (
-        <div className="hidden print:block">
-          <PrintTicket
-            bet={printingBet}
-            matches={matches}
-            teams={teams}
-          />
-        </div>
-      )}
-    </main>
+    </div>
   );
 }
 
@@ -344,57 +350,69 @@ function TicketDetail({
   const isAcca = legs.length > 1;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-bg">
-      <header className="flex items-center gap-3 bg-brand px-4 py-3 text-white">
-        <button type="button" onClick={onClose} aria-label="Back">
+    <div className="fixed inset-0 z-50 flex flex-col overflow-x-hidden bg-gray-50">
+      <header className="flex shrink-0 items-center gap-3 bg-emerald-600 px-3 py-3 text-white">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full p-1 text-xl leading-none"
+          aria-label="Back"
+        >
           ←
         </button>
-        <h2 className="flex-1 font-display text-lg font-bold">Ticket Details</h2>
+        <h2 className="flex-1 text-base font-bold">Ticket Details</h2>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-28 pt-4">
-        <div className="rounded-xl bg-surface p-4 shadow-card">
-          <div className="flex justify-between text-xs text-ink-muted">
-            <span>ID: {bet.id.slice(0, 10).toUpperCase()}</span>
-            <span>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-28 pt-3">
+        {/* Summary */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-2 text-[11px] text-gray-400">
+            <span className="min-w-0 truncate font-mono">
+              ID: {bet.id.slice(0, 10).toUpperCase()}
+            </span>
+            <span className="shrink-0">
               {new Date(bet.placedAt).toLocaleString("en-NG", {
-                day: "2-digit",
+                day: "numeric",
                 month: "short",
                 hour: "2-digit",
                 minute: "2-digit",
               })}
             </span>
           </div>
-          <p className="mt-2 text-sm font-semibold">
-            {isAcca ? "Accumulator" : "Single"}
-          </p>
-          <div className="mt-3 space-y-1 text-sm">
-            <div className="flex justify-between">
-              <span className="text-ink-muted">Status</span>
-              <span className="font-bold uppercase">{bet.status}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-ink-muted">Odds</span>
-              <span className="font-semibold">{odds.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-ink-muted">Stake</span>
-              <span className="font-semibold">
-                ₦{bet.stake.toLocaleString("en-NG")}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-ink-muted">
-                {bet.status === "won" ? "Return" : "Potential return"}
-              </span>
-              <span className="font-semibold text-win">
-                ₦{bet.potentialPayout.toLocaleString("en-NG")}
-              </span>
-            </div>
-          </div>
-        </div>
 
-        <div className="mt-4 flex flex-col gap-3">
+          <div className="mt-2 flex items-center justify-between">
+            <p className="text-sm font-bold">
+              {isAcca ? "Multiple" : "Single"}
+            </p>
+            <span
+              className={
+                "rounded px-2 py-0.5 text-[10px] font-bold uppercase " +
+                statusStyle(bet.status)
+              }
+            >
+              {bet.status === "won" ? "Won" : bet.status}
+            </span>
+          </div>
+
+          <div className="mt-3 space-y-2 text-sm">
+            <Row
+              label={bet.status === "won" ? "Total return" : "Potential return"}
+              value={formatMoney(bet.potentialPayout)}
+              full={formatMoneyFull(bet.potentialPayout)}
+              strong
+              green
+            />
+            <Row
+              label="Total stake"
+              value={formatMoney(bet.stake)}
+              full={formatMoneyFull(bet.stake)}
+            />
+            <Row label="Total odds" value={odds.toFixed(2)} />
+          </div>
+        </section>
+
+        {/* Legs */}
+        <div className="mt-3 flex flex-col gap-3">
           {legs.map((leg, i) => {
             const match = matches[leg.matchId];
             const home = match
@@ -404,81 +422,149 @@ function TicketDetail({
               ? teams[match.awayTeamId]?.name ?? "Away"
               : "Away";
             const score = matchFinalScore(match);
-            const sel = formatSelectionLabel(
+            const { market, pick } = resolveSelection(
               leg.selectionId,
               leg.selectionLabel
             );
+            const outcome = outcomeLabel(bet.status, pick);
+            const won = bet.status === "won";
+            const lost = bet.status === "lost";
 
             return (
-              <div
+              <section
                 key={leg.matchId + "-" + leg.selectionId + "-" + i}
-                className={
-                  "rounded-xl bg-surface p-4 shadow-card " +
-                  (bet.status === "won"
-                    ? "ring-1 ring-win/30"
-                    : bet.status === "lost"
-                      ? "ring-1 ring-loss/20"
-                      : "")
-                }
+                className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
               >
-                <p className="text-xs text-ink-muted">
+                <p className="text-[11px] text-gray-400">
                   {match
                     ? new Date(match.kickoffAt).toLocaleString("en-NG", {
-                        day: "2-digit",
+                        day: "numeric",
                         month: "short",
                         hour: "2-digit",
                         minute: "2-digit",
                       })
                     : "—"}
                 </p>
-                <p className="mt-1 text-sm font-semibold">
+                <p className="mt-1 text-sm font-bold leading-snug">
                   {home} vs {away}
                 </p>
                 {score && (
-                  <p className="mt-1 text-xs font-medium">
-                    {score.live ? "Live " : "FT "}
-                    <span className={score.live ? "text-loss" : "text-ink"}>
+                  <p className="mt-1 text-xs font-medium text-gray-600">
+                    {score.live ? "Live score " : "FT score "}
+                    <span className={score.live ? "text-rose-600" : ""}>
                       {score.text}
                     </span>
                   </p>
                 )}
+
                 <div
                   className={
-                    "mt-3 rounded-lg px-3 py-2 text-sm " +
-                    (bet.status === "won"
-                      ? "bg-win/15"
-                      : bet.status === "lost"
-                        ? "bg-loss/10"
-                        : "bg-surface-raised")
+                    "mt-3 rounded-xl px-3 py-3 text-sm " +
+                    (won
+                      ? "bg-emerald-50"
+                      : lost
+                        ? "bg-rose-50"
+                        : "bg-gray-50")
                   }
                 >
-                  <p>
-                    <span className="text-ink-muted">Pick </span>
-                    <span className="font-semibold">{sel}</span>
-                    <span className="text-ink-muted"> @ </span>
-                    <span className="font-semibold">{leg.odds.toFixed(2)}</span>
-                    {bet.status === "won" && (
-                      <span className="ml-1 text-win">✓</span>
-                    )}
-                    {bet.status === "lost" && (
-                      <span className="ml-1 text-loss">✗</span>
-                    )}
-                  </p>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 space-y-1">
+                      <p>
+                        <span className="text-gray-500">Market </span>
+                        <span className="font-medium">{market}</span>
+                      </p>
+                      <p>
+                        <span className="text-gray-500">Pick </span>
+                        <span className="font-semibold">
+                          {pick} @{leg.odds.toFixed(2)}
+                        </span>
+                        {won && (
+                          <span className="ml-1 font-bold text-emerald-600">
+                            ✓
+                          </span>
+                        )}
+                        {lost && (
+                          <span className="ml-1 font-bold text-rose-600">
+                            ✗
+                          </span>
+                        )}
+                      </p>
+                      <p>
+                        <span className="text-gray-500">Outcome </span>
+                        <span
+                          className={
+                            "font-medium " +
+                            (won
+                              ? "text-emerald-700"
+                              : lost
+                                ? "text-rose-700"
+                                : "")
+                          }
+                        >
+                          {outcome}
+                        </span>
+                      </p>
+                    </div>
+                    {won && <span className="shrink-0 text-xl">🏆</span>}
+                  </div>
                 </div>
-              </div>
+              </section>
             );
           })}
         </div>
 
         {bet.status === "won" && (
-          <div className="mt-4 rounded-xl bg-win/15 py-4 text-center">
-            <p className="text-xs uppercase text-win">Paid out</p>
-            <p className="font-display text-2xl font-bold text-win">
-              +₦{bet.potentialPayout.toLocaleString("en-NG")}
+          <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-4 text-center">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+              Paid out
+            </p>
+            <p
+              className="mt-1 break-all text-xl font-bold tabular-nums text-emerald-700"
+              title={formatMoneyFull(bet.potentialPayout)}
+            >
+              +{formatMoney(bet.potentialPayout)}
+            </p>
+            <p className="mt-1 break-all text-[10px] text-gray-400">
+              {formatMoneyFull(bet.potentialPayout)}
             </p>
           </div>
         )}
+        {bet.status === "lost" && (
+          <div className="mt-4 rounded-2xl bg-rose-50 py-3 text-center text-sm font-semibold text-rose-700">
+            Lost
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function Row({
+  label,
+  value,
+  full,
+  strong,
+  green,
+}: {
+  label: string;
+  value: string;
+  full?: string;
+  strong?: boolean;
+  green?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="shrink-0 text-gray-500">{label}</span>
+      <span
+        className={
+          "min-w-0 truncate text-right tabular-nums " +
+          (strong ? "font-bold " : "font-semibold ") +
+          (green ? "text-emerald-600" : "")
+        }
+        title={full || value}
+      >
+        {value}
+      </span>
     </div>
   );
 }
@@ -500,34 +586,34 @@ function ShareSheet({
   const home = match ? teams[match.homeTeamId]?.name ?? "Home" : "Home";
   const away = match ? teams[match.awayTeamId]?.name ?? "Away" : "Away";
   const odds = totalOdds(bet);
-  const sel = formatSelectionLabel(
+  const { market, pick } = resolveSelection(
     first?.selectionId,
     first?.selectionLabel ?? bet.selectionLabel
   );
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-4 sm:items-center"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm overflow-hidden rounded-2xl bg-[#0b1c36] text-white shadow-card"
+        className="w-full max-w-sm overflow-hidden rounded-2xl bg-[#0b1c36] text-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="bg-gradient-to-r from-brand to-blue-900 px-4 py-4 text-center">
-          <p className="font-display text-lg font-bold tracking-wide text-amber-300">
+        <div className="bg-gradient-to-r from-emerald-700 to-blue-900 px-4 py-4 text-center">
+          <p className="text-lg font-bold tracking-wide text-amber-300">
             FUNAAB BETSIM
           </p>
           <p className="mt-1 text-[11px] text-blue-200">
-            Bet ID: {bet.id.slice(0, 12).toUpperCase()}
+            ID {bet.id.slice(0, 12).toUpperCase()}
           </p>
           <p className="text-[11px] text-blue-300/80">
-            {legs.length > 1 ? "Accumulator" : "Single"} ·{" "}
+            {legs.length > 1 ? "Multiple" : "Single"} ·{" "}
             {new Date(bet.placedAt).toLocaleString("en-GB")}
           </p>
         </div>
-        <div className="p-4">
-          <div className="mb-3 grid grid-cols-2 gap-2 rounded-xl bg-[#172a4a] p-3 text-center text-xs">
+        <div className="space-y-3 p-4">
+          <div className="grid grid-cols-2 gap-2 rounded-xl bg-[#172a4a] p-3 text-center text-xs">
             <div>
               <span className="block text-[10px] uppercase text-blue-300">
                 Status
@@ -550,44 +636,47 @@ function ShareSheet({
               </span>
               <strong>{odds.toFixed(2)}</strong>
             </div>
-            <div>
+            <div className="min-w-0">
               <span className="block text-[10px] uppercase text-blue-300">
                 Stake
               </span>
-              ₦{bet.stake.toLocaleString("en-NG")}
+              <span className="block truncate" title={formatMoneyFull(bet.stake)}>
+                {formatMoney(bet.stake)}
+              </span>
             </div>
-            <div>
+            <div className="min-w-0">
               <span className="block text-[10px] uppercase text-blue-300">
                 Return
               </span>
-              <span className="text-emerald-400">
-                ₦{bet.potentialPayout.toLocaleString("en-NG")}
+              <span
+                className="block truncate text-emerald-400"
+                title={formatMoneyFull(bet.potentialPayout)}
+              >
+                {formatMoney(bet.potentialPayout)}
               </span>
             </div>
           </div>
           <div className="rounded-xl bg-white p-3 text-black">
             <p className="text-sm font-bold">
               {legs.length > 1
-                ? "Accumulator · " + legs.length + " legs"
+                ? "Multiple · " + legs.length + " legs"
                 : home + " vs " + away}
             </p>
             <p className="mt-1 text-xs text-gray-600">
-              {legs.length > 1 ? legs.length + " selections" : "Selection: " + sel}
+              {market} · {pick}
             </p>
           </div>
-            <div className="mt-4 flex gap-2">
+          <div className="flex gap-2">
             <button
               type="button"
-              className="flex-1 rounded-lg border border-white/20 py-2 text-sm"
-              onClick={() => {
-                void navigator.clipboard?.writeText(bet.id);
-              }}
+              className="flex-1 rounded-xl border border-white/20 py-2.5 text-sm"
+              onClick={() => void navigator.clipboard?.writeText(bet.id)}
             >
               Copy ID
             </button>
             <button
               type="button"
-              className="flex-1 rounded-lg bg-brand py-2 text-sm font-semibold"
+              className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold"
               onClick={onClose}
             >
               Done
@@ -598,44 +687,3 @@ function ShareSheet({
     </div>
   );
 }
-
-function PrintTicket({
-  bet,
-  matches,
-  teams,
-}: {
-  bet: Bet;
-  matches: Record<string, Match>;
-  teams: Record<string, Team>;
-}) {
-  const legs = betLegs(bet);
-  const odds = totalOdds(bet);
-  return (
-    <div className="p-6 text-black">
-      <h1 className="text-xl font-bold">FUNAAB BetSim</h1>
-      <p className="text-xs">Ticket {bet.id}</p>
-      <p className="text-xs">
-        {new Date(bet.placedAt).toLocaleString("en-GB")} · {bet.status}
-      </p>
-      <ul className="mt-4 space-y-2 text-sm">
-        {legs.map((leg, i) => {
-          const m = matches[leg.matchId];
-          const h = m ? teams[m.homeTeamId]?.name : "Home";
-          const a = m ? teams[m.awayTeamId]?.name : "Away";
-          return (
-            <li key={i}>
-              {h} vs {a} —{" "}
-              {formatSelectionLabel(leg.selectionId, leg.selectionLabel)} @{" "}
-              {leg.odds.toFixed(2)}
-            </li>
-          );
-        })}
-      </ul>
-      <p className="mt-4">
-        Stake ₦{bet.stake.toLocaleString()} · Odds {odds.toFixed(2)} · Return ₦
-        {bet.potentialPayout.toLocaleString()}
-      </p>
-    </div>
-  );
-}
-   
