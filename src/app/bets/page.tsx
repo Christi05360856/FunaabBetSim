@@ -14,7 +14,7 @@ export default function MyBetsPage() {
   const [teams, setTeams] = useState<Record<string, Team>>({});
   const [activeTab, setActiveTab] = useState<"open" | "settled">("open");
   const [activeMenuBetId, setActiveMenuBetId] = useState<string | null>(null);
-  
+
   // State for digital share modal
   const [sharingBet, setSharingBet] = useState<Bet | null>(null);
   // State for printable ticket render
@@ -104,6 +104,12 @@ export default function MyBetsPage() {
   const openBets = visibleBets.filter((b) => b.status === "open");
   const settledBets = visibleBets.filter((b) => b.status !== "open");
   const currentList = activeTab === "open" ? openBets : settledBets;
+
+  // Resolved match and details for the share modal
+  const shareMatch = sharingBet ? matches[sharingBet.matchId] : undefined;
+  const shareHomeTeam = shareMatch ? teams[shareMatch.homeTeamId]?.name ?? "Home Team" : "Home Team";
+  const shareAwayTeam = shareMatch ? teams[shareMatch.awayTeamId]?.name ?? "Away Team" : "Away Team";
+  const shareOdds = sharingBet && sharingBet.stake > 0 ? sharingBet.potentialPayout / sharingBet.stake : 1.0;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 pb-20">
@@ -280,7 +286,7 @@ export default function MyBetsPage() {
                   <div>
                     <span className="text-blue-300 block text-[10px] uppercase tracking-wider">Odds</span>
                     <strong className="text-sm text-white">
-                      {(sharingBet.stake > 0 ? sharingBet.potentialPayout / sharingBet.stake : 1.0).toFixed(2)}
+                      {shareOdds.toFixed(2)}
                     </strong>
                   </div>
                 </div>
@@ -300,17 +306,17 @@ export default function MyBetsPage() {
               <div className="rounded-xl bg-white text-black p-3 text-xs shadow-md">
                 <div className="flex justify-between items-center text-[10px] font-bold text-blue-700 uppercase mb-1">
                   <span>Football</span>
-                  <span>{matches[sharingBet.matchId] ? new Date(matches[sharingBet.matchId].kickoffAt).toLocaleDateString("en-GB") : ""}</span>
+                  <span>{shareMatch ? new Date(shareMatch.kickoffAt).toLocaleDateString("en-GB") : ""}</span>
                 </div>
                 <p className="font-bold text-sm text-gray-900">
-                  {matches[sharingBet.matchId]
-                    ? `${teams[matches[sharingBet.matchId].homeTeamId]?.name ?? "Home"} vs ${teams[matches[sharingBet.matchId].awayTeamId]?.name ?? "Away"}`
+                  {shareMatch
+                    ? `${shareHomeTeam} vs ${shareAwayTeam}`
                     : "Match Event"}
                 </p>
                 <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between items-center font-semibold">
                   <span className="capitalize text-gray-700">Selection: {sharingBet.selectionLabel}</span>
                   <span className="text-emerald-700 font-bold text-sm">
-                    {(sharingBet.stake > 0 ? sharingBet.potentialPayout / sharingBet.stake : 1.0).toFixed(2)}
+                    {shareOdds.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -351,6 +357,7 @@ export default function MyBetsPage() {
   );
 }
 
+{/* PRINT COMPONENT */}
 function PrintableTicket({
   bet,
   match,
