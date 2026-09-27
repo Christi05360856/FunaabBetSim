@@ -1,88 +1,143 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { verifyRequest } from "@/lib/auth/verifyRequest";
 import { adminDb } from "@/lib/firebase/admin";
-import { placeBetSchema } from "@/lib/validation/schemas";
+import { placeBetBodySchema } from "@/lib/validation/schemas";
 import { canPlaceStake } from "@/lib/domain/wallet";
-import type { Bet, Market, Match, Transaction, Wallet } from "@/types/domain";
+import type { Bet, BetLeg, Market, Match, Transaction, Wallet } from "@/types/domain";
 import { isBettingOpen } from "@/lib/domain/matchClock";
 
+type LegInput = {
+  matchId: string;
+  marketId: string;
+  selectionId: string;
+  selectionLabel: string;
+  odds: number;
+};
+
 export async function POST(request: NextRequest) {
-  // 1. User is authenticated (spec §12 rule 1)
   const decoded = await verifyRequest(request);
   if (!decoded) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const uid = decoded.uid;
 
-  const parsed = placeBetSchema.safeParse(await request.json().catch(() => ({})));
+  const raw = await request.json().catch(() => ({}));
+  const parsed = placeBetBodySchema.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.issues[0]?.message ?? "Invalid request body" },
       { status: 400 }
     );
   }
-  const { matchId, marketId, selectionId, stake } = parsed.data;
+
+  // Normalize to legs[]
+  let legs: LegInput[];
+  let stake: number;
+
+  if ("legs" in parsed.data) {
+    legs = parsed.data.legs;
+    stake = parsed.data.stake;
+  } else {
+    const { matchId, marketId, selectionId, stake: s } = parsed.data;
+    legs = [
+      {
+        matchId,
+        marketId,
+        selectionId,
+        selectionLabel: selectionId,
+        odds: 1,
+      },
+    ];
+    stake = s;
+  }
+
+  // Unique matches only
+  const matchIds = new Set(legs.map((l) => l.matchId));
+  if (matchIds.size !== legs.length) {
+    return NextResponse.json(
+      { error: "Each match can only appear once on a ticket" },
+      { status: 400 }
+    );
+  }
 
   const walletRef = adminDb.collection("wallets").doc(uid);
-  const matchRef = adminDb.collection("matches").doc(matchId);
-  const marketRef = adminDb.collection("markets").doc(marketId);
 
   try {
     const result = await adminDb.runTransaction(async (tx) => {
-      // All reads must happen before any writes inside a Firestore transaction.
-      const [walletSnap, matchSnap, marketSnap] = await Promise.all([
-        tx.get(walletRef),
-        tx.get(matchRef),
-        tx.get(marketRef),
-      ]);
-
+      const walletSnap = await tx.get(walletRef);
       if (!walletSnap.exists) throw new Error("Wallet not found");
       const wallet = walletSnap.data() as Wallet;
 
-      // 3–4. Match exists, is open, and kickoff hasn't happened yet.
-      // Checking kickoffAt here (not just status) closes the window
-      // automatically at kickoff, even if an admin never manually closed it.
-      if (!matchSnap.exists) throw new Error("Match not found");
-      const match = matchSnap.data() as Match;
-      if (!isBettingOpen(match)) {
-        throw new Error("Betting is not open for this match");
-      }
-
-      // 5–6, 9. Market exists, is active, and actually belongs to this match
-      if (!marketSnap.exists) throw new Error("Market not found");
-      const market = marketSnap.data() as Market;
-      if (market.status !== "active") throw new Error("This market is not active");
-      if (market.matchId !== matchId) throw new Error("Market does not belong to this match");
-
-      // 7–8. Selection exists and belongs to this market
-      const selection = market.selections.find((s) => s.id === selectionId);
-      if (!selection) throw new Error("Selection not found on this market");
-
-      // 11–12. Stake meets the minimum and does not exceed the balance
       if (!canPlaceStake(wallet.balance, stake)) {
         throw new Error("Invalid stake for your current balance");
       }
 
-      // ---- All checks passed — capture odds now, before any write --------
+      const validatedLegs: BetLeg[] = [];
+      let combinedOdds = 1;
+
+      for (const leg of legs) {
+        const matchRef = adminDb.collection("matches").doc(leg.matchId);
+        const marketRef = adminDb.collection("markets").doc(leg.marketId);
+        const [matchSnap, marketSnap] = await Promise.all([
+          tx.get(matchRef),
+          tx.get(marketRef),
+        ]);
+
+        if (!matchSnap.exists) throw new Error("Match not found");
+        const match = matchSnap.data() as Match;
+        if (!isBettingOpen(match)) {
+          throw new Error("Betting is not open for one of the matches");
+        }
+
+        if (!marketSnap.exists) throw new Error("Market not found");
+        const market = marketSnap.data() as Market;
+        if (market.status !== "active") {
+          throw new Error("A market on this ticket is not active");
+        }
+        if (market.matchId !== leg.matchId) {
+          throw new Error("Market does not belong to match");
+        }
+
+        const selection = market.selections.find((s) => s.id === leg.selectionId);
+        if (!selection) throw new Error("Selection not found on market");
+
+        // Live odds from market (never trust client odds for payout)
+        const liveOdds = selection.odds;
+        combinedOdds *= liveOdds;
+
+        validatedLegs.push({
+          matchId: leg.matchId,
+          marketId: leg.marketId,
+          selectionId: selection.id,
+          selectionLabel: selection.label,
+          odds: liveOdds,
+        });
+      }
+
       const now = Date.now();
-      const oddsAtPlacement = selection.odds;
-      const potentialPayout = Math.round(stake * oddsAtPlacement);
+      const potentialPayout = Math.round(stake * combinedOdds);
       const newBalance = wallet.balance - stake;
+      const isAcca = validatedLegs.length > 1;
+      const first = validatedLegs[0];
 
       const betRef = adminDb.collection("bets").doc();
       const bet: Bet = {
         id: betRef.id,
         uid,
-        matchId,
-        marketId,
-        selectionId,
-        selectionLabel: selection.label,
-        oddsAtPlacement,
+        userId: uid,
+        type: isAcca ? "accumulator" : "single",
+        legs: validatedLegs,
+        matchId: first.matchId,
+        marketId: first.marketId,
+        selectionId: first.selectionId,
+        selectionLabel: first.selectionLabel,
+        oddsAtPlacement: combinedOdds,
         stake,
         potentialPayout,
         status: "open",
         placedAt: now,
         settledAt: null,
+        hidden: false,
       };
 
       const transactionRef = adminDb.collection("transactions").doc();
@@ -96,15 +151,13 @@ export async function POST(request: NextRequest) {
         createdAt: now,
       };
 
-      // ---- Writes — all committed together, or none of them are ----------
-        tx.update(walletRef, {
+      tx.update(walletRef, {
         balance: newBalance,
         lifetimeWagering: wallet.lifetimeWagering + stake,
-        // Start the reset cooldown the moment the balance hits exactly zero.
-        // Only set it if it isn't already running — don't restart an
-        // existing countdown just because another bet also landed on zero.
         resetPendingSince:
-          newBalance === 0 && wallet.resetPendingSince === null ? now : wallet.resetPendingSince,
+          newBalance === 0 && wallet.resetPendingSince === null
+            ? now
+            : wallet.resetPendingSince,
         updatedAt: now,
       });
       tx.set(betRef, bet);
@@ -118,4 +171,4 @@ export async function POST(request: NextRequest) {
     const message = err instanceof Error ? err.message : "Could not place bet";
     return NextResponse.json({ error: message }, { status: 400 });
   }
-}
+                                                }
