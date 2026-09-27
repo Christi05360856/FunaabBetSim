@@ -111,6 +111,11 @@ export default function MyBetsPage() {
   const shareAwayTeam = shareMatch ? teams[shareMatch.awayTeamId]?.name ?? "Away Team" : "Away Team";
   const shareOdds = sharingBet && sharingBet.stake > 0 ? sharingBet.potentialPayout / sharingBet.stake : 1.0;
 
+  // Resolved match and details for the print modal
+  const printMatch = printingBet ? matches[printingBet.matchId] : undefined;
+  const printHomeTeam = printMatch ? teams[printMatch.homeTeamId]?.name ?? "Home Team" : "Home Team";
+  const printAwayTeam = printMatch ? teams[printMatch.awayTeamId]?.name ?? "Away Team" : "Away Team";
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 pb-20">
       {/* Top Header */}
@@ -348,9 +353,9 @@ export default function MyBetsPage() {
       {printingBet && (
         <PrintableTicket
           bet={printingBet}
-          match={matches[printingBet.matchId]}
-          homeTeam={matches[printingBet.matchId] ? teams[matches[printingBet.matchId].homeTeamId]?.name : "Home Team"}
-          awayTeam={matches[printingBet.matchId] ? teams[matches[printingBet.matchId].awayTeamId]?.name : "Away Team"}
+          match={printMatch}
+          homeTeam={printHomeTeam}
+          awayTeam={printAwayTeam}
         />
       )}
     </div>
