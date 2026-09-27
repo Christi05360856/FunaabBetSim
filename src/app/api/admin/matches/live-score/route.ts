@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
       }
 
       const now = Date.now();
-      const update: Record<string, unknown> = {
+      const update: { currentHomeScore: number; currentAwayScore: number; updatedAt: number; status?: MatchStatus } = {
         currentHomeScore: homeScore,
         currentAwayScore: awayScore,
         updatedAt: now,
