@@ -35,15 +35,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await adminDb.runTransaction(async (tx) => {
+      // ---- Reads (ALL of them, before any write — Firestore transactions
+      // require every get() to happen first) --------------------------------
       const snap = await tx.get(matchRef);
       if (!snap.exists) throw new Error("Match not found");
       const match = snap.data() as Match;
       const current = match.status;
 
-      // First time: allow open/locked → live. After that, only while already in-play.
       const alreadyInPlay = IN_PLAY.includes(current);
       const startingNow = CAN_GO_LIVE.includes(current) && (nextStatus === "live" || nextStatus === undefined);
-
       if (!alreadyInPlay && !startingNow) {
         throw new Error(`Cannot update live score — match is "${current}"`);
       }
@@ -51,24 +51,6 @@ export async function POST(request: NextRequest) {
         throw new Error("Invalid live status");
       }
 
-      const now = Date.now();
-      const update: { currentHomeScore: number; currentAwayScore: number; updatedAt: number; status?: MatchStatus } = {
-        currentHomeScore: homeScore,
-        currentAwayScore: awayScore,
-        updatedAt: now,
-      };
-      if (startingNow && !alreadyInPlay) {
-        update.status = nextStatus ?? "live";
-      } else if (nextStatus && nextStatus !== current) {
-        update.status = nextStatus;
-      }
-      tx.update(matchRef, update);
-
-      // ---- Early-settle any bet whose outcome is already mathematically
-      // locked in by this interim score (see resolveClinchedOverUnderWinners
-      // / resolveClinchedBTS for exactly which ones qualify, and why). Every
-      // other market — Match Winner, Double Chance, Draw No Bet, Correct
-      // Score — is left alone; those can still change before full time.
       const totalGoals = homeScore + awayScore;
       const btsClinched = resolveClinchedBTS(homeScore, awayScore);
 
@@ -87,30 +69,44 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      if (clinchedSelectionIdsByMarket.size === 0) {
-        return { ok: true, betsClinched: 0 };
+      let relevantBets: Bet[] = [];
+      const walletsByUid = new Map<string, Wallet>();
+      const walletRefsByUid = new Map<string, FirebaseFirestore.DocumentReference>();
+
+      if (clinchedSelectionIdsByMarket.size > 0) {
+        const openBetsSnap = await tx.get(
+          adminDb.collection("bets").where("matchId", "==", matchId).where("status", "==", "open")
+        );
+        relevantBets = openBetsSnap.docs
+          .map((d) => d.data() as Bet)
+          .filter((bet) => clinchedSelectionIdsByMarket.has(bet.marketId));
+
+        if (relevantBets.length > 0) {
+          for (const bet of relevantBets) {
+            if (!walletRefsByUid.has(bet.uid)) {
+              walletRefsByUid.set(bet.uid, adminDb.collection("wallets").doc(bet.uid));
+            }
+          }
+          const walletSnaps = await Promise.all(Array.from(walletRefsByUid.values()).map((ref) => tx.get(ref)));
+          Array.from(walletRefsByUid.keys()).forEach((uid, i) => {
+            walletsByUid.set(uid, walletSnaps[i]!.data() as Wallet);
+          });
+        }
       }
 
-      const openBetsSnap = await tx.get(
-        adminDb.collection("bets").where("matchId", "==", matchId).where("status", "==", "open")
-      );
-      const relevantBets = openBetsSnap.docs
-        .map((d) => d.data() as Bet)
-        .filter((bet) => clinchedSelectionIdsByMarket.has(bet.marketId));
-
-      if (relevantBets.length === 0) {
-        return { ok: true, betsClinched: 0 };
+      // ---- Writes (only after every read above has completed) -------------
+      const now = Date.now();
+      const update: { currentHomeScore: number; currentAwayScore: number; updatedAt: number; status?: MatchStatus } = {
+        currentHomeScore: homeScore,
+        currentAwayScore: awayScore,
+        updatedAt: now,
+      };
+      if (startingNow && !alreadyInPlay) {
+        update.status = nextStatus ?? "live";
+      } else if (nextStatus && nextStatus !== current) {
+        update.status = nextStatus;
       }
-
-      // Read wallets for every affected bettor up front (Firestore
-      // transactions require all reads before any writes).
-      const walletRefsByUid = new Map(
-        relevantBets.map((bet) => [bet.uid, adminDb.collection("wallets").doc(bet.uid)] as const)
-      );
-      const walletSnaps = await Promise.all(Array.from(walletRefsByUid.values()).map((ref) => tx.get(ref)));
-      const walletsByUid = new Map(
-        Array.from(walletRefsByUid.keys()).map((uid, i) => [uid, walletSnaps[i]!.data() as Wallet])
-      );
+      tx.update(matchRef, update);
 
       let betsClinched = 0;
       for (const bet of relevantBets) {
