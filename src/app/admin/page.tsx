@@ -11,15 +11,7 @@ import { Toast } from "@/components/admin/ui";
 import AdminLayout, { AdminThemeProvider, type AdminTabId } from "@/components/admin/AdminLayout";
 import OverviewTab from "@/components/admin/OverviewTab";
 import FixturesTab from "@/components/admin/FixturesTab";
-{tab === "import" && (
-          <ImportTab
-            competitions={competitions}
-            matches={matches}
-            teamsById={teamsById}
-            onSubmit={(b) => post("/api/admin/matches/bulk-import", b)}
-            onGenerateOdds={(b) => post("/api/admin/markets/bulk-generate", b)}
-          />
-        )}
+import ImportTab from "@/components/admin/ImportTab";
 import DangerTab from "@/components/admin/DangerTab";
 
 type AdminStatus = "checking" | "admin" | "not-admin";
@@ -37,7 +29,6 @@ type ApiBody = {
   alreadyFinal?: boolean;
   betsRefunded?: number;
 };
-
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -151,7 +142,13 @@ function AdminApp() {
           <FixturesTab matches={matches} teamsById={teamsById} competitionsById={compsById} onAction={post} />
         )}
         {tab === "import" && (
-          <ImportTab competitions={competitions} onSubmit={(b) => post("/api/admin/matches/bulk-import", b)} />
+          <ImportTab
+            competitions={competitions}
+            matches={matches}
+            teamsById={teamsById}
+            onSubmit={(b) => post("/api/admin/matches/bulk-import", b)}
+            onGenerateOdds={(b) => post("/api/admin/markets/bulk-generate", b)}
+          />
         )}
         {tab === "danger" && (
           <DangerTab onReset={() => post("/api/admin/dev/reset", {}, "Platform reset complete")} />
