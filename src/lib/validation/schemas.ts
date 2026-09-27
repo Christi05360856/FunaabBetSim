@@ -33,6 +33,24 @@ export const confirmResultSchema = z.object({
   homeScore: z.number().int().min(0).max(99),
   awayScore: z.number().int().min(0).max(99),
 });
+
+export const betLegSchema = z.object({
+  matchId: z.string().min(1),
+  marketId: z.string().min(1),
+  selectionId: z.string().min(1),
+  selectionLabel: z.string().min(1),
+  odds: z.number().min(1.01).max(1000),
+});
+
+/** Single (legacy fields) OR accumulator (legs array). */
+export const placeBetBodySchema = z.union([
+  placeBetSchema,
+  z.object({
+    legs: z.array(betLegSchema).min(1).max(15),
+    stake: z.number().int().positive(),
+  }),
+]);
+
 export type ConfirmResultInput = z.infer<typeof confirmResultSchema>;
 export const bulkImportSchema = z.object({
   competitionName: z.string().trim().min(2).max(80),
