@@ -114,11 +114,16 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      
+      if (validatedLegs.length === 0) {
+        throw new Error("No valid selections on this ticket");
+      }
+
       const now = Date.now();
       const potentialPayout = Math.round(stake * combinedOdds);
       const newBalance = wallet.balance - stake;
       const isAcca = validatedLegs.length > 1;
-      const first = validatedLegs[0];
+      const first = validatedLegs[0]!;
 
       const betRef = adminDb.collection("bets").doc();
       const bet: Bet = {
