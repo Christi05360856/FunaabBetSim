@@ -63,6 +63,56 @@ function parseLine(raw: string, line: number): ParsedLine {
   return { line, match: { homeTeam: home, awayTeam: away, kickoffAt } };
 }
 
+// Betting-site shorthand → the fuller name teams are commonly stored under
+// (e.g. official names from football-data.org for synced EPL/La Liga
+// fixtures). Matching is normalized (lowercase, accents stripped, common
+// suffixes like "FC"/"CF"/"AFC" dropped) BEFORE this alias table is even
+// consulted, so this only needs to cover genuine nickname-level gaps.
+const TEAM_ALIASES: Record<string, string> = {
+  "man utd": "manchester united",
+  "man united": "manchester united",
+  "man city": "manchester city",
+  "spurs": "tottenham hotspur",
+  "tottenham": "tottenham hotspur",
+  "wolves": "wolverhampton wanderers",
+  "leeds": "leeds united",
+  "newcastle": "newcastle united",
+  "west ham": "west ham united",
+  "brighton": "brighton hove albion",
+  "nottm forest": "nottingham forest",
+  "forest": "nottingham forest",
+  "sheffield utd": "sheffield united",
+  "sheff utd": "sheffield united",
+  "villa": "aston villa",
+  "betis": "real betis",
+  "sociedad": "real sociedad",
+  "atletico": "atletico madrid",
+  "atleti": "atletico madrid",
+  "athletic": "athletic bilbao",
+  "celta": "celta vigo",
+  "alaves": "deportivo alaves",
+  "deportivo": "rc deportivo de a coruna",
+  "rayo": "rayo vallecano",
+};
+
+// Strips accents, lowercases, drops a small set of pure club-suffix tokens
+// (only when they're the LAST word, so "United" in "Manchester United"
+// never gets touched), collapses whitespace.
+function normalizeTeamName(raw: string): string {
+  const stripped = raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // strip accents (Málaga → Malaga)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = stripped.split(" ");
+  const suffixes = new Set(["fc", "afc", "cf", "sc", "ac", "cd"]);
+  while (words.length > 1 && suffixes.has(words[words.length - 1]!)) words.pop();
+  const normalized = words.join(" ");
+  return TEAM_ALIASES[normalized] ?? normalized;
+}
+
 function BulkOddsCard({ matches, teamsById, onSubmit }: {
   matches: Match[];
   teamsById: Record<string, Team>;
@@ -71,14 +121,32 @@ function BulkOddsCard({ matches, teamsById, onSubmit }: {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Every distinct team name currently in the system, normalized once —
+  // used both to find matches and, on a miss, to show the admin what's
+  // actually there so a typo or naming mismatch is obvious instead of a
+  // dead-end "not found".
+  const knownTeamNames = Array.from(new Set(Object.values(teamsById).map((t) => t.name)));
+
   function findMatch(home: string, away: string) {
+    const h = normalizeTeamName(home);
+    const a = normalizeTeamName(away);
     const cands = matches.filter(
       (m) =>
-        (teamsById[m.homeTeamId]?.name ?? "").toLowerCase() === home.toLowerCase() &&
-        (teamsById[m.awayTeamId]?.name ?? "").toLowerCase() === away.toLowerCase() &&
+        normalizeTeamName(teamsById[m.homeTeamId]?.name ?? "") === h &&
+        normalizeTeamName(teamsById[m.awayTeamId]?.name ?? "") === a &&
         m.status !== "settled" && m.status !== "voided"
     );
-    return cands.sort((a, b) => a.kickoffAt - b.kickoffAt)[0] ?? null;
+    return cands.sort((a2, b2) => a2.kickoffAt - b2.kickoffAt)[0] ?? null;
+  }
+
+  function closestNames(name: string): string[] {
+    const n = normalizeTeamName(name);
+    return knownTeamNames
+      .filter((known) => {
+        const kn = normalizeTeamName(known);
+        return kn.includes(n) || n.includes(kn);
+      })
+      .slice(0, 3);
   }
 
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -87,7 +155,11 @@ function BulkOddsCard({ matches, teamsById, onSubmit }: {
     if (parts.length !== 5) return { line, error: "Use: Home; Away; home odds; draw odds; away odds" };
     const [home, away, h, d, a] = parts;
     const match = findMatch(home!, away!);
-    if (!match) return { line, error: `No open fixture found for "${home} v ${away}"` };
+    if (!match) {
+      const hints = [...closestNames(home!), ...closestNames(away!)];
+      const hintText = hints.length > 0 ? ` — closest names on file: ${hints.join(", ")}` : " — no similar team name on file at all";
+      return { line, error: `No fixture found for "${home} v ${away}"${hintText}` };
+    }
     const ho = Number(h), dr = Number(d), ao = Number(a);
     if (!ho || !dr || !ao) return { line, error: "Odds must be numbers" };
     return { line, entry: { matchId: match.id, home: ho, draw: dr, away: ao }, label: `${home} v ${away}` };
