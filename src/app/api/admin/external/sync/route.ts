@@ -158,13 +158,21 @@ export async function POST(request: NextRequest) {
         let homeName = teamCache.get(match.homeTeamId);
         let awayName = teamCache.get(match.awayTeamId);
         if (!homeName) {
-          const t = await adminDb.collection("teams").doc(match.homeTeamId).get();
-          homeName = (t.data() as { name?: string } | undefined)?.name ?? "";
+          const t = await adminDb
+            .collection("teams")
+            .doc(match.homeTeamId)
+            .get();
+          homeName =
+            (t.data() as { name?: string } | undefined)?.name ?? "";
           teamCache.set(match.homeTeamId, homeName);
         }
         if (!awayName) {
-          const t = await adminDb.collection("teams").doc(match.awayTeamId).get();
-          awayName = (t.data() as { name?: string } | undefined)?.name ?? "";
+          const t = await adminDb
+            .collection("teams")
+            .doc(match.awayTeamId)
+            .get();
+          awayName =
+            (t.data() as { name?: string } | undefined)?.name ?? "";
           teamCache.set(match.awayTeamId, awayName);
         }
 
@@ -209,6 +217,7 @@ export async function POST(request: NextRequest) {
     summary,
     odds: { filled: oddsFilled, skipped: oddsSkipped, errors: oddsErrors },
   });
+}
 
 async function upsertMatch(m: FdMatch, competitionId: string, now: number) {
   const homeId = teamDocId(m.homeTeam.id);
@@ -295,10 +304,6 @@ async function upsertTeam(
   await ref.set(team, { merge: true });
 }
 
-/**
- * Write FT scores and mark finished.
- * Wallet payout still uses admin settle until settleMatch is extracted.
- */
 async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
   const home = m.score.fullTime.home;
   const away = m.score.fullTime.away;
@@ -322,4 +327,4 @@ async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
   });
 
   return true;
-    }
+        }
