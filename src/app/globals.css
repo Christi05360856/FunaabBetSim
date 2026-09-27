@@ -88,3 +88,37 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+/* Print styles for printable tickets */
+@media print {
+  /* Hide everything on the screen by default when printing */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Show only the printable ticket element and its children */
+  .printable-ticket,
+  .printable-ticket * {
+    visibility: visible !important;
+  }
+
+  /* Position the printable ticket at the top left of the print document */
+  .printable-ticket {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 16px !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Ensure background colors and borders render in PDFs */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
