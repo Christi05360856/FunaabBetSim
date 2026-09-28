@@ -4,6 +4,30 @@ import type { Bet, Match, Team } from "@/types/domain";
 
 const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
 
+async function findBetSnap(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  let snap = await adminDb.collection("bets").doc(trimmed).get();
+  if (snap.exists) return snap;
+
+  const code = trimmed.toUpperCase().replace(/\s+/g, "");
+  const byCode = await adminDb
+    .collection("bets")
+    .where("ticketCode", "==", code)
+    .limit(1)
+    .get();
+  if (!byCode.empty) return byCode.docs[0];
+
+  for (const candidate of [code, code.toLowerCase(), trimmed.toLowerCase()]) {
+    if (candidate === trimmed) continue;
+    snap = await adminDb.collection("bets").doc(candidate).get();
+    if (snap.exists) return snap;
+  }
+
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const raw = (searchParams.get("id") || searchParams.get("ticket") || "").trim();
@@ -12,14 +36,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Ticket ID is required" }, { status: 400 });
   }
 
-  const upper = raw.toUpperCase();
-  let betSnap = await adminDb.collection("bets").doc(raw).get();
-  if (!betSnap.exists) {
-    betSnap = await adminDb.collection("bets").doc(upper).get();
-  }
-  if (!betSnap.exists) {
+  const betSnap = await findBetSnap(raw);
+  if (!betSnap) {
     return NextResponse.json(
-      { error: "Ticket not found. Use the full ticket ID." },
+      {
+        error:
+          "Ticket not found. Open Share on that bet, wait a second, tap Copy ticket ID, then paste here.",
+      },
       { status: 404 }
     );
   }
@@ -76,10 +99,14 @@ export async function GET(request: NextRequest) {
     if (s.exists) teams[s.id] = s.data() as Team;
   }
 
+  const ticketCode =
+    (bet as Bet & { ticketCode?: string }).ticketCode || bet.id.toUpperCase();
+
   return NextResponse.json({
     ok: true,
     bet: {
       id: bet.id,
+      ticketCode,
       status: bet.status,
       stake: bet.stake,
       potentialPayout: bet.potentialPayout,
