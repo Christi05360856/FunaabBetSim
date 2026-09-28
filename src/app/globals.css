@@ -2,72 +2,104 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---- App palette (light default) ---- */
 :root {
-  --color-brand: #1F7A4D;       /* FUNAAB green */
-  --color-brand-dark: #155C39;
-  --color-accent: #C89B3C;      /* FUNAAB gold */
-  --color-win: #1E9E5A;
-  --color-loss: #E14848;
-  --color-bg: #F4F5F3;
-  --color-surface: #FFFFFF;
-  --color-surface-raised: #F9FAF8;
-  --color-text: #14181B;
+  --color-brand: #1f7a4d;
+  --color-brand-dark: #155c39;
+  --color-accent: #c89b3c;
+  --color-win: #1e9e5a;
+  --color-loss: #e14848;
+  --color-bg: #f4f5f3;
+  --color-surface: #ffffff;
+  --color-surface-raised: #f9faf8;
+  --color-text: #14181b;
   --color-text-muted: #667066;
-  --shadow-card: 0 1px 2px rgba(20, 24, 27, 0.04), 0 1px 8px rgba(20, 24, 27, 0.05);
+  --shadow-card: 0 1px 2px rgba(20, 24, 27, 0.04),
+    0 1px 8px rgba(20, 24, 27, 0.05);
 }
 
+/* Forced light (Settings → Light) — overrides system dark */
+html[data-theme="light"] {
+  --color-brand: #1f7a4d;
+  --color-brand-dark: #155c39;
+  --color-accent: #c89b3c;
+  --color-win: #1e9e5a;
+  --color-loss: #e14848;
+  --color-bg: #f4f5f3;
+  --color-surface: #ffffff;
+  --color-surface-raised: #f9faf8;
+  --color-text: #14181b;
+  --color-text-muted: #667066;
+  --shadow-card: 0 1px 2px rgba(20, 24, 27, 0.04),
+    0 1px 8px rgba(20, 24, 27, 0.05);
+}
+
+/* Forced dark (Settings → Dark) OR ThemeProvider class */
+html[data-theme="dark"],
+html.dark {
+  --color-brand: #34a874;
+  --color-brand-dark: #2a8a60;
+  --color-accent: #e0bb63;
+  --color-win: #34a874;
+  --color-loss: #e14848;
+  --color-bg: #0b1210;
+  --color-surface: #151f1a;
+  --color-surface-raised: #1c2820;
+  --color-text: #f2f4f3;
+  --color-text-muted: #93a398;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+
+/* System dark only when Settings has not set data-theme yet */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #0B1210;
-    --color-surface: #151F1A;
-    --color-surface-raised: #1C2820;
-    --color-text: #F2F4F3;
-    --color-text-muted: #93A398;
-    --color-brand: #34A874;
-    --color-brand-dark: #2A8A60;
-    --color-accent: #E0BB63;
+  :root:not([data-theme]) {
+    --color-brand: #34a874;
+    --color-brand-dark: #2a8a60;
+    --color-accent: #e0bb63;
+    --color-win: #34a874;
+    --color-loss: #e14848;
+    --color-bg: #0b1210;
+    --color-surface: #151f1a;
+    --color-surface-raised: #1c2820;
+    --color-text: #f2f4f3;
+    --color-text-muted: #93a398;
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 10px rgba(0, 0, 0, 0.25);
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Admin theme — driven by data-admin-theme on the AdminThemeProvider */
-/* ------------------------------------------------------------------ */
-
-
-html[data-theme="dark"],
-html.dark {
-  --adm-color-bg: #0B1210;
-  --adm-color-surface: #151F1A;
-  --adm-color-raised: #1C2820;
-  --adm-color-ink: #F2F4F3;
-  --adm-color-muted: #93A398;
-  --adm-color-faint: #6B7B70;
+/* ---- Admin palette ---- */
+[data-admin-theme="dark"] {
+  --adm-color-bg: #0b1210;
+  --adm-color-surface: #151f1a;
+  --adm-color-raised: #1c2820;
+  --adm-color-ink: #f2f4f3;
+  --adm-color-muted: #93a398;
+  --adm-color-faint: #6b7b70;
   --adm-color-line: #243028;
-  --adm-color-line-strong: #2E3D34;
-  --adm-color-brand: #34A874;
-  --adm-color-brand-ink: #5BC98A;
-  --adm-color-ok: #34A874;
-  --adm-color-warn: #E0BB63;
-  --adm-color-bad: #E14848;
-  --adm-color-info: #5B9BD5;
+  --adm-color-line-strong: #2e3d34;
+  --adm-color-brand: #34a874;
+  --adm-color-brand-ink: #5bc98a;
+  --adm-color-ok: #34a874;
+  --adm-color-warn: #e0bb63;
+  --adm-color-bad: #e14848;
+  --adm-color-info: #5b9bd5;
 }
 
-html[data-theme="light"] {
-  --adm-color-bg: #F4F5F3;
-  --adm-color-surface: #FFFFFF;
-  --adm-color-raised: #F0F2EF;
-  --adm-color-ink: #14181B;
+[data-admin-theme="light"] {
+  --adm-color-bg: #f4f5f3;
+  --adm-color-surface: #ffffff;
+  --adm-color-raised: #f0f2ef;
+  --adm-color-ink: #14181b;
   --adm-color-muted: #667066;
-  --adm-color-faint: #8A968A;
-  --adm-color-line: #E2E6E0;
-  --adm-color-line-strong: #C8D0C6;
-  --adm-color-brand: #1F7A4D;
-  --adm-color-brand-ink: #155C39;
-  --adm-color-ok: #1E9E5A;
-  --adm-color-warn: #C89B3C;
-  --adm-color-bad: #E14848;
-  --adm-color-info: #3B7EA1;
+  --adm-color-faint: #8a968a;
+  --adm-color-line: #e2e6e0;
+  --adm-color-line-strong: #c8d0c6;
+  --adm-color-brand: #1f7a4d;
+  --adm-color-brand-ink: #155c39;
+  --adm-color-ok: #1e9e5a;
+  --adm-color-warn: #c89b3c;
+  --adm-color-bad: #e14848;
+  --adm-color-info: #3b7ea1;
 }
 
 * {
@@ -81,6 +113,7 @@ html {
 body {
   @apply bg-bg text-ink font-body antialiased;
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  min-height: 100dvh;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -90,20 +123,15 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
-/* Print styles for printable tickets */
+
 @media print {
-  /* Hide everything on the screen by default when printing */
   body * {
     visibility: hidden !important;
   }
-
-  /* Show only the printable ticket element and its children */
   .printable-ticket,
   .printable-ticket * {
     visibility: visible !important;
   }
-
-  /* Position the printable ticket at the top left of the print document */
   .printable-ticket {
     position: absolute !important;
     left: 0 !important;
@@ -117,8 +145,6 @@ body {
     box-shadow: none !important;
     border: none !important;
   }
-
-  /* Ensure background colors and borders render in PDFs */
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
