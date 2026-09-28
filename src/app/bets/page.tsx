@@ -63,11 +63,32 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+const SEEN_WINS_KEY = "funaab_seen_win_ids";
+
+function loadSeenWinIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(SEEN_WINS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as string[];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveSeenWinIds(ids: Set<string>) {
+  try {
+    localStorage.setItem(SEEN_WINS_KEY, JSON.stringify(Array.from(ids)));
+  } catch {
+    /* ignore */
+  }
+}
+
 function statusStyle(status: string): string {
-  if (status === "won") return "bg-emerald-100 text-emerald-800";
-  if (status === "lost") return "bg-rose-100 text-rose-800";
-  if (status === "void") return "bg-gray-100 text-gray-600";
-  return "bg-amber-100 text-amber-800";
+  if (status === "won") return "bg-emerald-600/15 text-emerald-700 dark:text-emerald-400";
+  if (status === "lost") return "bg-rose-600/15 text-rose-700 dark:text-rose-400";
+  if (status === "void") return "bg-ink-muted/15 text-ink-muted";
+  return "bg-amber-500/15 text-amber-700 dark:text-amber-400";
 }
 
 /**
@@ -137,6 +158,11 @@ export default function MyBetsPage() {
   const [menuId, setMenuId] = useState<string | null>(null);
   const [detailBet, setDetailBet] = useState<Bet | null>(null);
   const [sharingBet, setSharingBet] = useState<Bet | null>(null);
+  const [celebration, setCelebration] = useState<{
+    count: number;
+    totalPayout: number;
+    ids: string[];
+  } | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -175,9 +201,57 @@ export default function MyBetsPage() {
     };
   }, [user]);
 
+
+  // One celebration modal for newly settled wins since last visit
+  useEffect(() => {
+    if (!user || bets.length === 0) return;
+    try {
+      const raw = localStorage.getItem(SEEN_WINS_KEY);
+      if (raw === null) {
+        // First install: seed existing wins so we don't celebrate old history
+        const seed = bets
+          .filter((b) => b.status === "won")
+          .map((b) => b.id);
+        saveSeenWinIds(new Set(seed));
+        return;
+      }
+    } catch {
+      /* continue */
+    }
+    const seen = loadSeenWinIds();
+    const newWins = bets.filter(
+      (b) => b.status === "won" && !b.hidden && !seen.has(b.id)
+    );
+    if (newWins.length === 0) return;
+    const totalPayout = newWins.reduce(
+      (sum, b) => sum + (b.payout ?? b.potentialPayout ?? 0),
+      0
+    );
+    setCelebration({
+      count: newWins.length,
+      totalPayout,
+      ids: newWins.map((b) => b.id),
+    });
+  }, [user, bets]);
+
+  function dismissCelebration() {
+    if (celebration) {
+      const seen = loadSeenWinIds();
+      celebration.ids.forEach((id) => seen.add(id));
+      // Cap stored ids to avoid unbounded growth
+      const arr = Array.from(seen);
+      if (arr.length > 200) {
+        saveSeenWinIds(new Set(arr.slice(-200)));
+      } else {
+        saveSeenWinIds(seen);
+      }
+    }
+    setCelebration(null);
+  }
+
   if (loading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center text-sm text-gray-500">
+      <div className="flex min-h-[50vh] items-center justify-center text-sm text-ink-muted">
         Loading…
       </div>
     );
@@ -186,7 +260,7 @@ export default function MyBetsPage() {
   if (!user) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <p className="text-sm text-gray-600">Sign in to see your bets.</p>
+        <p className="text-sm text-ink-muted">Sign in to see your bets.</p>
         <Link
           href="/login"
           className="mt-4 inline-block rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white"
@@ -220,9 +294,9 @@ export default function MyBetsPage() {
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-lg bg-gray-50 pb-24">
-      <header className="sticky top-0 z-20 border-b border-gray-200 bg-white px-4 py-3">
-        <h1 className="text-lg font-bold text-gray-900">My Bets</h1>
+    <div className="mx-auto min-h-screen max-w-lg bg-bg pb-24">
+      <header className="sticky top-0 z-20 border-b border-ink-muted/15 bg-surface px-4 py-3">
+        <h1 className="text-lg font-bold text-ink">My Bets</h1>
         <div className="mt-3 flex gap-2">
           <button
             type="button"
@@ -231,7 +305,7 @@ export default function MyBetsPage() {
               "flex-1 rounded-full py-2 text-sm font-semibold " +
               (activeTab === "open"
                 ? "bg-emerald-600 text-white"
-                : "bg-gray-100 text-gray-600")
+                : "bg-ink-muted/10 text-ink-muted")
             }
           >
             Open ({openBets.length})
@@ -243,7 +317,7 @@ export default function MyBetsPage() {
               "flex-1 rounded-full py-2 text-sm font-semibold " +
               (activeTab === "settled"
                 ? "bg-emerald-600 text-white"
-                : "bg-gray-100 text-gray-600")
+                : "bg-ink-muted/10 text-ink-muted")
             }
           >
             Settled ({settledBets.length})
@@ -253,7 +327,7 @@ export default function MyBetsPage() {
 
       <div className="space-y-3 px-3 py-3">
         {list.length === 0 && (
-          <p className="py-12 text-center text-sm text-gray-500">
+          <p className="py-12 text-center text-sm text-ink-muted">
             {activeTab === "open" ? "No open bets." : "No settled bets."}
           </p>
         )}
@@ -278,7 +352,7 @@ export default function MyBetsPage() {
           return (
             <article
               key={bet.id}
-              className="relative rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
+              className="relative rounded-2xl border border-ink-muted/15 bg-surface p-4 shadow-sm"
             >
               <div className="flex items-start justify-between gap-2">
                 <button
@@ -286,15 +360,15 @@ export default function MyBetsPage() {
                   className="min-w-0 flex-1 text-left"
                   onClick={() => setDetailBet(bet)}
                 >
-                  <p className="truncate font-mono text-[10px] text-gray-400">
+                  <p className="truncate font-mono text-[10px] text-ink-muted">
                     ID: {bet.id.slice(0, 8)}
                   </p>
-                  <p className="mt-1 text-sm font-bold text-gray-900">
+                  <p className="mt-1 text-sm font-bold text-ink">
                     {isAcca
                       ? "Accumulator · " + legs.length + " legs"
                       : home + " vs " + away}
                   </p>
-                  <p className="mt-0.5 text-xs text-gray-500">
+                  <p className="mt-0.5 text-xs text-ink-muted">
                     {isAcca
                       ? legs.length + " selections"
                       : market + " · " + pick}
@@ -312,7 +386,7 @@ export default function MyBetsPage() {
                   </span>
                   <button
                     type="button"
-                    className="rounded p-1 text-gray-400"
+                    className="rounded p-1 text-ink-muted"
                     onClick={() =>
                       setMenuId(menuId === bet.id ? null : bet.id)
                     }
@@ -324,10 +398,10 @@ export default function MyBetsPage() {
               </div>
 
               {menuId === bet.id && (
-                <div className="absolute right-3 top-12 z-10 w-36 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+                <div className="absolute right-3 top-12 z-10 w-36 overflow-hidden rounded-xl border border-ink-muted/15 bg-surface shadow-lg">
                   <button
                     type="button"
-                    className="block w-full px-3 py-2.5 text-left text-sm hover:bg-gray-50"
+                    className="block w-full px-3 py-2.5 text-left text-sm hover:bg-bg"
                     onClick={() => {
                       setMenuId(null);
                       setSharingBet(bet);
@@ -337,7 +411,7 @@ export default function MyBetsPage() {
                   </button>
                   <button
                     type="button"
-                    className="block w-full px-3 py-2.5 text-left text-sm hover:bg-gray-50"
+                    className="block w-full px-3 py-2.5 text-left text-sm hover:bg-bg"
                     onClick={() => setDetailBet(bet)}
                   >
                     Details
@@ -345,7 +419,7 @@ export default function MyBetsPage() {
                   {bet.status !== "open" && (
                     <button
                       type="button"
-                      className="block w-full px-3 py-2.5 text-left text-sm text-rose-600 hover:bg-gray-50"
+                      className="block w-full px-3 py-2.5 text-left text-sm text-rose-600 hover:bg-bg"
                       onClick={() => void hideBet(bet.id)}
                     >
                       Hide
@@ -356,15 +430,15 @@ export default function MyBetsPage() {
 
               <button
                 type="button"
-                className="mt-3 grid w-full grid-cols-3 gap-2 border-t border-gray-100 pt-3 text-left text-xs"
+                className="mt-3 grid w-full grid-cols-3 gap-2 border-t border-ink-muted/10 pt-3 text-left text-xs"
                 onClick={() => setDetailBet(bet)}
               >
                 <div>
-                  <p className="text-gray-400">Odds</p>
+                  <p className="text-ink-muted">Odds</p>
                   <p className="font-semibold tabular-nums">{odds.toFixed(2)}</p>
                 </div>
                 <div>
-                  <p className="text-gray-400">Stake</p>
+                  <p className="text-ink-muted">Stake</p>
                   <p
                     className="font-semibold tabular-nums"
                     title={formatMoneyFull(bet.stake)}
@@ -373,7 +447,7 @@ export default function MyBetsPage() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-gray-400">
+                  <p className="text-ink-muted">
                     {bet.status === "won" ? "Return" : "Pot. win"}
                   </p>
                   <p
@@ -400,6 +474,46 @@ export default function MyBetsPage() {
           onClose={() => setDetailBet(null)}
         />
       )}
+
+      {celebration && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+          onClick={dismissCelebration}
+        >
+          <div
+            className="w-full max-w-sm overflow-hidden rounded-2xl bg-surface shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-br from-emerald-600 to-emerald-800 px-6 py-8 text-center text-white">
+              <p className="text-4xl" aria-hidden>
+                🎉
+              </p>
+              <p className="mt-2 text-lg font-bold tracking-wide">You won!</p>
+              <p className="mt-1 text-sm text-white/80">
+                {celebration.count === 1
+                  ? "1 ticket paid out"
+                  : celebration.count + " tickets paid out"}
+              </p>
+              <p
+                className="mt-4 break-all font-display text-3xl font-bold tabular-nums"
+                title={formatMoneyFull(celebration.totalPayout)}
+              >
+                +{formatMoney(celebration.totalPayout)}
+              </p>
+            </div>
+            <div className="p-4">
+              <button
+                type="button"
+                onClick={dismissCelebration}
+                className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white"
+              >
+                Collect
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {sharingBet && (
         <ShareSheet
           bet={sharingBet}
@@ -427,7 +541,7 @@ function Row({
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <span className="text-gray-500">{label}</span>
+      <span className="text-ink-muted">{label}</span>
       <span
         className={
           "min-w-0 truncate text-right tabular-nums " +
@@ -459,7 +573,7 @@ function TicketDetails({
   const { requestClose } = useSheetHistory(true, onClose);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col overflow-x-hidden bg-gray-50">
+    <div className="fixed inset-0 z-50 flex flex-col overflow-x-hidden bg-bg">
       <header className="flex shrink-0 items-center gap-3 bg-emerald-600 px-3 py-3 text-white">
         <button
           type="button"
@@ -473,8 +587,8 @@ function TicketDetails({
       </header>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-28 pt-3">
-        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-2 text-[11px] text-gray-400">
+        <section className="rounded-2xl border border-ink-muted/15 bg-surface p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-2 text-[11px] text-ink-muted">
             <span className="min-w-0 truncate font-mono">
               ID: {bet.id.slice(0, 10).toUpperCase()}
             </span>
@@ -555,7 +669,7 @@ function TicketDetails({
             return (
               <section
                 key={leg.matchId + "-" + leg.selectionId + "-" + i}
-                className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
+                className="rounded-2xl border border-ink-muted/15 bg-surface p-4 shadow-sm"
               >
                 {canOpenMatch ? (
                   <Link
@@ -563,7 +677,7 @@ function TicketDetails({
                     onClick={onClose}
                     className="block active:opacity-80"
                   >
-                    <p className="text-[11px] text-gray-400">
+                    <p className="text-[11px] text-ink-muted">
                       {match
                         ? new Date(match.kickoffAt).toLocaleString("en-NG", {
                             day: "numeric",
@@ -582,7 +696,7 @@ function TicketDetails({
                   </Link>
                 ) : (
                   <>
-                    <p className="text-[11px] text-gray-400">
+                    <p className="text-[11px] text-ink-muted">
                       {match
                         ? new Date(match.kickoffAt).toLocaleString("en-NG", {
                             day: "numeric",
@@ -598,7 +712,7 @@ function TicketDetails({
                   </>
                 )}
                 {score && (
-                  <p className="mt-1 text-xs font-medium text-gray-600">
+                  <p className="mt-1 text-xs font-medium text-ink-muted">
                     {score.live ? "Live score " : "FT score "}
                     <span className={score.live ? "text-rose-600" : ""}>
                       {score.text}
@@ -613,17 +727,17 @@ function TicketDetails({
                       ? "bg-emerald-50"
                       : lost
                         ? "bg-rose-50"
-                        : "bg-gray-50")
+                        : "bg-bg")
                   }
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 space-y-1">
                       <p>
-                        <span className="text-gray-500">Market </span>
+                        <span className="text-ink-muted">Market </span>
                         <span className="font-medium">{market}</span>
                       </p>
                       <p>
-                        <span className="text-gray-500">Pick </span>
+                        <span className="text-ink-muted">Pick </span>
                         <span className="font-medium">
                           {pick} @{Number(leg.odds).toFixed(2)}
                         </span>
@@ -635,7 +749,7 @@ function TicketDetails({
                         )}
                       </p>
                       <p>
-                        <span className="text-gray-500">Outcome </span>
+                        <span className="text-ink-muted">Outcome </span>
                         <span
                           className={
                             "font-semibold " +
@@ -669,7 +783,7 @@ function TicketDetails({
             >
               +{formatMoney(bet.potentialPayout)}
             </p>
-            <p className="mt-1 break-all text-[10px] text-gray-400">
+            <p className="mt-1 break-all text-[10px] text-ink-muted">
               {formatMoneyFull(bet.potentialPayout)}
             </p>
           </div>
@@ -835,7 +949,7 @@ function ShareSheet({
             </span>
           </div>
         </div>
-        <div className="max-h-48 overflow-y-auto bg-white p-3 text-black">
+        <div className="max-h-48 overflow-y-auto bg-surface p-3 text-ink">
           <p className="text-sm font-bold">
             {legs.length > 1
               ? "Multiple · " + legs.length + " legs"
@@ -853,12 +967,12 @@ function ShareSheet({
               return (
                 <li
                   key={leg.matchId + "-" + i}
-                  className="border-t border-gray-100 pt-2 text-xs first:border-0 first:pt-0"
+                  className="border-t border-ink-muted/10 pt-2 text-xs first:border-0 first:pt-0"
                 >
                   <p className="font-semibold leading-snug">
                     {h} vs {a}
                   </p>
-                  <p className="text-gray-600">
+                  <p className="text-ink-muted">
                     {sel.market} · {sel.pick} @ {Number(leg.odds).toFixed(2)}
                   </p>
                 </li>
@@ -870,7 +984,7 @@ function ShareSheet({
         {isOpenBet && (
           <div className="border-t border-white/10 bg-[#0b1c36] px-3 pt-3">
             {bookingCode ? (
-              <div className="rounded-xl bg-white/10 p-3 text-center">
+              <div className="rounded-xl bg-surface/10 p-3 text-center">
                 <p className="text-[11px] text-white/70">Booking code</p>
                 <p className="font-mono text-xl font-bold tracking-widest">
                   {bookingCode}
