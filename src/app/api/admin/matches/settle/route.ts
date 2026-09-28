@@ -140,10 +140,10 @@ export async function POST(request: NextRequest) {
 
       const betMap = new Map<string, Bet>();
       for (const d of openByMatchId.docs) {
-        betMap.set(d.id, { id: d.id, ...(d.data() as Bet) });
+        betMap.set(d.id, { ...(d.data() as Bet), id: d.id });
       }
       for (const d of openByMatchIds.docs) {
-        betMap.set(d.id, { id: d.id, ...(d.data() as Bet) });
+        betMap.set(d.id, { ...(d.data() as Bet), id: d.id });
       }
 
       // Preload other matches / markets needed by multi-leg tickets
