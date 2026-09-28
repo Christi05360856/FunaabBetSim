@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+.import { NextResponse, type NextRequest } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { verifyRequest } from "@/lib/auth/verifyRequest";
 import {
@@ -63,6 +63,10 @@ export async function POST(request: NextRequest) {
     codes = body.codes.map((c: unknown) => String(c).trim().toUpperCase()).filter(Boolean);
   }
   const skipOdds = body.skipOdds === true;
+  const oddsLimit = Math.min(
+    30,
+    Math.max(1, Number(body.oddsLimit) || 8)
+  );
 
   const unknown = codes.filter((c) => !ALL_CODES.includes(c));
   if (unknown.length) {
@@ -137,6 +141,35 @@ export async function POST(request: NextRequest) {
     summary.push({ code, upserted, finished, errors });
   }
 
+
+  // Open betting on upcoming external matches in the leagues we just synced
+  const compIdsForCodes = codes.map((c) => competitionDocId(c));
+  try {
+    const extOpenSnap = await adminDb
+      .collection("matches")
+      .where("source", "==", "external")
+      .get();
+    let opened = 0;
+    for (const d of extOpenSnap.docs) {
+      const m = d.data() as Match;
+      if (!compIdsForCodes.includes(m.competitionId)) continue;
+      if (m.status !== "scheduled") continue;
+      if (m.kickoffAt <= now) continue;
+      await d.ref.update({ status: "open", updatedAt: now });
+      opened++;
+    }
+    if (opened) {
+      summary.push({
+        code: "_open",
+        upserted: opened,
+        finished: 0,
+        errors: [],
+      });
+    }
+  } catch (e) {
+    /* non-fatal */
+  }
+
   if (skipOdds) {
     return NextResponse.json({
       ok: true,
@@ -173,10 +206,13 @@ export async function POST(request: NextRequest) {
       .where("source", "==", "external")
       .get();
 
+    const oddsCompIds = new Set(codes.map((c) => competitionDocId(c)));
+
     const teamCache = new Map<string, string>();
 
     for (const doc of extSnap.docs) {
-      const match = doc.data() as Match;
+      const match = { ...(doc.data() as Match), id: doc.id };
+      if (!oddsCompIds.has(match.competitionId)) continue;
       if (
         match.status === "settled" ||
         match.status === "finished" ||
@@ -185,6 +221,8 @@ export async function POST(request: NextRequest) {
       ) {
         continue;
       }
+      if (oddsFilled >= oddsLimit) break;
+
       if (await matchHasAnyMarket(match.id)) {
         oddsSkipped++;
         continue;
@@ -251,7 +289,7 @@ export async function POST(request: NextRequest) {
     from,
     to,
     summary,
-    odds: { filled: oddsFilled, skipped: oddsSkipped, errors: oddsErrors },
+    odds: { filled: oddsFilled, skipped: oddsSkipped, limit: oddsLimit, errors: oddsErrors },
   });
 }
 
@@ -309,8 +347,12 @@ async function upsertMatch(m: FdMatch, competitionId: string, now: number) {
   }
 
   if (!existing.exists) {
+    // External fixtures: open for betting immediately if still upcoming
+    const createStatus =
+      base.status === "scheduled" && kickoffAt > now ? "open" : base.status;
     await ref.set({
       ...base,
+      status: createStatus,
       homeScore: base.homeScore ?? null,
       awayScore: base.awayScore ?? null,
       currentHomeScore: base.currentHomeScore ?? null,
@@ -318,7 +360,21 @@ async function upsertMatch(m: FdMatch, competitionId: string, now: number) {
       createdAt: now,
     });
   } else {
-    await ref.update(base);
+    // Do not overwrite admin open/locked/live with scheduled on re-sync
+    const prev = existing.data() as Match;
+    const keepAdmin =
+      prev.status === "open" ||
+      prev.status === "locked" ||
+      prev.status === "live" ||
+      prev.status === "halftime" ||
+      prev.status === "second_half" ||
+      prev.status === "settled";
+    if (keepAdmin) {
+      const { status: _s, ...rest } = base;
+      await ref.update(rest);
+    } else {
+      await ref.update(base);
+    }
   }
 }
 
@@ -365,4 +421,4 @@ async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
   return true;
                   }
 
-      
+  
