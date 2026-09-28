@@ -127,6 +127,7 @@ export async function POST(request: NextRequest) {
 
       const betRef = adminDb.collection("bets").doc();
       const bet: Bet = {
+        matchIds: validatedLegs.map((l) => l.matchId),
         id: betRef.id,
         uid,
         userId: uid,
