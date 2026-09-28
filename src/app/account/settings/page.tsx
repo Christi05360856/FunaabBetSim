@@ -1,47 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useTheme, type ThemePreference } from "@/lib/context/ThemeProvider";
 
-
-const THEME_KEY = "funaab_theme";
-
 export default function SettingsPage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-// onClick={() => setTheme(opt.key)}
-// Back button: onClick={() => router.back()} instead of Link to dashboard
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
-
-  useEffect(() => {
-    try {
-      const t = localStorage.getItem(THEME_KEY) as
-        | "system"
-        | "light"
-        | "dark"
-        | null;
-      if (t) setTheme(t);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  function applyTheme(next: "system" | "light" | "dark") {
-    setTheme(next);
-    try {
-      localStorage.setItem(THEME_KEY, next);
-    } catch {
-      /* ignore */
-    }
-    // Soft preference only — full dark theme can wire later
-  }
 
   if (loading || !user) {
     return (
@@ -52,11 +24,16 @@ export default function SettingsPage() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-md pb-28">
+    <main className="mx-auto min-h-screen max-w-md bg-bg pb-28">
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-ink-muted/10 bg-brand px-4 py-3 text-white">
-        <Link href="/dashboard" className="text-lg" aria-label="Back">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="text-lg"
+          aria-label="Back"
+        >
           ←
-        </Link>
+        </button>
         <h1 className="flex-1 font-display text-base font-bold">Settings</h1>
       </header>
 
@@ -69,20 +46,20 @@ export default function SettingsPage() {
         <Section title="Appearance">
           {(
             [
-              { key: "light" as const, label: "Light" },
-              { key: "dark" as const, label: "Dark" },
-              { key: "system" as const, label: "Follow system" },
+              { key: "light" as ThemePreference, label: "Light" },
+              { key: "dark" as ThemePreference, label: "Dark" },
+              { key: "system" as ThemePreference, label: "Follow system" },
             ] as const
           ).map((opt) => (
             <button
               key={opt.key}
               type="button"
-              onClick={() => applyTheme(opt.key)}
+              onClick={() => setTheme(opt.key)}
               className="flex w-full items-center justify-between border-b border-ink-muted/10 px-4 py-3.5 text-left last:border-0"
             >
-              <span className="text-sm">{opt.label}</span>
+              <span className="text-sm text-ink">{opt.label}</span>
               {theme === opt.key && (
-                <span className="text-brand">✓</span>
+                <span className="font-bold text-brand">✓</span>
               )}
             </button>
           ))}
@@ -96,6 +73,7 @@ export default function SettingsPage() {
 
         <Section title="Support">
           <Row label="How to play" href="/how-to-play" />
+          <Row label="Verify ticket" href="/verify" />
         </Section>
 
         <button
@@ -142,14 +120,14 @@ function Row({
         href={href}
         className="flex items-center justify-between border-b border-ink-muted/10 px-4 py-3.5 last:border-0"
       >
-        <span className="text-sm">{label}</span>
+        <span className="text-sm text-ink">{label}</span>
         <span className="text-ink-muted">›</span>
       </Link>
     );
   }
   return (
     <div className="flex items-center justify-between border-b border-ink-muted/10 px-4 py-3.5 last:border-0">
-      <span className="text-sm">{label}</span>
+      <span className="text-sm text-ink">{label}</span>
       <span className="max-w-[55%] truncate text-xs text-ink-muted">
         {value}
       </span>
