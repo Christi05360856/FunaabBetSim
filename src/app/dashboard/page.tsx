@@ -199,6 +199,7 @@ export default function DashboardPage() {
         <MenuItem icon="⚙️" label="Settings" href="/account/settings" />
         <MenuItem icon="❓" label="How to play" href="/how-to-play" />
         <MenuItem icon="ℹ️" label="About FUNAAB BetSim" href="/about" />
+        <MenuItem icon="🔍" label="Verify ticket" href="/verify" />
         <MenuItem icon="📄" label="Terms of use" href="/terms" />
         <MenuItem icon="🔒" label="Privacy policy" href="/privacy" />
         <button
