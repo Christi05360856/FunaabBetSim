@@ -34,6 +34,34 @@ function totalOdds(bet: Bet): number {
   return legs.reduce((acc, l) => acc * (l.odds || 1), 1);
 }
 
+function publicTicketCode(bet: Bet): string {
+  const anyBet = bet as Bet & { ticketCode?: string };
+  return (anyBet.ticketCode || bet.id).toUpperCase();
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* fall through */ }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 function statusStyle(status: string): string {
   if (status === "won") return "bg-emerald-100 text-emerald-800";
   if (status === "lost") return "bg-rose-100 text-rose-800";
@@ -675,6 +703,35 @@ function ShareSheet({
   const [bookingCode, setBookingCode] = useState<string | null>(null);
   const [bookingBusy, setBookingBusy] = useState(false);
   const [bookingErr, setBookingErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [resolvedCode, setResolvedCode] = useState(() => publicTicketCode(bet));
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getAuth } = await import("firebase/auth");
+        const u = getAuth().currentUser;
+        if (!u) return;
+        const token = await u.getIdToken();
+        const res = await fetch("/api/bets/ensure-ticket-code", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + token,
+          },
+          body: JSON.stringify({ betId: bet.id }),
+        });
+        const body = await res.json();
+        if (!cancelled && body.ticketCode) {
+          setResolvedCode(String(body.ticketCode).toUpperCase());
+        }
+      } catch { /* keep local */ }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bet.id]);
 
   async function generateBookingCode() {
     if (!isOpenBet || legs.length === 0) return;
