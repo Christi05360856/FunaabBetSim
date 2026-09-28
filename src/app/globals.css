@@ -34,7 +34,9 @@
 /* Admin theme — driven by data-admin-theme on the AdminThemeProvider */
 /* ------------------------------------------------------------------ */
 
-[data-admin-theme="dark"] {
+
+html[data-theme="dark"],
+html.dark {
   --adm-color-bg: #0B1210;
   --adm-color-surface: #151F1A;
   --adm-color-raised: #1C2820;
@@ -51,7 +53,7 @@
   --adm-color-info: #5B9BD5;
 }
 
-[data-admin-theme="light"] {
+html[data-theme="light"] {
   --adm-color-bg: #F4F5F3;
   --adm-color-surface: #FFFFFF;
   --adm-color-raised: #F0F2EF;
