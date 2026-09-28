@@ -131,6 +131,8 @@ export interface BetLeg {
 
 export interface Bet {
   id: string;
+  /** Uppercase public code for verify/share. */
+  ticketCode?: string;
   uid: string;
   /** Optional mirror of uid used by some newer routes. */
   userId?: string;
