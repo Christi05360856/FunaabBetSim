@@ -3,6 +3,8 @@ import { adminDb } from "@/lib/firebase/admin";
 import { verifyRequest } from "@/lib/auth/verifyRequest";
 import {
   competitionDocId,
+  competitionName,
+  FD_LEAGUES,
   fetchCompetitionMatches,
   mapFdStatusToOurs,
   matchDocId,
@@ -22,7 +24,7 @@ import {
 } from "@/lib/domain/ensureExternalMarkets";
 import type { Competition, Match, Team } from "@/types/domain";
 
-const CODES = ["PL", "PD"] as const;
+const CODES = FD_LEAGUES.map((l) => l.code);
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -68,7 +70,7 @@ export async function POST(request: NextRequest) {
     try {
       const matches = await fetchCompetitionMatches(code, from, to);
       const compId = competitionDocId(code);
-      const compName = code === "PL" ? "Premier League" : "La Liga";
+      const compName = competitionName(code);
 
       const compRef = adminDb.collection("competitions").doc(compId);
       const compSnap = await compRef.get();
@@ -327,4 +329,5 @@ async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
   });
 
   return true;
-        }
+                  }
+      
