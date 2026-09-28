@@ -212,8 +212,8 @@ export default function FixturesPage() {
       match.status === "live" ||
       match.status === "halftime" ||
       match.status === "second_half";
-    const isHot =
-      (marketsForMatch?.match_winner?.selections[0]?.odds ?? 999) < 1.5;
+    // Show HOT on every match that is open for betting or live
+    const isHot = canBet || isLive;
 
     const hasLiveScore =
       match.currentHomeScore != null && match.currentAwayScore != null;
@@ -515,19 +515,6 @@ export default function FixturesPage() {
           </div>
         </section>
       ))}
-
-      {recentResults.length > 0 && activeFilter === "all" && (
-        <section className="flex flex-col gap-2">
-          <h2 className="px-0.5 text-xs font-bold uppercase tracking-wide text-ink-muted">
-            Recent results
-          </h2>
-          <div className="flex flex-col gap-2.5">
-            {recentResults.map((m) => (
-              <MatchCard key={m.id} match={m} />
-            ))}
-          </div>
-        </section>
-      )}
     </main>
   );
 }
