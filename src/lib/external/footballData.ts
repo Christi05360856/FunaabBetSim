@@ -1,6 +1,6 @@
 /**
  * football-data.org v4 client (server-only).
- * Free tier: \~10 req/min — cache in Firestore, never call from the browser.
+ * Free tier: ~10 req/min — cache in Firestore, never call from the browser.
  */
 
 export type FdMatchStatus =
@@ -21,14 +21,40 @@ export type FdMatch = {
   utcDate: string;
   status: FdMatchStatus;
   matchday: number | null;
-  homeTeam: { id: number; name: string; shortName: string; tla: string; crest: string };
-  awayTeam: { id: number; name: string; shortName: string; tla: string; crest: string };
+  homeTeam: {
+    id: number;
+    name: string;
+    shortName: string;
+    tla: string;
+    crest: string;
+  };
+  awayTeam: {
+    id: number;
+    name: string;
+    shortName: string;
+    tla: string;
+    crest: string;
+  };
   score: {
     fullTime: { home: number | null; away: number | null };
     halfTime: { home: number | null; away: number | null };
   };
   competition: { id: number; name: string; code: string };
 };
+
+/** Enabled external leagues (football-data competition codes). */
+export const FD_LEAGUES = [
+  { code: "PL", docId: "epl", name: "Premier League" },
+  { code: "PD", docId: "laliga", name: "La Liga" },
+  { code: "BL1", docId: "bundesliga", name: "Bundesliga" },
+  { code: "FL1", docId: "ligue1", name: "Ligue 1" },
+  { code: "SA", docId: "seriea", name: "Serie A" },
+  { code: "DED", docId: "eredivisie", name: "Eredivisie" },
+  { code: "BSA", docId: "brasileirao", name: "Brasileirão" },
+  { code: "MLS", docId: "mls", name: "MLS" },
+] as const;
+
+export type FdCompetitionCode = (typeof FD_LEAGUES)[number]["code"];
 
 const BASE = "https://api.football-data.org/v4";
 
@@ -52,7 +78,7 @@ export async function fdFetch<T>(path: string): Promise<T> {
 
 /** Upcoming + timed matches in a date window. */
 export async function fetchCompetitionMatches(
-  code: "PL" | "PD",
+  code: FdCompetitionCode | string,
   dateFrom: string,
   dateTo: string,
   status?: string
@@ -99,6 +125,12 @@ export function matchDocId(providerMatchId: number): string {
   return "fd-" + providerMatchId;
 }
 
-export function competitionDocId(code: "PL" | "PD"): string {
-  return code === "PL" ? "epl" : "laliga";
+export function competitionDocId(code: string): string {
+  const hit = FD_LEAGUES.find((l) => l.code === code);
+  return hit ? hit.docId : code.toLowerCase();
+}
+
+export function competitionName(code: string): string {
+  const hit = FD_LEAGUES.find((l) => l.code === code);
+  return hit ? hit.name : code;
 }
