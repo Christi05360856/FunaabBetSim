@@ -5,6 +5,8 @@ import { adminDb } from "@/lib/firebase/admin";
 import { deriveMarketsFromMatchWinner, CORRECT_SCORES } from "@/lib/domain/oddsModel";
 import type { Market, MarketType, Selection } from "@/types/domain";
 
+export const maxDuration = 60; // raise past Vercel's 10s default — this route does real work
+
 const bodySchema = z.object({
   entries: z
     .array(
@@ -20,8 +22,11 @@ const bodySchema = z.object({
 });
 
 // Same market shapes FixturesTab's "Generate every other market" button
-// creates one match at a time — this just does it for many matches, and
-// does it server-side (one request, not 6-per-match round trips).
+// creates one match at a time — this does it for many matches at once,
+// server-side, with every match and every market type running concurrently
+// rather than one after another (that sequential version is what caused
+// the 500s — too slow for Vercel's function time limit once you have more
+// than a couple of matches).
 async function createMarketsForMatch(
   matchId: string,
   home: number,
@@ -80,27 +85,43 @@ async function createMarketsForMatch(
     },
   ];
 
+  // All 6 existence-checks run concurrently instead of one after another —
+  // this alone cuts a single match's processing time to roughly a sixth.
+  const existing = await Promise.all(
+    toCreate.map((m) =>
+      adminDb
+        .collection("markets")
+        .where("matchId", "==", matchId)
+        .where("type", "==", m.type)
+        .limit(1)
+        .get()
+    )
+  );
+
+  const writes: Promise<unknown>[] = [];
   let created = 0;
   let skipped = 0;
 
-  for (const { type, selections } of toCreate) {
-    const existing = await adminDb
-      .collection("markets")
-      .where("matchId", "==", matchId)
-      .where("type", "==", type)
-      .limit(1)
-      .get();
-    if (!existing.empty) {
+  toCreate.forEach(({ type, selections }, i) => {
+    if (!existing[i]!.empty) {
       skipped++;
-      continue;
+      return;
     }
-
     const ref = adminDb.collection("markets").doc();
-    const market: Market = { id: ref.id, matchId, type, status: "active", selections, createdAt: now, updatedAt: now };
-    await ref.set(market);
+    const market: Market = {
+      id: ref.id,
+      matchId,
+      type,
+      status: "active",
+      selections,
+      createdAt: now,
+      updatedAt: now,
+    };
+    writes.push(ref.set(market));
     created++;
-  }
+  });
 
+  await Promise.all(writes);
   return { created, skipped };
 }
 
@@ -118,26 +139,39 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let matchesProcessed = 0;
-  let marketsCreated = 0;
-  let marketsSkipped = 0;
-  const errors: string[] = [];
+  // Every match is processed concurrently, and each match's own failure is
+  // caught individually — one bad matchId can no longer take down the whole
+  // batch or produce an opaque 500 for everything else in it.
+  const results = await Promise.all(
+    parsed.data.entries.map(async (entry) => {
+      try {
+        const matchSnap = await adminDb.collection("matches").doc(entry.matchId).get();
+        if (!matchSnap.exists) {
+          return { ok: false as const, error: `Match ${entry.matchId} not found` };
+        }
+        const { created, skipped } = await createMarketsForMatch(
+          entry.matchId,
+          entry.home,
+          entry.draw,
+          entry.away
+        );
+        return { ok: true as const, created, skipped };
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : "Unknown error" };
+      }
+    })
+  );
 
-  for (const entry of parsed.data.entries) {
-    const matchSnap = await adminDb.collection("matches").doc(entry.matchId).get();
-    if (!matchSnap.exists) {
-      errors.push(`Match ${entry.matchId} not found`);
-      continue;
-    }
-    const { created, skipped } = await createMarketsForMatch(entry.matchId, entry.home, entry.draw, entry.away);
-    matchesProcessed++;
-    marketsCreated += created;
-    marketsSkipped += skipped;
-  }
+  const matchesProcessed = results.filter((r) => r.ok).length;
+  const marketsCreated = results.reduce((sum, r) => sum + (r.ok ? r.created : 0), 0);
+  const marketsSkipped = results.reduce((sum, r) => sum + (r.ok ? r.skipped : 0), 0);
+  const errors = results.filter((r) => !r.ok).map((r) => (r as { error: string }).error);
 
   return NextResponse.json({
     ok: true,
-    message: `${matchesProcessed} match${matchesProcessed === 1 ? "" : "es"} · ${marketsCreated} markets created${marketsSkipped ? ` · ${marketsSkipped} already existed` : ""}${errors.length ? ` · ${errors.length} error(s)` : ""}`,
+    message: `${matchesProcessed}/${parsed.data.entries.length} matches · ${marketsCreated} markets created${
+      marketsSkipped ? ` · ${marketsSkipped} already existed` : ""
+    }${errors.length ? ` · ${errors.length} failed` : ""}`,
     matchesProcessed,
     marketsCreated,
     marketsSkipped,
