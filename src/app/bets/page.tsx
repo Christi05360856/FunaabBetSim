@@ -780,8 +780,8 @@ function ShareSheet({
       >
         <div className="bg-gradient-to-r from-emerald-600 to-blue-900 px-4 py-4 text-center">
           <p className="text-sm font-bold tracking-wide">FUNAAB BETSIM</p>
-          <p className="mt-1 font-mono text-[10px] text-white/80">
-            ID {bet.id.slice(0, 12).toUpperCase()}
+          <p className="mt-1 break-all px-2 font-mono text-[10px] text-white/80">
+            ID {resolvedCode}
           </p>
           <p className="text-[10px] text-white/70">
             {legs.length > 1 ? "Multiple" : "Single"} ·{" "}
@@ -904,9 +904,18 @@ function ShareSheet({
             <button
               type="button"
               className="flex-1 rounded-xl border border-white/20 py-2.5 text-sm"
-              onClick={() => void navigator.clipboard?.writeText(bet.id)}
+              onClick={async () => {
+                const code = resolvedCode || publicTicketCode(bet);
+                const ok = await copyToClipboard(code);
+                if (ok) {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                } else {
+                  window.prompt("Copy this ticket ID:", code);
+                }
+              }}
             >
-              Copy ticket ID
+              {copied ? "Copied!" : "Copy ticket ID"}
             </button>
           )}
           <button
