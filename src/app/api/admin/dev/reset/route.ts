@@ -147,12 +147,12 @@ export async function POST(request: NextRequest) {
   const teamsSnap = await adminDb.collection("teams").get();
 
   const comps = compsSnap.docs.map((d) => ({
-    id: d.id,
     ...(d.data() as Competition),
+    id: d.id,
   }));
   const matches = matchesSnap.docs.map((d) => ({
-    id: d.id,
     ...(d.data() as Match),
+    id: d.id,
   }));
 
   const funaabCompIds = new Set(
