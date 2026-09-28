@@ -12,6 +12,7 @@ import {
   matchFinalScore,
   resolveSelection,
 } from "@/lib/domain/selectionLabel";
+import { useSheetHistory } from "@/lib/hooks/useSheetHistory";
 
 function betLegs(bet: Bet): BetLeg[] {
   if (bet.legs && bet.legs.length > 0) return bet.legs;
@@ -455,13 +456,14 @@ function TicketDetails({
   const legs = betLegs(bet);
   const odds = totalOdds(bet);
   const isAcca = legs.length > 1;
+  const { requestClose } = useSheetHistory(true, onClose);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col overflow-x-hidden bg-gray-50">
       <header className="flex shrink-0 items-center gap-3 bg-emerald-600 px-3 py-3 text-white">
         <button
           type="button"
-          onClick={onClose}
+          onClick={requestClose}
           className="rounded-full p-1 text-xl leading-none"
           aria-label="Back"
         >
@@ -706,6 +708,8 @@ function ShareSheet({
   const [copied, setCopied] = useState(false);
   const [resolvedCode, setResolvedCode] = useState(() => publicTicketCode(bet));
 
+  const { requestClose } = useSheetHistory(true, onClose);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -772,7 +776,7 @@ function ShareSheet({
   return (
     <div
       className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-4 sm:items-center"
-      onClick={onClose}
+      onClick={requestClose}
     >
       <div
         className="w-full max-w-sm overflow-hidden rounded-2xl bg-[#0b1c36] text-white shadow-xl"
@@ -921,7 +925,7 @@ function ShareSheet({
           <button
             type="button"
             className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold"
-            onClick={onClose}
+            onClick={requestClose}
           >
             Done
           </button>
