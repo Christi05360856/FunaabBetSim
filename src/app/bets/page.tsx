@@ -515,24 +515,58 @@ function TicketDetails({
                     ? "Void"
                     : "Pending";
 
+            const canOpenMatch =
+              Boolean(leg.matchId) &&
+              (bet.status === "open" ||
+                (match &&
+                  match.status !== "settled" &&
+                  match.status !== "voided"));
+
             return (
               <section
                 key={leg.matchId + "-" + leg.selectionId + "-" + i}
                 className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
               >
-                <p className="text-[11px] text-gray-400">
-                  {match
-                    ? new Date(match.kickoffAt).toLocaleString("en-NG", {
-                        day: "numeric",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                    : "—"}
-                </p>
-                <p className="mt-1 text-sm font-bold leading-snug">
-                  {home} vs {away}
-                </p>
+                {canOpenMatch ? (
+                  <Link
+                    href={"/fixtures/" + leg.matchId}
+                    onClick={onClose}
+                    className="block active:opacity-80"
+                  >
+                    <p className="text-[11px] text-gray-400">
+                      {match
+                        ? new Date(match.kickoffAt).toLocaleString("en-NG", {
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "—"}
+                    </p>
+                    <p className="mt-1 text-sm font-bold leading-snug">
+                      {home} vs {away}
+                      <span className="ml-1 text-[11px] font-normal text-emerald-600">
+                        View markets →
+                      </span>
+                    </p>
+                  </Link>
+                ) : (
+                  <>
+                    <p className="text-[11px] text-gray-400">
+                      {match
+                        ? new Date(match.kickoffAt).toLocaleString("en-NG", {
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "—"}
+                    </p>
+                    <p className="mt-1 text-sm font-bold leading-snug">
+                      {home} vs {away}
+                    </p>
+                  </>
+                )}
                 {score && (
                   <p className="mt-1 text-xs font-medium text-gray-600">
                     {score.live ? "Live score " : "FT score "}
