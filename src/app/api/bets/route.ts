@@ -126,9 +126,11 @@ export async function POST(request: NextRequest) {
       const first = validatedLegs[0]!;
 
       const betRef = adminDb.collection("bets").doc();
+      const ticketCode = betRef.id.toUpperCase();
       const bet: Bet = {
         matchIds: validatedLegs.map((l) => l.matchId),
         id: betRef.id,
+        ticketCode,
         uid,
         userId: uid,
         type: isAcca ? "accumulator" : "single",
@@ -145,6 +147,8 @@ export async function POST(request: NextRequest) {
         settledAt: null,
         hidden: false,
       };
+
+      
 
       const transactionRef = adminDb.collection("transactions").doc();
       const transaction: Transaction = {
