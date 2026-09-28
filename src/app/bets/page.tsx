@@ -51,23 +51,36 @@ function legResult(
   leg: { selectionId: string; status?: string },
   match: Match | undefined
 ): "won" | "lost" | "void" | "pending" {
-  if (
-    leg.status === "won" ||
-    leg.status === "lost" ||
-    leg.status === "void" ||
-    leg.status === "pending"
-  ) {
+  // Final stored results win — but "pending" is re-checked against FT score
+  // because settle may lock the ticket LOST on the first failed leg while
+  // other legs were still pending, and later settles no longer touch them.
+  if (leg.status === "won" || leg.status === "lost" || leg.status === "void") {
     return leg.status;
   }
 
-  if (
-    match &&
-    match.homeScore != null &&
-    match.awayScore != null &&
+  const hs =
+    match?.homeScore != null
+      ? match.homeScore
+      : match?.currentHomeScore != null
+        ? match.currentHomeScore
+        : null;
+  const as =
+    match?.awayScore != null
+      ? match.awayScore
+      : match?.currentAwayScore != null
+        ? match.currentAwayScore
+        : null;
+
+  const scoreIsFinal =
+    match != null &&
+    hs != null &&
+    as != null &&
     (match.status === "settled" ||
       match.status === "finished" ||
-      match.status === "result_confirmed")
-  ) {
+      match.status === "result_confirmed" ||
+      (match.homeScore != null && match.awayScore != null));
+
+  if (scoreIsFinal && hs != null && as != null) {
     const id = (leg.selectionId || "").toLowerCase();
     if (
       id === "home" ||
@@ -77,12 +90,7 @@ function legResult(
       id === "x" ||
       id === "2"
     ) {
-      const winner =
-        match.homeScore > match.awayScore
-          ? "home"
-          : match.awayScore > match.homeScore
-            ? "away"
-            : "draw";
+      const winner = hs > as ? "home" : as > hs ? "away" : "draw";
       const normalized =
         id === "1" ? "home" : id === "2" ? "away" : id === "x" ? "draw" : id;
       return normalized === winner ? "won" : "lost";
@@ -91,7 +99,6 @@ function legResult(
 
   return "pending";
 }
-
 export default function MyBetsPage() {
   const { user, loading } = useAuth();
   const [bets, setBets] = useState<Bet[]>([]);
