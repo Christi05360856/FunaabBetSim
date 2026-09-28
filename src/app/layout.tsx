@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Manrope, Inter } from "next/font/google";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { BetSlipProvider } from "@/lib/context/BetSlipContext";
+import { ThemeProvider } from "@/lib/context/ThemeProvider";
 import { BetSlip } from "@/components/BetSlip";
 import AppHeader from "@/components/AppHeader";
 import BottomNav from "@/components/BottomNav";
@@ -30,16 +31,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${displayFont.variable} ${bodyFont.variable}`}>
+    <html
+      lang="en"
+      className={`${displayFont.variable} ${bodyFont.variable}`}
+      suppressHydrationWarning
+    >
       <body>
-        <AuthProvider>
-          <BetSlipProvider>
-            <AppHeader />
-            {children}
-            <BetSlip />
-            <BottomNav />
-          </BetSlipProvider>
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <BetSlipProvider>
+              <AppHeader />
+              {children}
+              <BetSlip />
+              <BottomNav />
+            </BetSlipProvider>
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
