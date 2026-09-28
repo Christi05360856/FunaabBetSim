@@ -124,7 +124,6 @@ export async function POST(request: NextRequest) {
         marketsSnap.docs.map((d) => [d.id, d.data() as Market])
       );
 
-      // Find open tickets that include this match (leg 1 field OR matchIds[])
       const openByMatchId = await tx.get(
         adminDb
           .collection("bets")
@@ -146,7 +145,42 @@ export async function POST(request: NextRequest) {
         betMap.set(d.id, { ...(d.data() as Bet), id: d.id });
       }
 
-      // Preload other matches / markets needed by multi-leg tickets
+      // Refresh legs on already LOST/WON tickets (no second payout)
+      const lostByMatchId = await tx.get(
+        adminDb
+          .collection("bets")
+          .where("matchId", "==", matchId)
+          .where("status", "==", "lost")
+      );
+      const lostByMatchIds = await tx.get(
+        adminDb
+          .collection("bets")
+          .where("matchIds", "array-contains", matchId)
+          .where("status", "==", "lost")
+      );
+      const wonByMatchId = await tx.get(
+        adminDb
+          .collection("bets")
+          .where("matchId", "==", matchId)
+          .where("status", "==", "won")
+      );
+      const wonByMatchIds = await tx.get(
+        adminDb
+          .collection("bets")
+          .where("matchIds", "array-contains", matchId)
+          .where("status", "==", "won")
+      );
+      for (const d of [
+        ...lostByMatchId.docs,
+        ...lostByMatchIds.docs,
+        ...wonByMatchId.docs,
+        ...wonByMatchIds.docs,
+      ]) {
+        if (!betMap.has(d.id)) {
+          betMap.set(d.id, { ...(d.data() as Bet), id: d.id });
+        }
+      }
+
       const extraMatchIds = new Set<string>();
       const extraMarketIds = new Set<string>();
       for (const bet of betMap.values()) {
@@ -223,14 +257,9 @@ export async function POST(request: NextRequest) {
             m.status === "settled" ||
             m.status === "finished" ||
             m.status === "result_confirmed" ||
-            (leg.matchId === matchId);
+            leg.matchId === matchId;
 
-          if (
-            !settledLike ||
-            m.homeScore == null ||
-            m.awayScore == null
-          ) {
-            // This fixture not fully scored yet (except the one we just settled)
+          if (!settledLike || m.homeScore == null || m.awayScore == null) {
             if (leg.matchId === matchId) {
               const r = resolveSelectionAgainstScore(
                 market,
@@ -245,10 +274,8 @@ export async function POST(request: NextRequest) {
             continue;
           }
 
-          const hs =
-            leg.matchId === matchId ? homeScore : (m.homeScore as number);
-          const as =
-            leg.matchId === matchId ? awayScore : (m.awayScore as number);
+          const hs = leg.matchId === matchId ? homeScore : (m.homeScore as number);
+          const as = leg.matchId === matchId ? awayScore : (m.awayScore as number);
           const r = resolveSelectionAgainstScore(
             market,
             leg.selectionId,
@@ -263,7 +290,6 @@ export async function POST(request: NextRequest) {
           status: legStatuses[i] ?? "pending",
         }));
 
-        // RULE: any lost leg → whole ticket LOST immediately
         const anyLost = legStatuses.some((s) => s === "lost");
         const anyPending = legStatuses.some((s) => s === "pending");
         const allWon =
@@ -275,87 +301,107 @@ export async function POST(request: NextRequest) {
         const wallet = walletsByUid.get(bet.uid);
 
         if (anyLost) {
-          tx.update(betRef, {
-            legs: updatedLegs,
-            matchIds: legs.map((l) => l.matchId),
-            status: "lost",
-            settledAt: now,
-            payout: 0,
-          });
-          betsSettled++;
+          if (bet.status === "open") {
+            tx.update(betRef, {
+              legs: updatedLegs,
+              matchIds: legs.map((l) => l.matchId),
+              status: "lost",
+              settledAt: now,
+              payout: 0,
+            });
+            betsSettled++;
+          } else {
+            tx.update(betRef, {
+              legs: updatedLegs,
+              matchIds: legs.map((l) => l.matchId),
+            });
+          }
           continue;
         }
 
         if (allVoid) {
-          if (wallet) {
-            const newBalance = wallet.balance + bet.stake;
-            tx.update(walletRefs.get(bet.uid)!, {
-              balance: newBalance,
-              resetPendingSince:
-                newBalance > 0 ? null : wallet.resetPendingSince,
-              updatedAt: now,
-            });
-            walletsByUid.set(bet.uid, { ...wallet, balance: newBalance });
+          if (bet.status === "open") {
+            if (wallet) {
+              const newBalance = wallet.balance + bet.stake;
+              tx.update(walletRefs.get(bet.uid)!, {
+                balance: newBalance,
+                resetPendingSince:
+                  newBalance > 0 ? null : wallet.resetPendingSince,
+                updatedAt: now,
+              });
+              walletsByUid.set(bet.uid, { ...wallet, balance: newBalance });
 
-            const transactionRef = adminDb.collection("transactions").doc();
-            const transaction: Transaction = {
-              id: transactionRef.id,
-              uid: bet.uid,
-              type: "refund",
-              amount: bet.stake,
-              balanceAfter: newBalance,
-              betId: bet.id,
-              createdAt: now,
-            };
-            tx.set(transactionRef, transaction);
+              const transactionRef = adminDb.collection("transactions").doc();
+              const transaction: Transaction = {
+                id: transactionRef.id,
+                uid: bet.uid,
+                type: "refund",
+                amount: bet.stake,
+                balanceAfter: newBalance,
+                betId: bet.id,
+                createdAt: now,
+              };
+              tx.set(transactionRef, transaction);
+            }
+            tx.update(betRef, {
+              legs: updatedLegs,
+              matchIds: legs.map((l) => l.matchId),
+              status: "void",
+              settledAt: now,
+              payout: 0,
+            });
+            betsSettled++;
+          } else {
+            tx.update(betRef, {
+              legs: updatedLegs,
+              matchIds: legs.map((l) => l.matchId),
+            });
           }
-          tx.update(betRef, {
-            legs: updatedLegs,
-            matchIds: legs.map((l) => l.matchId),
-            status: "void",
-            settledAt: now,
-            payout: 0,
-          });
-          betsSettled++;
           continue;
         }
 
         if (allWon) {
-          if (wallet) {
-            const payout = bet.potentialPayout;
-            const newBalance = wallet.balance + payout;
-            tx.update(walletRefs.get(bet.uid)!, {
-              balance: newBalance,
-              resetPendingSince:
-                newBalance > 0 ? null : wallet.resetPendingSince,
-              updatedAt: now,
-            });
-            walletsByUid.set(bet.uid, { ...wallet, balance: newBalance });
+          if (bet.status === "open") {
+            if (wallet) {
+              const payout = bet.potentialPayout;
+              const newBalance = wallet.balance + payout;
+              tx.update(walletRefs.get(bet.uid)!, {
+                balance: newBalance,
+                resetPendingSince:
+                  newBalance > 0 ? null : wallet.resetPendingSince,
+                updatedAt: now,
+              });
+              walletsByUid.set(bet.uid, { ...wallet, balance: newBalance });
 
-            const transactionRef = adminDb.collection("transactions").doc();
-            const transaction: Transaction = {
-              id: transactionRef.id,
-              uid: bet.uid,
-              type: "payout",
-              amount: payout,
-              balanceAfter: newBalance,
-              betId: bet.id,
-              createdAt: now,
-            };
-            tx.set(transactionRef, transaction);
+              const transactionRef = adminDb.collection("transactions").doc();
+              const transaction: Transaction = {
+                id: transactionRef.id,
+                uid: bet.uid,
+                type: "payout",
+                amount: payout,
+                balanceAfter: newBalance,
+                betId: bet.id,
+                createdAt: now,
+              };
+              tx.set(transactionRef, transaction);
+            }
+            tx.update(betRef, {
+              legs: updatedLegs,
+              matchIds: legs.map((l) => l.matchId),
+              status: "won",
+              settledAt: now,
+              payout: bet.potentialPayout,
+            });
+            betsSettled++;
+          } else {
+            tx.update(betRef, {
+              legs: updatedLegs,
+              matchIds: legs.map((l) => l.matchId),
+            });
           }
-          tx.update(betRef, {
-            legs: updatedLegs,
-            matchIds: legs.map((l) => l.matchId),
-            status: "won",
-            settledAt: now,
-            payout: bet.potentialPayout,
-          });
-          betsSettled++;
           continue;
         }
 
-        // Some won, some pending, none lost → stay OPEN; store leg progress
         if (anyPending) {
           tx.update(betRef, {
             legs: updatedLegs,
@@ -373,4 +419,4 @@ export async function POST(request: NextRequest) {
       err instanceof Error ? err.message : "Could not settle match";
     return NextResponse.json({ error: message }, { status: 400 });
   }
-        }
+    }
