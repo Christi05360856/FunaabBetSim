@@ -75,7 +75,7 @@ export default function TransactionsPage() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-md overflow-x-hidden pb-28">
+    <main className="mx-auto min-h-screen max-w-md bg-bg overflow-x-hidden pb-28">
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-ink-muted/10 bg-brand px-4 py-3 text-white">
         <Link href="/dashboard" className="text-lg" aria-label="Back">
           ←
