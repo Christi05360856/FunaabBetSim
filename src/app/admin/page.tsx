@@ -151,7 +151,7 @@ function AdminApp() {
           />
         )}
         {tab === "danger" && (
-          <DangerTab onReset={() => post("/api/admin/dev/reset", {}, "Platform reset complete")} />
+          <DangerTab />
         )}
       </AdminLayout>
 
