@@ -159,7 +159,7 @@ export function BetSlip() {
         >
           <TicketIcon />
           {items.length > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-white px-1 text-[11px] font-bold text-emerald-700">
+            <span className="absolute -right-1 -top-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-surface px-1 text-[11px] font-bold text-emerald-700">
               {items.length}
             </span>
           )}
@@ -184,16 +184,16 @@ export function BetSlip() {
         onClick={() => setIsOpen(false)}
       />
 
-      <div className="relative flex max-h-[85vh] flex-col rounded-t-2xl bg-white shadow-2xl">
+      <div className="relative flex max-h-[85vh] flex-col rounded-t-2xl bg-surface shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+        <div className="flex items-center justify-between border-b border-ink-muted/10 px-4 py-3">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">
               {items.length}
             </span>
             <div>
-              <p className="text-sm font-bold text-gray-900">Bet slip</p>
-              <p className="text-[11px] text-gray-500">
+              <p className="text-sm font-bold text-ink">Bet slip</p>
+              <p className="text-[11px] text-ink-muted">
                 {items.length === 0
                   ? "Empty — load a code or pick odds"
                   : modeLabel + " · odds " + totalOdds.toFixed(2)}
@@ -217,7 +217,7 @@ export function BetSlip() {
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="rounded-full bg-gray-100 px-2.5 py-1 text-sm text-gray-600"
+              className="rounded-full bg-ink-muted/10 px-2.5 py-1 text-sm text-ink-muted"
             >
               ✕
             </button>
@@ -225,13 +225,13 @@ export function BetSlip() {
         </div>
 
         {/* Mode tabs */}
-        <div className="flex border-b border-gray-100 text-sm font-semibold">
+        <div className="flex border-b border-ink-muted/10 text-sm font-semibold">
           <div
             className={
               "flex-1 py-2.5 text-center " +
               (items.length <= 1
                 ? "border-b-2 border-emerald-600 text-emerald-700"
-                : "text-gray-400")
+                : "text-ink-muted")
             }
           >
             Single
@@ -241,7 +241,7 @@ export function BetSlip() {
               "flex-1 py-2.5 text-center " +
               (items.length > 1
                 ? "border-b-2 border-emerald-600 text-emerald-700"
-                : "text-gray-400")
+                : "text-ink-muted")
             }
           >
             Multiple
@@ -252,11 +252,11 @@ export function BetSlip() {
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
           {items.length === 0 ? (
             <div className="space-y-4 py-4">
-              <p className="text-center text-sm text-gray-500">
+              <p className="text-center text-sm text-ink-muted">
                 Tap odds on fixtures to add picks
               </p>
-              <div className="rounded-xl border border-gray-200 p-3">
-                <p className="mb-2 text-xs font-semibold text-gray-700">
+              <div className="rounded-xl border border-ink-muted/15 p-3">
+                <p className="mb-2 text-xs font-semibold text-ink">
                   Load booking code
                 </p>
                 <div className="flex gap-2">
@@ -267,7 +267,7 @@ export function BetSlip() {
                       setLoadCodeInput(e.target.value.toUpperCase())
                     }
                     placeholder="FB-XXXX"
-                    className="min-w-0 flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm uppercase tracking-wider"
+                    className="min-w-0 flex-1 rounded-lg border border-ink-muted/15 px-3 py-2 text-sm uppercase tracking-wider"
                   />
                   <button
                     type="button"
@@ -285,20 +285,20 @@ export function BetSlip() {
               {items.map((item) => (
                 <li
                   key={item.matchId + item.selectionId}
-                  className="flex items-start gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5"
+                  className="flex items-start gap-2 rounded-xl border border-ink-muted/10 bg-bg px-3 py-2.5"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] text-gray-500">
+                    <p className="text-[11px] text-ink-muted">
                       {item.marketName}
                     </p>
-                    <p className="truncate text-sm font-semibold text-gray-900">
+                    <p className="truncate text-sm font-semibold text-ink">
                       {item.homeTeamName} vs {item.awayTeamName}
                     </p>
                     <p className="mt-0.5 text-sm">
                       <span className="font-medium text-emerald-700">
                         {item.selectionLabel}
                       </span>
-                      <span className="text-gray-400"> @ </span>
+                      <span className="text-ink-muted"> @ </span>
                       <span className="font-bold tabular-nums">
                         {item.odds.toFixed(2)}
                       </span>
@@ -307,7 +307,7 @@ export function BetSlip() {
                   <button
                     type="button"
                     onClick={() => removeItem(item.matchId)}
-                    className="shrink-0 pt-0.5 text-gray-400 hover:text-rose-600"
+                    className="shrink-0 pt-0.5 text-ink-muted hover:text-rose-600"
                     aria-label="Remove"
                   >
                     ✕
@@ -320,18 +320,18 @@ export function BetSlip() {
 
         {/* Footer: stake + actions */}
         {items.length > 0 && (
-          <div className="border-t border-gray-100 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
+          <div className="border-t border-ink-muted/10 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
             {user && (
-              <p className="mb-2 text-[11px] text-gray-500">
+              <p className="mb-2 text-[11px] text-ink-muted">
                 Balance{" "}
-                <span className="font-semibold text-gray-800">
+                <span className="font-semibold text-ink">
                   {formatMoney(balance)}
                 </span>
               </p>
             )}
 
             {!user ? (
-              <p className="py-2 text-center text-sm text-gray-600">
+              <p className="py-2 text-center text-sm text-ink-muted">
                 <a href="/login" className="font-semibold text-emerald-600">
                   Log in
                 </a>{" "}
@@ -348,7 +348,7 @@ export function BetSlip() {
                         const next = (Number(stake) || 0) + amt;
                         setStake(String(Math.min(next, balance)));
                       }}
-                      className="rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700"
+                      className="rounded-lg bg-ink-muted/10 px-2.5 py-1 text-xs font-semibold text-ink"
                     >
                       +₦{amt.toLocaleString("en-NG")}
                     </button>
@@ -356,14 +356,14 @@ export function BetSlip() {
                 </div>
 
                 <div className="flex items-center justify-between gap-2 text-sm">
-                  <span className="text-gray-500">Total odds</span>
+                  <span className="text-ink-muted">Total odds</span>
                   <span className="font-bold tabular-nums">
                     {totalOdds.toFixed(2)}
                   </span>
                 </div>
                 {stakeValid && (
                   <div className="mt-1 flex items-center justify-between gap-2 text-sm">
-                    <span className="text-gray-500">Potential win</span>
+                    <span className="text-ink-muted">Potential win</span>
                     <span className="font-bold tabular-nums text-emerald-600">
                       {formatMoney(potential)}
                     </span>
@@ -380,7 +380,7 @@ export function BetSlip() {
                     onChange={(e) =>
                       setStake(e.target.value.replace(/[^0-9]/g, ""))
                     }
-                    className="min-w-0 flex-1 rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
+                    className="min-w-0 flex-1 rounded-xl border border-ink-muted/15 px-3 py-2.5 text-sm"
                   />
                 </div>
                 {overBalance && (
@@ -408,9 +408,9 @@ export function BetSlip() {
                 </div>
 
                 {bookingCode && (
-                  <div className="mt-3 rounded-xl bg-gray-50 p-3 text-center">
-                    <p className="text-[11px] text-gray-500">Booking code</p>
-                    <p className="font-mono text-lg font-bold tracking-widest text-gray-900">
+                  <div className="mt-3 rounded-xl bg-bg p-3 text-center">
+                    <p className="text-[11px] text-ink-muted">Booking code</p>
+                    <p className="font-mono text-lg font-bold tracking-widest text-ink">
                       {bookingCode}
                     </p>
                     <button
@@ -428,7 +428,7 @@ export function BetSlip() {
             )}
 
             {feedback && (
-              <p className="mt-2 text-center text-xs text-gray-700">{feedback}</p>
+              <p className="mt-2 text-center text-xs text-ink">{feedback}</p>
             )}
           </div>
         )}
@@ -443,4 +443,4 @@ function TicketIcon() {
       <path d="M20 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v2a2 2 0 010 4v2a2 2 0 002 2h12a2 2 0 002-2v-2a2 2 0 010-4zM8 13H6v-2h2v2zm0-4H6V7h2v2zm4 4h-2v-2h2v2zm0-4h-2V7h2v2zm4 4h-2v-2h2v2zm0-4h-2V7h2v2z" />
     </svg>
   );
-              }
+                          }
