@@ -10,7 +10,6 @@ import {
   formatMoney,
   formatMoneyFull,
   matchFinalScore,
-  outcomeLabel,
   resolveSelection,
 } from "@/lib/domain/selectionLabel";
 
@@ -40,6 +39,57 @@ function statusStyle(status: string): string {
   if (status === "lost") return "bg-rose-100 text-rose-800";
   if (status === "void") return "bg-gray-100 text-gray-600";
   return "bg-amber-100 text-amber-800";
+}
+
+/**
+ * Per-leg result:
+ * 1) Prefer leg.status written by settle
+ * 2) Else for 1X2, resolve from FT score on the match doc
+ *    (so Away on 0-2 shows Won even if ticket is Lost)
+ */
+function legResult(
+  leg: { selectionId: string; status?: string },
+  match: Match | undefined
+): "won" | "lost" | "void" | "pending" {
+  if (
+    leg.status === "won" ||
+    leg.status === "lost" ||
+    leg.status === "void" ||
+    leg.status === "pending"
+  ) {
+    return leg.status;
+  }
+
+  if (
+    match &&
+    match.homeScore != null &&
+    match.awayScore != null &&
+    (match.status === "settled" ||
+      match.status === "finished" ||
+      match.status === "result_confirmed")
+  ) {
+    const id = (leg.selectionId || "").toLowerCase();
+    if (
+      id === "home" ||
+      id === "draw" ||
+      id === "away" ||
+      id === "1" ||
+      id === "x" ||
+      id === "2"
+    ) {
+      const winner =
+        match.homeScore > match.awayScore
+          ? "home"
+          : match.awayScore > match.homeScore
+            ? "away"
+            : "draw";
+      const normalized =
+        id === "1" ? "home" : id === "2" ? "away" : id === "x" ? "draw" : id;
+      return normalized === winner ? "won" : "lost";
+    }
+  }
+
+  return "pending";
 }
 
 export default function MyBetsPage() {
@@ -89,40 +139,25 @@ export default function MyBetsPage() {
     };
   }, [user]);
 
-  async function hideBet(betId: string) {
-    if (!user) return;
-    try {
-      const token = await user.getIdToken();
-      await fetch("/api/bets/hide", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + token,
-        },
-        body: JSON.stringify({ betId, hidden: true }),
-      });
-    } catch (e) {
-      console.error(e);
-    }
-    setMenuId(null);
-  }
-
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
-      </main>
+      <div className="flex min-h-[50vh] items-center justify-center text-sm text-gray-500">
+        Loading…
+      </div>
     );
   }
 
   if (!user) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-gray-50 p-4">
-        <p className="font-semibold text-gray-800">Sign in to view your bets</p>
-        <Link href="/login" className="text-sm font-semibold text-emerald-600">
-          Go to Login
+      <div className="mx-auto max-w-lg px-4 py-16 text-center">
+        <p className="text-sm text-gray-600">Sign in to see your bets.</p>
+        <Link
+          href="/login"
+          className="mt-4 inline-block rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white"
+        >
+          Sign in
         </Link>
-      </main>
+      </div>
     );
   }
 
@@ -131,197 +166,204 @@ export default function MyBetsPage() {
   const settledBets = visible.filter((b) => b.status !== "open");
   const list = activeTab === "open" ? openBets : settledBets;
 
+  async function hideBet(betId: string) {
+    setMenuId(null);
+    try {
+      const token = await user!.getIdToken();
+      await fetch("/api/bets/hide", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token,
+        },
+        body: JSON.stringify({ betId }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
   return (
-    <div className="min-h-screen overflow-x-hidden bg-gray-50 pb-24 text-gray-900">
+    <div className="mx-auto min-h-screen max-w-lg bg-gray-50 pb-24">
       <header className="sticky top-0 z-20 border-b border-gray-200 bg-white px-4 py-3">
-        <h1 className="text-lg font-bold">My Bets</h1>
+        <h1 className="text-lg font-bold text-gray-900">My Bets</h1>
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("open")}
+            className={
+              "flex-1 rounded-full py-2 text-sm font-semibold " +
+              (activeTab === "open"
+                ? "bg-emerald-600 text-white"
+                : "bg-gray-100 text-gray-600")
+            }
+          >
+            Open ({openBets.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("settled")}
+            className={
+              "flex-1 rounded-full py-2 text-sm font-semibold " +
+              (activeTab === "settled"
+                ? "bg-emerald-600 text-white"
+                : "bg-gray-100 text-gray-600")
+            }
+          >
+            Settled ({settledBets.length})
+          </button>
+        </div>
       </header>
 
-      <div className="flex border-b border-gray-200 bg-white">
-        <button
-          type="button"
-          onClick={() => setActiveTab("open")}
-          className={
-            "flex-1 py-3 text-center text-sm font-semibold border-b-2 " +
-            (activeTab === "open"
-              ? "border-emerald-600 text-emerald-600"
-              : "border-transparent text-gray-500")
-          }
-        >
-          Open ({openBets.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("settled")}
-          className={
-            "flex-1 py-3 text-center text-sm font-semibold border-b-2 " +
-            (activeTab === "settled"
-              ? "border-emerald-600 text-emerald-600"
-              : "border-transparent text-gray-500")
-          }
-        >
-          Settled ({settledBets.length})
-        </button>
-      </div>
-
-      <main className="mx-auto flex max-w-lg flex-col gap-3 p-3">
-        {list.length === 0 ? (
-          <p className="py-16 text-center text-sm text-gray-500">
-            No {activeTab} bets.
+      <div className="space-y-3 px-3 py-3">
+        {list.length === 0 && (
+          <p className="py-12 text-center text-sm text-gray-500">
+            {activeTab === "open" ? "No open bets." : "No settled bets."}
           </p>
-        ) : (
-          list.map((bet) => {
-            const legs = betLegs(bet);
-            const first = legs[0];
-            const match = first
-              ? matches[first.matchId]
-              : matches[bet.matchId];
-            const home = match
-              ? teams[match.homeTeamId]?.name ?? "Home"
-              : "Home";
-            const away = match
-              ? teams[match.awayTeamId]?.name ?? "Away"
-              : "Away";
-            const score = matchFinalScore(match);
-            const odds = totalOdds(bet);
-            const isAcca = legs.length > 1;
-            const { market, pick } = resolveSelection(
-              first?.selectionId ?? bet.selectionId,
-              first?.selectionLabel ?? bet.selectionLabel
-            );
+        )}
 
-            return (
-              <div
-                key={bet.id}
-                className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
-              >
+        {list.map((bet) => {
+          const legs = betLegs(bet);
+          const first = legs[0];
+          const match = first ? matches[first.matchId] : undefined;
+          const home = match
+            ? teams[match.homeTeamId]?.name ?? "Home"
+            : "Home";
+          const away = match
+            ? teams[match.awayTeamId]?.name ?? "Away"
+            : "Away";
+          const odds = totalOdds(bet);
+          const isAcca = legs.length > 1;
+          const { market, pick } = resolveSelection(
+            first?.selectionId ?? bet.selectionId,
+            first?.selectionLabel ?? bet.selectionLabel
+          );
+
+          return (
+            <article
+              key={bet.id}
+              className="relative rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-2">
                 <button
                   type="button"
-                  className="w-full p-3.5 text-left"
-                  onClick={() => {
-                    setDetailBet(bet);
-                    setMenuId(null);
-                  }}
+                  className="min-w-0 flex-1 text-left"
+                  onClick={() => setDetailBet(bet)}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate font-mono text-[11px] text-gray-400">
-                      ID: {bet.id.slice(0, 8)}
-                    </span>
-                    <span
-                      className={
-                        "shrink-0 rounded px-2 py-0.5 text-[10px] font-bold uppercase " +
-                        statusStyle(bet.status)
-                      }
-                    >
-                      {bet.status}
-                    </span>
-                  </div>
-
-                  <p className="mt-2 truncate text-[15px] font-bold leading-snug">
+                  <p className="truncate font-mono text-[10px] text-gray-400">
+                    ID: {bet.id.slice(0, 8)}
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-gray-900">
                     {isAcca
                       ? "Accumulator · " + legs.length + " legs"
                       : home + " vs " + away}
                   </p>
-                  <p className="mt-0.5 truncate text-xs text-gray-500">
+                  <p className="mt-0.5 text-xs text-gray-500">
                     {isAcca
                       ? legs.length + " selections"
                       : market + " · " + pick}
                   </p>
-                  {score && !isAcca && (
-                    <p className="mt-1 text-xs font-medium text-gray-600">
-                      {score.live ? "Live " : "FT "}
-                      {score.text}
-                    </p>
-                  )}
-
-                  {/* 3-col grid — numbers wrap / shrink, never blow the card */}
-                  <div className="mt-3 grid grid-cols-3 gap-1 border-t border-gray-100 pt-3">
-                    <div className="min-w-0">
-                      <p className="text-[10px] text-gray-400">Odds</p>
-                      <p className="truncate text-sm font-semibold tabular-nums">
-                        {odds.toFixed(2)}
-                      </p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[10px] text-gray-400">Stake</p>
-                      <p
-                        className="truncate text-sm font-semibold tabular-nums"
-                        title={formatMoneyFull(bet.stake)}
-                      >
-                        {formatMoney(bet.stake)}
-                      </p>
-                    </div>
-                    <div className="min-w-0 text-right">
-                      <p className="text-[10px] text-gray-400">
-                        {bet.status === "won" ? "Return" : "Pot. win"}
-                      </p>
-                      <p
-                        className="truncate text-sm font-semibold tabular-nums text-emerald-600"
-                        title={formatMoneyFull(bet.potentialPayout)}
-                      >
-                        {formatMoney(bet.potentialPayout)}
-                      </p>
-                    </div>
-                  </div>
                 </button>
 
-                <button
-                  type="button"
-                  className="absolute right-2 top-2 rounded-md p-1.5 text-gray-400 hover:bg-gray-100"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMenuId(menuId === bet.id ? null : bet.id);
-                  }}
-                >
-                  ⋮
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <span
+                    className={
+                      "rounded px-2 py-0.5 text-[10px] font-bold uppercase " +
+                      statusStyle(bet.status)
+                    }
+                  >
+                    {bet.status}
+                  </span>
+                  <button
+                    type="button"
+                    className="rounded p-1 text-gray-400"
+                    onClick={() =>
+                      setMenuId(menuId === bet.id ? null : bet.id)
+                    }
+                    aria-label="Menu"
+                  >
+                    ⋮
+                  </button>
+                </div>
+              </div>
 
-                {menuId === bet.id && (
-                  <div className="absolute right-2 top-10 z-30 w-40 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
+              {menuId === bet.id && (
+                <div className="absolute right-3 top-12 z-10 w-36 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-2.5 text-left text-sm hover:bg-gray-50"
+                    onClick={() => {
+                      setMenuId(null);
+                      setSharingBet(bet);
+                    }}
+                  >
+                    Share
+                  </button>
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-2.5 text-left text-sm hover:bg-gray-50"
+                    onClick={() => setDetailBet(bet)}
+                  >
+                    Details
+                  </button>
+                  {bet.status !== "open" && (
                     <button
                       type="button"
-                      className="block w-full px-3 py-2.5 text-left text-sm"
-                      onClick={() => {
-                        setDetailBet(bet);
-                        setMenuId(null);
-                      }}
-                    >
-                      View details
-                    </button>
-                    <button
-                      type="button"
-                      className="block w-full px-3 py-2.5 text-left text-sm"
-                      onClick={() => {
-                        setSharingBet(bet);
-                        setMenuId(null);
-                      }}
-                    >
-                      Share
-                    </button>
-                    <button
-                      type="button"
-                      className="block w-full px-3 py-2.5 text-left text-sm text-rose-600"
-                      onClick={() => hideBet(bet.id)}
+                      className="block w-full px-3 py-2.5 text-left text-sm text-rose-600 hover:bg-gray-50"
+                      onClick={() => void hideBet(bet.id)}
                     >
                       Hide
                     </button>
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-      </main>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="mt-3 grid w-full grid-cols-3 gap-2 border-t border-gray-100 pt-3 text-left text-xs"
+                onClick={() => setDetailBet(bet)}
+              >
+                <div>
+                  <p className="text-gray-400">Odds</p>
+                  <p className="font-semibold tabular-nums">{odds.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-400">Stake</p>
+                  <p
+                    className="font-semibold tabular-nums"
+                    title={formatMoneyFull(bet.stake)}
+                  >
+                    {formatMoney(bet.stake)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-gray-400">
+                    {bet.status === "won" ? "Return" : "Pot. win"}
+                  </p>
+                  <p
+                    className={
+                      "font-semibold tabular-nums " +
+                      (bet.status === "won" ? "text-emerald-600" : "")
+                    }
+                    title={formatMoneyFull(bet.potentialPayout)}
+                  >
+                    {formatMoney(bet.potentialPayout)}
+                  </p>
+                </div>
+              </button>
+            </article>
+          );
+        })}
+      </div>
 
       {detailBet && (
-        <TicketDetail
+        <TicketDetails
           bet={detailBet}
           matches={matches}
           teams={teams}
           onClose={() => setDetailBet(null)}
         />
       )}
-
       {sharingBet && (
         <ShareSheet
           bet={sharingBet}
@@ -334,7 +376,37 @@ export default function MyBetsPage() {
   );
 }
 
-function TicketDetail({
+function Row({
+  label,
+  value,
+  full,
+  strong,
+  green,
+}: {
+  label: string;
+  value: string;
+  full?: string;
+  strong?: boolean;
+  green?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-gray-500">{label}</span>
+      <span
+        className={
+          "min-w-0 truncate text-right tabular-nums " +
+          (strong ? "font-bold " : "font-semibold ") +
+          (green ? "text-emerald-600" : "")
+        }
+        title={full || value}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function TicketDetails({
   bet,
   matches,
   teams,
@@ -364,7 +436,6 @@ function TicketDetail({
       </header>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-28 pt-3">
-        {/* Summary */}
         <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="flex items-start justify-between gap-2 text-[11px] text-gray-400">
             <span className="min-w-0 truncate font-mono">
@@ -411,7 +482,6 @@ function TicketDetail({
           </div>
         </section>
 
-        {/* Legs */}
         <div className="mt-3 flex flex-col gap-3">
           {legs.map((leg, i) => {
             const match = matches[leg.matchId];
@@ -426,9 +496,17 @@ function TicketDetail({
               leg.selectionId,
               leg.selectionLabel
             );
-            const outcome = outcomeLabel(bet.status, pick);
-            const won = bet.status === "won";
-            const lost = bet.status === "lost";
+            const lr = legResult(leg, match);
+            const won = lr === "won";
+            const lost = lr === "lost";
+            const outcome =
+              lr === "won"
+                ? pick
+                : lr === "lost"
+                  ? "Lost"
+                  : lr === "void"
+                    ? "Void"
+                    : "Pending";
 
             return (
               <section
@@ -475,25 +553,21 @@ function TicketDetail({
                       </p>
                       <p>
                         <span className="text-gray-500">Pick </span>
-                        <span className="font-semibold">
-                          {pick} @{leg.odds.toFixed(2)}
+                        <span className="font-medium">
+                          {pick} @{Number(leg.odds).toFixed(2)}
                         </span>
                         {won && (
-                          <span className="ml-1 font-bold text-emerald-600">
-                            ✓
-                          </span>
+                          <span className="ml-1 text-emerald-600">✓</span>
                         )}
                         {lost && (
-                          <span className="ml-1 font-bold text-rose-600">
-                            ✗
-                          </span>
+                          <span className="ml-1 text-rose-600">✗</span>
                         )}
                       </p>
                       <p>
                         <span className="text-gray-500">Outcome </span>
                         <span
                           className={
-                            "font-medium " +
+                            "font-semibold " +
                             (won
                               ? "text-emerald-700"
                               : lost
@@ -539,36 +613,6 @@ function TicketDetail({
   );
 }
 
-function Row({
-  label,
-  value,
-  full,
-  strong,
-  green,
-}: {
-  label: string;
-  value: string;
-  full?: string;
-  strong?: boolean;
-  green?: boolean;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="shrink-0 text-gray-500">{label}</span>
-      <span
-        className={
-          "min-w-0 truncate text-right tabular-nums " +
-          (strong ? "font-bold " : "font-semibold ") +
-          (green ? "text-emerald-600" : "")
-        }
-        title={full || value}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
 function ShareSheet({
   bet,
   matches,
@@ -586,10 +630,6 @@ function ShareSheet({
   const home = match ? teams[match.homeTeamId]?.name ?? "Home" : "Home";
   const away = match ? teams[match.awayTeamId]?.name ?? "Away" : "Away";
   const odds = totalOdds(bet);
-  const { market, pick } = resolveSelection(
-    first?.selectionId,
-    first?.selectionLabel ?? bet.selectionLabel
-  );
 
   return (
     <div
@@ -600,88 +640,105 @@ function ShareSheet({
         className="w-full max-w-sm overflow-hidden rounded-2xl bg-[#0b1c36] text-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="bg-gradient-to-r from-emerald-700 to-blue-900 px-4 py-4 text-center">
-          <p className="text-lg font-bold tracking-wide text-amber-300">
-            FUNAAB BETSIM
-          </p>
-          <p className="mt-1 text-[11px] text-blue-200">
+        <div className="bg-gradient-to-r from-emerald-600 to-blue-900 px-4 py-4 text-center">
+          <p className="text-sm font-bold tracking-wide">FUNAAB BETSIM</p>
+          <p className="mt-1 font-mono text-[10px] text-white/80">
             ID {bet.id.slice(0, 12).toUpperCase()}
           </p>
-          <p className="text-[11px] text-blue-300/80">
+          <p className="text-[10px] text-white/70">
             {legs.length > 1 ? "Multiple" : "Single"} ·{" "}
-            {new Date(bet.placedAt).toLocaleString("en-GB")}
+            {new Date(bet.placedAt).toLocaleString("en-NG")}
           </p>
         </div>
-        <div className="space-y-3 p-4">
-          <div className="grid grid-cols-2 gap-2 rounded-xl bg-[#172a4a] p-3 text-center text-xs">
-            <div>
-              <span className="block text-[10px] uppercase text-blue-300">
-                Status
-              </span>
-              <strong
-                className={
-                  bet.status === "won"
-                    ? "text-emerald-400"
-                    : bet.status === "lost"
-                      ? "text-rose-400"
-                      : "text-amber-300"
-                }
-              >
-                {bet.status === "won" ? "PAID OUT" : bet.status.toUpperCase()}
-              </strong>
-            </div>
-            <div>
-              <span className="block text-[10px] uppercase text-blue-300">
-                Odds
-              </span>
-              <strong>{odds.toFixed(2)}</strong>
-            </div>
-            <div className="min-w-0">
-              <span className="block text-[10px] uppercase text-blue-300">
-                Stake
-              </span>
-              <span className="block truncate" title={formatMoneyFull(bet.stake)}>
-                {formatMoney(bet.stake)}
-              </span>
-            </div>
-            <div className="min-w-0">
-              <span className="block text-[10px] uppercase text-blue-300">
-                Return
-              </span>
-              <span
-                className="block truncate text-emerald-400"
-                title={formatMoneyFull(bet.potentialPayout)}
-              >
-                {formatMoney(bet.potentialPayout)}
-              </span>
-            </div>
-          </div>
-          <div className="rounded-xl bg-white p-3 text-black">
-            <p className="text-sm font-bold">
-              {legs.length > 1
-                ? "Multiple · " + legs.length + " legs"
-                : home + " vs " + away}
-            </p>
-            <p className="mt-1 text-xs text-gray-600">
-              {market} · {pick}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="flex-1 rounded-xl border border-white/20 py-2.5 text-sm"
-              onClick={() => void navigator.clipboard?.writeText(bet.id)}
+        <div className="grid grid-cols-4 gap-1 bg-[#172a4a] p-3 text-center text-xs">
+          <div>
+            <span className="block text-[10px] uppercase text-blue-300">
+              Status
+            </span>
+            <strong
+              className={
+                bet.status === "won"
+                  ? "text-emerald-400"
+                  : bet.status === "lost"
+                    ? "text-rose-400"
+                    : "text-amber-300"
+              }
             >
-              Copy ID
-            </button>
-            <button
-              type="button"
-              className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold"
-              onClick={onClose}
-            >
-              Done
-            </button>
+              {bet.status === "won" ? "PAID OUT" : bet.status.toUpperCase()}
+            </strong>
           </div>
+          <div>
+            <span className="block text-[10px] uppercase text-blue-300">
+              Odds
+            </span>
+            <strong>{odds.toFixed(2)}</strong>
+          </div>
+          <div className="min-w-0">
+            <span className="block text-[10px] uppercase text-blue-300">
+              Stake
+            </span>
+            <span className="block truncate" title={formatMoneyFull(bet.stake)}>
+              {formatMoney(bet.stake)}
+            </span>
+          </div>
+          <div className="min-w-0">
+            <span className="block text-[10px] uppercase text-blue-300">
+              Return
+            </span>
+            <span
+              className="block truncate text-emerald-400"
+              title={formatMoneyFull(bet.potentialPayout)}
+            >
+              {formatMoney(bet.potentialPayout)}
+            </span>
+          </div>
+        </div>
+        <div className="max-h-48 overflow-y-auto rounded-none bg-white p-3 text-black">
+          <p className="text-sm font-bold">
+            {legs.length > 1
+              ? "Multiple · " + legs.length + " legs"
+              : home + " vs " + away}
+          </p>
+          <ul className="mt-2 space-y-2">
+            {legs.map((leg, i) => {
+              const m = matches[leg.matchId];
+              const h = m ? teams[m.homeTeamId]?.name ?? "Home" : "Home";
+              const a = m ? teams[m.awayTeamId]?.name ?? "Away" : "Away";
+              const sel = resolveSelection(
+                leg.selectionId,
+                leg.selectionLabel
+              );
+              return (
+                <li
+                  key={leg.matchId + "-" + i}
+                  className="border-t border-gray-100 pt-2 text-xs first:border-0 first:pt-0"
+                >
+                  <p className="font-semibold leading-snug">
+                    {h} vs {a}
+                  </p>
+                  <p className="text-gray-600">
+                    {sel.market} · {sel.pick} @ {Number(leg.odds).toFixed(2)}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+        <div className="flex gap-2 bg-[#0b1c36] p-3">
+          <button
+            type="button"
+            className="flex-1 rounded-xl border border-white/20 py-2.5 text-sm"
+            onClick={() => void navigator.clipboard?.writeText(bet.id)}
+          >
+            Copy ID
+          </button>
+          <button
+            type="button"
+            className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold"
+            onClick={onClose}
+          >
+            Done
+          </button>
         </div>
       </div>
     </div>
