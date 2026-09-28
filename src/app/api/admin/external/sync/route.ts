@@ -24,7 +24,10 @@ import {
 } from "@/lib/domain/ensureExternalMarkets";
 import type { Competition, Match, Team } from "@/types/domain";
 
-const CODES = FD_LEAGUES.map((l) => l.code);
+/** Vercel serverless limit (Pro); Hobby may still cap lower. Sync one league at a time if needed. */
+export const maxDuration = 60;
+
+const ALL_CODES = FD_LEAGUES.map((l) => l.code) as string[];
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -51,6 +54,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const body = await request.json().catch(() => ({} as Record<string, unknown>));
+  // Optional: { "code": "PL" } or { "codes": ["PL","PD"] } — one league avoids timeouts
+  let codes: string[] = ALL_CODES;
+  if (typeof body.code === "string" && body.code.trim()) {
+    codes = [body.code.trim().toUpperCase()];
+  } else if (Array.isArray(body.codes) && body.codes.length > 0) {
+    codes = body.codes.map((c: unknown) => String(c).trim().toUpperCase()).filter(Boolean);
+  }
+  const skipOdds = body.skipOdds === true;
+
+  const unknown = codes.filter((c) => !ALL_CODES.includes(c));
+  if (unknown.length) {
+    return NextResponse.json(
+      {
+        error: "Unknown league code(s): " + unknown.join(", "),
+        allowed: ALL_CODES,
+      },
+      { status: 400 }
+    );
+  }
+
   const now = Date.now();
   const from = isoDate(new Date(now - 2 * 24 * 60 * 60 * 1000));
   const to = isoDate(new Date(now + 14 * 24 * 60 * 60 * 1000));
@@ -62,7 +86,7 @@ export async function POST(request: NextRequest) {
     errors: string[];
   }[] = [];
 
-  for (const code of CODES) {
+  for (const code of codes) {
     const errors: string[] = [];
     let upserted = 0;
     let finished = 0;
@@ -111,6 +135,16 @@ export async function POST(request: NextRequest) {
     }
 
     summary.push({ code, upserted, finished, errors });
+  }
+
+  if (skipOdds) {
+    return NextResponse.json({
+      ok: true,
+      skipOdds: true,
+      codes,
+      summary,
+      message: "Fixtures synced (odds skipped). Run again without skipOdds to fill markets.",
+    });
   }
 
   // ---- Odds: fill markets for external matches missing odds --------------
@@ -330,4 +364,5 @@ async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
 
   return true;
                   }
+
       
