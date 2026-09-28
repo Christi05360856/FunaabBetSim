@@ -671,6 +671,46 @@ function ShareSheet({
   const home = match ? teams[match.homeTeamId]?.name ?? "Home" : "Home";
   const away = match ? teams[match.awayTeamId]?.name ?? "Away" : "Away";
   const odds = totalOdds(bet);
+  const isOpenBet = bet.status === "open";
+  const [bookingCode, setBookingCode] = useState<string | null>(null);
+  const [bookingBusy, setBookingBusy] = useState(false);
+  const [bookingErr, setBookingErr] = useState<string | null>(null);
+
+  async function generateBookingCode() {
+    if (!isOpenBet || legs.length === 0) return;
+    setBookingBusy(true);
+    setBookingErr(null);
+    try {
+      const payload = legs.map((leg) => {
+        const m = matches[leg.matchId];
+        const h = m ? teams[m.homeTeamId]?.name ?? "Home" : "Home";
+        const a = m ? teams[m.awayTeamId]?.name ?? "Away" : "Away";
+        const sel = resolveSelection(leg.selectionId, leg.selectionLabel);
+        return {
+          matchId: leg.matchId,
+          marketId: leg.marketId,
+          selectionId: leg.selectionId,
+          selectionLabel: leg.selectionLabel || sel.pick,
+          odds: leg.odds,
+          homeTeamName: h,
+          awayTeamName: a,
+          marketName: sel.market,
+        };
+      });
+      const res = await fetch("/api/bets/book", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ legs: payload }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Could not book");
+      setBookingCode(body.code as string);
+    } catch (e) {
+      setBookingErr(e instanceof Error ? e.message : "Booking failed");
+    } finally {
+      setBookingBusy(false);
+    }
+  }
 
   return (
     <div
@@ -734,7 +774,7 @@ function ShareSheet({
             </span>
           </div>
         </div>
-        <div className="max-h-48 overflow-y-auto rounded-none bg-white p-3 text-black">
+        <div className="max-h-48 overflow-y-auto bg-white p-3 text-black">
           <p className="text-sm font-bold">
             {legs.length > 1
               ? "Multiple · " + legs.length + " legs"
@@ -765,14 +805,53 @@ function ShareSheet({
             })}
           </ul>
         </div>
+
+        {isOpenBet && (
+          <div className="border-t border-white/10 bg-[#0b1c36] px-3 pt-3">
+            {bookingCode ? (
+              <div className="rounded-xl bg-white/10 p-3 text-center">
+                <p className="text-[11px] text-white/70">Booking code</p>
+                <p className="font-mono text-xl font-bold tracking-widest">
+                  {bookingCode}
+                </p>
+                <button
+                  type="button"
+                  className="mt-1 text-xs font-medium text-emerald-300"
+                  onClick={() =>
+                    void navigator.clipboard?.writeText(bookingCode)
+                  }
+                >
+                  Copy code
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled={bookingBusy}
+                onClick={() => void generateBookingCode()}
+                className="w-full rounded-xl border border-emerald-400/50 py-2.5 text-sm font-semibold text-emerald-300 disabled:opacity-50"
+              >
+                {bookingBusy ? "Generating…" : "Get booking code"}
+              </button>
+            )}
+            {bookingErr && (
+              <p className="mt-2 text-center text-xs text-rose-300">
+                {bookingErr}
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2 bg-[#0b1c36] p-3">
-          <button
-            type="button"
-            className="flex-1 rounded-xl border border-white/20 py-2.5 text-sm"
-            onClick={() => void navigator.clipboard?.writeText(bet.id)}
-          >
-            Copy ID
-          </button>
+          {!isOpenBet && (
+            <button
+              type="button"
+              className="flex-1 rounded-xl border border-white/20 py-2.5 text-sm"
+              onClick={() => void navigator.clipboard?.writeText(bet.id)}
+            >
+              Copy ticket ID
+            </button>
+          )}
           <button
             type="button"
             className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold"
@@ -784,4 +863,4 @@ function ShareSheet({
       </div>
     </div>
   );
-}
+                }
