@@ -4,13 +4,17 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useTheme, type ThemePreference } from "@/lib/context/ThemeProvider";
+
 
 const THEME_KEY = "funaab_theme";
 
 export default function SettingsPage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
-  const [theme, setTheme] = useState<"system" | "light" | "dark">("system");
+  const { theme, setTheme } = useTheme();
+// onClick={() => setTheme(opt.key)}
+// Back button: onClick={() => router.back()} instead of Link to dashboard
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
