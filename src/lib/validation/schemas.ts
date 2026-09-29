@@ -48,6 +48,8 @@ export const placeBetBodySchema = z.union([
   z.object({
     legs: z.array(betLegSchema).min(1).max(15),
     stake: z.number().int().positive(),
+    /** promo = must pass 5x1X2 >=2.00; auto = proportional buckets */
+    funding: z.enum(["auto", "promo"]).optional().default("auto"),
   }),
 ]);
 
