@@ -11,6 +11,15 @@ export default function DashboardPage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
   const { wallet, loading: walletLoading } = useWallet();
+  const [depositStatus, setDepositStatus] = useState<string | null>(null);
+  const [depositPoints, setDepositPoints] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search);
+    setDepositStatus(q.get("deposit"));
+    setDepositPoints(q.get("points"));
+  }, []);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -45,6 +54,18 @@ export default function DashboardPage() {
           ⚙️
         </Link>
       </div>
+
+      {depositStatus === "success" && (
+        <div className="rounded-2xl border border-brand/30 bg-brand/10 px-4 py-3 text-sm text-brand">
+          Payment successful
+          {depositPoints ? ` · +${Number(depositPoints).toLocaleString("en-NG")} points credited` : ""}.
+        </div>
+      )}
+      {depositStatus === "failed" && (
+        <div className="rounded-2xl border border-loss/30 bg-loss/10 px-4 py-3 text-sm text-loss">
+          Payment could not be confirmed. If you were charged, contact support with your receipt.
+        </div>
+      )}
 
       {/* Balance */}
       <div className="rounded-2xl bg-gradient-to-br from-brand to-emerald-800 p-5 text-white shadow-card">
