@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
 import type { Match, Team, Competition, Market } from "@/types/domain";
 import { isBettingOpen } from "@/lib/domain/matchClock";
 import { groupFixturesForBrowsing } from "@/lib/domain/fixtureDisplay";
@@ -46,51 +44,64 @@ export default function FixturesPage() {
   const [leagueId, setLeagueId] = useState<string>("all");
   const slip = useBetSlip();
 
+  // One cached API call instead of four live Firestore listeners.
   useEffect(() => {
-    const unsubMatches = onSnapshot(
-      query(collection(db, "matches"), orderBy("kickoffAt")),
-      (snap) => {
-        const valid = snap.docs
-          .map((d) => d.data() as Match)
-          .filter((m) => m && m.id && m.homeTeamId && m.awayTeamId && m.kickoffAt);
-        setMatches(valid);
+    let cancelled = false;
+
+    async function load() {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const res = await fetch("/api/public/fixtures");
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          matches: Match[];
+          teams: Team[];
+          competitions: Competition[];
+          markets: Market[];
+        };
+        if (cancelled) return;
+
+        setMatches(
+          data.matches.filter(
+            (m) => m && m.id && m.homeTeamId && m.awayTeamId && m.kickoffAt
+          )
+        );
+
+        const teamMap: Record<string, Team> = {};
+        data.teams.forEach((t) => {
+          if (t?.id) teamMap[t.id] = t;
+        });
+        setTeams(teamMap);
+
+        const compMap: Record<string, Competition> = {};
+        data.competitions.forEach((c) => {
+          if (c?.id) compMap[c.id] = c;
+        });
+        setCompetitions(compMap);
+
+        const mkMap: Record<string, Partial<Record<Market["type"], Market>>> = {};
+        data.markets.forEach((mk) => {
+          if (!mk?.matchId) return;
+          if (!mkMap[mk.matchId]) mkMap[mk.matchId] = {};
+          mkMap[mk.matchId]![mk.type] = mk;
+        });
+        setMarketsByMatch(mkMap);
+      } catch {
+        /* keep showing the last data we had */
       }
-    );
+    }
 
-    const unsubTeams = onSnapshot(collection(db, "teams"), (snap) => {
-      const map: Record<string, Team> = {};
-      snap.docs.forEach((d) => {
-        const team = d.data() as Team;
-        if (team?.id) map[team.id] = team;
-      });
-      setTeams(map);
-    });
-
-    const unsubCompetitions = onSnapshot(collection(db, "competitions"), (snap) => {
-      const map: Record<string, Competition> = {};
-      snap.docs.forEach((d) => {
-        const c = d.data() as Competition;
-        if (c?.id) map[c.id] = c;
-      });
-      setCompetitions(map);
-    });
-
-    const unsubMarkets = onSnapshot(collection(db, "markets"), (snap) => {
-      const map: Record<string, Partial<Record<Market["type"], Market>>> = {};
-      snap.docs.forEach((d) => {
-        const market = d.data() as Market;
-        if (!market?.matchId) return;
-        if (!map[market.matchId]) map[market.matchId] = {};
-        map[market.matchId]![market.type] = market;
-      });
-      setMarketsByMatch(map);
-    });
+    load();
+    const id = setInterval(load, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
-      unsubMatches();
-      unsubTeams();
-      unsubCompetitions();
-      unsubMarkets();
+      cancelled = true;
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
@@ -118,7 +129,7 @@ export default function FixturesPage() {
     return ou?.selections.find((s) => s.id === "over_" + ouLine)?.odds ?? 999;
   }
 
-  const { live, upcoming, recentResults } = useMemo(() => {
+  const { live, upcoming } = useMemo(() => {
     let filtered = matches;
 
     if (leagueId !== "all") {
@@ -302,12 +313,10 @@ export default function FixturesPage() {
           ) : visibleSelections.length > 0 ? (
             <div className="flex shrink-0 gap-1">
               {visibleSelections.map((selection) => {
-                const selected =
-                  slip.items.some(
-                    (i) =>
-                      i.matchId === match.id &&
-                      i.selectionId === selection.id
-                  );
+                const selected = slip.items.some(
+                  (i) =>
+                    i.matchId === match.id && i.selectionId === selection.id
+                );
                 return (
                   <button
                     key={selection.id}
@@ -424,9 +433,7 @@ export default function FixturesPage() {
             onClick={() => setMarketTab(tab.key)}
             className={
               "flex-1 rounded-lg py-2 text-center text-sm font-semibold transition-colors " +
-              (marketTab === tab.key
-                ? "bg-brand text-white"
-                : "text-ink-muted")
+              (marketTab === tab.key ? "bg-brand text-white" : "text-ink-muted")
             }
           >
             {tab.label}
@@ -471,9 +478,7 @@ export default function FixturesPage() {
             onClick={() => setSortBy(opt.key)}
             className={
               "rounded-full px-3 py-1 font-medium " +
-              (sortBy === opt.key
-                ? "bg-brand/10 text-brand"
-                : "text-ink-muted")
+              (sortBy === opt.key ? "bg-brand/10 text-brand" : "text-ink-muted")
             }
           >
             {opt.label}
@@ -519,11 +524,7 @@ export default function FixturesPage() {
   );
 }
 
-function shortLabel(
-  label: string,
-  id: string,
-  tab: MarketTab
-): string {
+function shortLabel(label: string, id: string, tab: MarketTab): string {
   if (tab === "match_winner") {
     if (id === "home") return "1";
     if (id === "draw") return "X";
@@ -587,4 +588,4 @@ function HomeIcon() {
       />
     </svg>
   );
-                  }
+}
