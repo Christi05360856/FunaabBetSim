@@ -13,16 +13,56 @@ export interface AppUser {
   createdAt: number;
 }
 
+/**
+ * Wallet buckets (Phase A financial model).
+ * `balance` is a cached mirror of available-to-bet for legacy UI;
+ * the ledger is the source of truth once Phase B writes it on every move.
+ */
 export interface Wallet {
   uid: string;
+  /** Cached available to bet: purchased + promo - reservedStake - reservedWithdrawal */
   balance: number;
+  /** Points from verified Naira deposits (1:1). */
+  purchased: number;
+  /** Promo points — spend only under promo bet rules; not withdrawable as cash. */
+  promo: number;
+  /** Stake locked in open bets. */
+  reservedStake: number;
+  /** Amount locked in pending withdrawals. */
+  reservedWithdrawal: number;
   lifetimeWagering: number;
+  /** @deprecated Play-money self-reset removed; always null. */
   resetPendingSince: number | null;
   updatedAt: number;
 }
 
-export const STARTING_BALANCE = 100_000;
-export const MINIMUM_STAKE = 1_000;
+/** @deprecated Play money removed — new accounts start at 0. */
+export const STARTING_BALANCE = 0;
+
+/** Minimum stake in points (1 pt = ₦1). */
+export const MINIMUM_STAKE = 2;
+
+/** Min Naira / points for a deposit or point purchase. */
+export const MIN_DEPOSIT_NGN = 200;
+export const MIN_PURCHASE_POINTS = 200;
+
+/** Withdrawal limits (points = Naira at 1:1). */
+export const MIN_WITHDRAWAL = 1_000;
+export const MAX_WITHDRAWAL = 50_000;
+
+/** Welcome promo: +100 pts, max 100 redemptions platform-wide. */
+export const WELCOME_PROMO_CODE = "WELCOME100";
+export const WELCOME_BONUS_POINTS = 100;
+export const WELCOME_MAX_REDEMPTIONS = 100;
+
+/** Promo stake rule: exactly 5 × 1X2 legs, each odds >= 2.00 */
+export const PROMO_REQUIRED_LEGS = 5;
+export const PROMO_MIN_LEG_ODDS = 2.0;
+
+/** 1 point = ₦1 — fixed, no arbitrary conversion. */
+export const POINTS_PER_NAIRA = 1;
+
+/** @deprecated Self-reset removed in financial MVP. */
 export const RESET_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 // ---- Sports domain ----------------------------------------------------------
@@ -164,18 +204,146 @@ export interface BookingCode {
   createdAt: number;
 }
 
-// ---- Wallet ledger ------------------------------------------------------
+// ---- Financial ledger (immutable) ----------------------------------------
 
-export type TransactionType = "debit_bet" | "payout" | "refund" | "reset";
+export type LedgerType =
+  | "DEPOSIT_INITIATED"
+  | "DEPOSIT_SUCCESS"
+  | "PURCHASED_POINTS_CREDIT"
+  | "PROMO_POINTS_CREDIT"
+  | "BET_STAKE_RESERVE"
+  | "BET_WIN_SETTLEMENT"
+  | "BET_LOSS_SETTLEMENT"
+  | "BET_VOID_REFUND"
+  | "WITHDRAWAL_REQUEST"
+  | "WITHDRAWAL_APPROVED"
+  | "WITHDRAWAL_COMPLETED"
+  | "WITHDRAWAL_REJECTED"
+  | "WITHDRAWAL_FAILED"
+  | "ADMIN_ADJUSTMENT";
 
+/** Legacy play-money types kept for historical rows; new code uses LedgerType. */
+export type TransactionType =
+  | "debit_bet"
+  | "payout"
+  | "refund"
+  | "reset"
+  | LedgerType;
+
+export type LedgerEntryStatus =
+  | "pending"
+  | "success"
+  | "failed"
+  | "reversed";
+
+/**
+ * Append-only financial record. Prefer collection `ledger`.
+ * `transactions` may still hold legacy play-money rows until cutover wipe.
+ */
+export interface LedgerEntry {
+  id: string;
+  uid: string;
+  type: LedgerType;
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  status: LedgerEntryStatus;
+  referenceId: string | null;
+  betId: string | null;
+  depositId: string | null;
+  withdrawalId: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: number;
+}
+
+/** @deprecated Prefer LedgerEntry — shape kept so existing readers compile. */
 export interface Transaction {
   id: string;
   uid: string;
   type: TransactionType;
   amount: number;
   balanceAfter: number;
+  balanceBefore?: number;
   betId: string | null;
+  status?: LedgerEntryStatus;
+  referenceId?: string | null;
   createdAt: number;
+}
+
+// ---- Deposits ------------------------------------------------------------
+
+export type DepositStatus =
+  | "initiated"
+  | "pending"
+  | "success"
+  | "failed"
+  | "abandoned";
+
+export interface Deposit {
+  id: string;
+  /** Same as id — Flutterwave tx_ref. */
+  txRef: string;
+  uid: string;
+  amountNgn: number;
+  points: number;
+  promoCode: string | null;
+  status: DepositStatus;
+  flwTransactionId: string | null;
+  flwRef: string | null;
+  createdAt: number;
+  completedAt: number | null;
+}
+
+// ---- Promotions ----------------------------------------------------------
+
+export type PromotionRuleType = "welcome_fixed" | "custom";
+
+export interface Promotion {
+  id: string;
+  code: string;
+  ruleType: PromotionRuleType;
+  bonusPoints: number;
+  minDepositNgn: number;
+  maxRedemptions: number;
+  redemptionCount: number;
+  active: boolean;
+  exhaustedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PromoRedemption {
+  id: string;
+  uid: string;
+  code: string;
+  depositId: string;
+  pointsCredited: number;
+  createdAt: number;
+}
+
+// ---- Withdrawals ---------------------------------------------------------
+
+export type WithdrawalStatus =
+  | "requested"
+  | "pending_review"
+  | "approved"
+  | "processing"
+  | "completed"
+  | "rejected"
+  | "payment_failed";
+
+export interface Withdrawal {
+  id: string;
+  uid: string;
+  amount: number;
+  bankCode: string;
+  accountNumber: string;
+  accountName: string;
+  status: WithdrawalStatus;
+  adminNote: string | null;
+  flwTransferId: string | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /**
@@ -223,4 +391,4 @@ export interface Bet {
   settledAt: number | null;
   payout?: number;
   hidden?: boolean;
-}
+  }
