@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { revalidateTag } from "next/cache";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { adminDb } from "@/lib/firebase/admin";
 import { z } from "zod";
@@ -35,6 +36,7 @@ export async function POST(request: NextRequest) {
       currentAwayScore: null,
       updatedAt: Date.now(),
     });
+    revalidateTag("fixtures-core");
     return NextResponse.json({ ok: true, message: "Match reopened" });
   }
 
@@ -64,6 +66,7 @@ export async function POST(request: NextRequest) {
       currentAwayScore: null,
       updatedAt: Date.now(),
     });
+    revalidateTag("fixtures-core");
     return NextResponse.json({ ok: true, message: "Live start undone — match is Open again" });
   }
 
