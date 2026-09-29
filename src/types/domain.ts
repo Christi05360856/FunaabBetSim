@@ -187,6 +187,10 @@ export interface Bet {
   selectionLabel: string;
   oddsAtPlacement: number;
   stake: number;
+  /** Points of stake taken from purchased (proportional). */
+  stakePurchased?: number;
+  /** Points of stake taken from promo (proportional). */
+  stakePromo?: number;
   potentialPayout: number;
   status: BetStatus;
   placedAt: number;
@@ -391,4 +395,4 @@ export interface Bet {
   settledAt: number | null;
   payout?: number;
   hidden?: boolean;
-  }
+}
