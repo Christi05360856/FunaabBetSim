@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { db } from "@/lib/firebase/client";
 import type { Team, Competition, Match } from "@/types/domain";
@@ -75,17 +75,30 @@ function AdminApp() {
       .catch(() => setAdminStatus("not-admin"));
   }, [user, loading, router]);
 
+  // One-time fetch (not live listeners). Called on load and after every
+  // successful admin action, so the screen always reflects the latest data
+  // without keeping 3 collections streaming in the background.
+  const loadAll = useCallback(async () => {
+    try {
+      const [t, c, m] = await Promise.all([
+        getDocs(query(collection(db, "teams"), orderBy("name"))),
+        getDocs(query(collection(db, "competitions"), orderBy("name"))),
+        // Display order is decided in the tabs (upcoming first); this just keeps it stable.
+        getDocs(query(collection(db, "matches"), orderBy("kickoffAt"))),
+      ]);
+      setTeams(t.docs.map((d) => d.data() as Team));
+      setCompetitions(c.docs.map((d) => d.data() as Competition));
+      setMatches(m.docs.map((d) => d.data() as Match));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setToast({ msg: `Could not load data: ${message}`, type: "error" });
+    }
+  }, []);
+
   useEffect(() => {
     if (adminStatus !== "admin") return;
-    const fail = (what: string) => (err: Error) => setToast({ msg: `Could not load ${what}: ${err.message}`, type: "error" });
-    const un = [
-      onSnapshot(query(collection(db, "teams"), orderBy("name")), (s) => setTeams(s.docs.map((d) => d.data() as Team)), fail("teams")),
-      onSnapshot(query(collection(db, "competitions"), orderBy("name")), (s) => setCompetitions(s.docs.map((d) => d.data() as Competition)), fail("competitions")),
-      // Display order is decided in the tabs (upcoming first); this just keeps it stable.
-      onSnapshot(query(collection(db, "matches"), orderBy("kickoffAt")), (s) => setMatches(s.docs.map((d) => d.data() as Match)), fail("fixtures")),
-    ];
-    return () => un.forEach((u) => u());
-  }, [adminStatus]);
+    void loadAll();
+  }, [adminStatus, loadAll]);
 
   function report(result: PostResult): PostResult {
     setToast({ msg: result.message, type: result.ok ? "success" : "error" });
@@ -101,11 +114,13 @@ function AdminApp() {
         body: JSON.stringify(body),
       });
       const data = (await res.json().catch(() => ({}))) as ApiBody;
-      return report(
+      const result = report(
         res.ok
           ? { ok: true, message: summarize(data, successMessage) }
           : { ok: false, message: data.error ?? `Request failed (${res.status})` }
       );
+      if (res.ok) await loadAll();
+      return result;
     } catch {
       return report({ ok: false, message: "Network problem — check your connection and try again" });
     }
