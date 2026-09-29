@@ -13,12 +13,14 @@ export default function DashboardPage() {
   const { wallet, loading: walletLoading } = useWallet();
   const [depositStatus, setDepositStatus] = useState<string | null>(null);
   const [depositPoints, setDepositPoints] = useState<string | null>(null);
+  const [depositReason, setDepositReason] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const q = new URLSearchParams(window.location.search);
     setDepositStatus(q.get("deposit"));
     setDepositPoints(q.get("points"));
+    setDepositReason(q.get("reason"));
   }, []);
 
   useEffect(() => {
@@ -63,7 +65,9 @@ export default function DashboardPage() {
       )}
       {depositStatus === "failed" && (
         <div className="rounded-2xl border border-loss/30 bg-loss/10 px-4 py-3 text-sm text-loss">
-          Payment could not be confirmed. If you were charged, contact support with your receipt.
+          Payment could not be confirmed
+          {depositReason ? ` (${depositReason})` : ""}.
+          {" "}If you were charged, contact support with your receipt.
         </div>
       )}
 
@@ -208,4 +212,4 @@ function MenuItem({
       </svg>
     </Link>
   );
-}
+                                  }
