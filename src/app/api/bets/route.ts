@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { verifyRequest } from "@/lib/auth/verifyRequest";
 import { adminDb } from "@/lib/firebase/admin";
 import { placeBetBodySchema } from "@/lib/validation/schemas";
-import { canPlaceStake, availableToBet } from "@/lib/domain/wallet";
+import { canPlaceStake, availableToBet, isValidPromoTicket } from "@/lib/domain/wallet";
 import {
   applyStakeReserve,
   buildLedgerEntry,
@@ -44,10 +44,12 @@ export async function POST(request: NextRequest) {
 
   let legs: LegInput[];
   let stake: number;
+  let funding: "auto" | "promo" = "auto";
 
   if ("legs" in parsed.data) {
     legs = parsed.data.legs;
     stake = parsed.data.stake;
+    funding = parsed.data.funding ?? "auto";
   } else {
     const { matchId, marketId, selectionId, stake: s } = parsed.data;
     legs = [
@@ -84,6 +86,7 @@ export async function POST(request: NextRequest) {
       }
 
       const validatedLegs: BetLeg[] = [];
+      const marketTypes: string[] = [];
       let combinedOdds = 1;
 
       for (const leg of legs) {
@@ -122,16 +125,32 @@ export async function POST(request: NextRequest) {
           selectionLabel: selection.label,
           odds: liveOdds,
         });
+        marketTypes.push(market.type);
       }
 
       if (validatedLegs.length === 0) {
         throw new Error("No valid selections on this ticket");
       }
 
+      if (funding === "promo") {
+        if (!isValidPromoTicket(validatedLegs, marketTypes)) {
+          throw new Error(
+            "Promo bets require exactly 5 × 1X2 selections, each with odds ≥ 2.00"
+          );
+        }
+        if ((wallet.promo ?? 0) < stake) {
+          throw new Error("Insufficient promo points for this stake");
+        }
+      }
+
       const now = Date.now();
       const potentialPayout = Math.round(stake * combinedOdds);
       const balanceBefore = avail;
-      const { wallet: nextWallet, split } = applyStakeReserve(wallet, stake);
+      let { wallet: nextWallet, split } = applyStakeReserve(wallet, stake);
+      if (funding === "promo") {
+        // Prefer full stake from promo bucket for accounting
+        split = { fromPurchased: 0, fromPromo: stake };
+      }
       const isAcca = validatedLegs.length > 1;
       const first = validatedLegs[0]!;
 
