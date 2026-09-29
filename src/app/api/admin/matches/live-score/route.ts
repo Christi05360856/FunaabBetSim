@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { adminDb } from "@/lib/firebase/admin";
@@ -151,6 +152,9 @@ export async function POST(request: NextRequest) {
 
       return { ok: true, betsClinched };
     });
+
+    // Score / status changed -> refresh the public match list.
+    revalidateTag("fixtures-core");
 
     return NextResponse.json(result);
   } catch (err) {
