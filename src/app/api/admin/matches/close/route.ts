@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { revalidateTag } from "next/cache";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { adminDb } from "@/lib/firebase/admin";
 import { z } from "zod";
@@ -15,15 +16,15 @@ export async function POST(request: NextRequest) {
   const { matchId } = parsed.data;
   const ref = adminDb.collection("matches").doc(matchId);
   const snap = await ref.get();
-  
+
   if (!snap.exists) return NextResponse.json({ error: "Match not found" }, { status: 404 });
-  
+
   const match = snap.data()!;
   if (match.status !== "open") {
     return NextResponse.json({ error: "Match is not open" }, { status: 400 });
   }
 
   await ref.update({ status: "scheduled", updatedAt: Date.now() });
+  revalidateTag("fixtures-core");
   return NextResponse.json({ ok: true, message: "Betting closed" });
 }
-
