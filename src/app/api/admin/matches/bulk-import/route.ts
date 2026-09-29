@@ -100,3 +100,44 @@ export async function POST(request: NextRequest) {
         .where("awayTeamId", "==", awayTeamId)
         .where("kickoffAt", "==", m.kickoffAt)
         .limit(1)
+        .get();
+      if (!dupeSnap.empty) {
+        matchesSkipped++;
+        continue;
+      }
+
+      const ref = adminDb.collection("matches").doc();
+      const match: Match = {
+        id: ref.id,
+        competitionId,
+        round: null,
+        homeTeamId,
+        awayTeamId,
+        kickoffAt: m.kickoffAt,
+        status: "scheduled",
+        homeScore: null,
+        awayScore: null,
+        currentHomeScore: null,
+        currentAwayScore: null,
+        venue: null,
+        source: "bulk_import",
+        sourceEventId: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await ref.set(match);
+      matchesCreated++;
+    }
+
+    // New matches / teams / competitions -> refresh the public cache.
+    revalidateTag("fixtures-core");
+    revalidateTag("fixtures-static");
+
+    return NextResponse.json({ ok: true, teamsCreated, matchesCreated, matchesSkipped });
+  } catch (err) {
+    console.error("bulk-import failed", err);
+    const message = err instanceof Error ? err.message : "Bulk import failed";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
