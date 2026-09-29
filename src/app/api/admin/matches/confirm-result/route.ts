@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { revalidateTag } from "next/cache";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { adminDb } from "@/lib/firebase/admin";
 import { confirmResultSchema } from "@/lib/validation/schemas";
@@ -413,10 +414,14 @@ export async function POST(request: NextRequest) {
       return { alreadySettled: false, betsSettled };
     });
 
+    // Match settled + markets marked settled -> refresh the public cache.
+    revalidateTag("fixtures-core");
+    revalidateTag("markets");
+
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Could not settle match";
     return NextResponse.json({ error: message }, { status: 400 });
   }
-    }
+}
