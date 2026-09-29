@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useWallet } from "@/lib/hooks/useWallet";
-import { MIN_DEPOSIT_NGN } from "@/types/domain";
+import { MIN_DEPOSIT_NGN, WELCOME_PROMO_CODE } from "@/types/domain";
 import { formatMoney } from "@/lib/domain/selectionLabel";
 
 const CHIPS = [200, 500, 1000, 2000, 5000] as const;
@@ -16,6 +16,7 @@ export default function DepositPage() {
   const { wallet } = useWallet();
   const [amount, setAmount] = useState<number>(200);
   const [custom, setCustom] = useState("");
+  const [promoCode, setPromoCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,7 +53,10 @@ export default function DepositPage() {
           Authorization: "Bearer " + idToken,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ amountNgn: pay }),
+        body: JSON.stringify({
+          amountNgn: pay,
+          promoCode: promoCode.trim() || null,
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -61,7 +65,6 @@ export default function DepositPage() {
       if (!body.checkoutUrl) {
         throw new Error("No checkout link returned");
       }
-      // Leave the app → Flutterwave
       window.location.href = body.checkoutUrl as string;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Payment failed to start");
@@ -91,7 +94,12 @@ export default function DepositPage() {
         <p className="font-display text-xl font-bold text-brand">
           {wallet ? formatMoney(wallet.balance) : "—"}
         </p>
-        <p className="mt-1 text-[11px] text-ink-muted">1 point = ₦1</p>
+        <p className="mt-1 text-[11px] text-ink-muted">
+          1 point = ₦1
+          {wallet && typeof wallet.promo === "number" && wallet.promo > 0
+            ? ` · Promo: ${wallet.promo.toLocaleString("en-NG")}`
+            : ""}
+        </p>
       </div>
 
       <div className="rounded-2xl bg-surface p-4 shadow-card">
@@ -128,6 +136,26 @@ export default function DepositPage() {
           />
         </label>
 
+        <label className="mt-4 block text-xs text-ink-muted">
+          Promo code (optional)
+          <input
+            type="text"
+            autoCapitalize="characters"
+            value={promoCode}
+            onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+            placeholder={WELCOME_PROMO_CODE}
+            className="mt-1 w-full rounded-xl border border-ink-muted/20 bg-bg px-3 py-2.5 text-sm uppercase tracking-wide"
+          />
+        </label>
+        <p className="mt-1 text-[11px] text-ink-muted">
+          First-time code {WELCOME_PROMO_CODE}: +100 promo points on qualifying
+          deposit. Promo can only be used on 5× 1X2 bets with each leg odds ≥
+          2.00.{" "}
+          <Link href="/promo" className="text-brand underline">
+            Rules
+          </Link>
+        </p>
+
         <p className="mt-3 text-sm">
           You will get{" "}
           <span className="font-bold text-brand">
@@ -150,12 +178,6 @@ export default function DepositPage() {
           {busy ? "Opening payment…" : "Continue to payment"}
         </button>
       </div>
-
-      <p className="text-center text-[11px] text-ink-muted">
-        Paid securely via Flutterwave. Points are credited after payment is
-        confirmed.
-      </p>
     </main>
   );
 }
-
