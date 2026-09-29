@@ -14,6 +14,20 @@ const TYPE_LABEL: Record<TransactionType, string> = {
   payout: "Bet won",
   refund: "Bet refunded",
   reset: "Balance reset",
+  DEPOSIT_INITIATED: "Deposit started",
+  DEPOSIT_SUCCESS: "Deposit successful",
+  PURCHASED_POINTS_CREDIT: "Points purchased",
+  PROMO_POINTS_CREDIT: "Promo points",
+  BET_STAKE_RESERVE: "Bet stake reserved",
+  BET_WIN_SETTLEMENT: "Bet won",
+  BET_LOSS_SETTLEMENT: "Bet lost",
+  BET_VOID_REFUND: "Bet void refund",
+  WITHDRAWAL_REQUEST: "Withdrawal requested",
+  WITHDRAWAL_APPROVED: "Withdrawal approved",
+  WITHDRAWAL_COMPLETED: "Withdrawal completed",
+  WITHDRAWAL_REJECTED: "Withdrawal rejected",
+  WITHDRAWAL_FAILED: "Withdrawal failed",
+  ADMIN_ADJUSTMENT: "Admin adjustment",
 };
 
 const TYPE_ICON: Record<TransactionType, string> = {
@@ -21,6 +35,20 @@ const TYPE_ICON: Record<TransactionType, string> = {
   payout: "🏆",
   refund: "↩️",
   reset: "🔄",
+  DEPOSIT_INITIATED: "⏳",
+  DEPOSIT_SUCCESS: "💳",
+  PURCHASED_POINTS_CREDIT: "💳",
+  PROMO_POINTS_CREDIT: "🎁",
+  BET_STAKE_RESERVE: "🎫",
+  BET_WIN_SETTLEMENT: "🏆",
+  BET_LOSS_SETTLEMENT: "📉",
+  BET_VOID_REFUND: "↩️",
+  WITHDRAWAL_REQUEST: "🏦",
+  WITHDRAWAL_APPROVED: "✅",
+  WITHDRAWAL_COMPLETED: "💸",
+  WITHDRAWAL_REJECTED: "❌",
+  WITHDRAWAL_FAILED: "⚠️",
+  ADMIN_ADJUSTMENT: "🛠️",
 };
 
 function dateHeading(ts: number) {
