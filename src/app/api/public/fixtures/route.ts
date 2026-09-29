@@ -5,9 +5,10 @@ import type { Match, Team, Competition, Market } from "@/types/domain";
 
 export const dynamic = "force-dynamic";
 
-const HOURS_BACK = 4;
-const DAYS_AHEAD = 5;
-const MAX_MATCHES = 120;
+// Keep recently-started matches visible (live / awaiting settlement),
+// then everything upcoming, nearest first, capped for read-cost safety.
+const HOURS_BACK = 24;
+const MAX_MATCHES = 150;
 
 const getMatches = unstable_cache(
   async (): Promise<Match[]> => {
@@ -15,13 +16,12 @@ const getMatches = unstable_cache(
     const snap = await adminDb
       .collection("matches")
       .where("kickoffAt", ">=", now - HOURS_BACK * 3_600_000)
-      .where("kickoffAt", "<=", now + DAYS_AHEAD * 86_400_000)
       .orderBy("kickoffAt")
       .limit(MAX_MATCHES)
       .get();
     return snap.docs.map((d) => d.data() as Match);
   },
-  ["fixtures-matches"],
+  ["fixtures-matches-v2"],
   { revalidate: 60, tags: ["fixtures-core"] }
 );
 
@@ -68,7 +68,6 @@ export async function GET() {
       },
       {
         headers: {
-          // Short edge cache only; the server cache above already protects Firestore.
           "Cache-Control": "public, s-maxage=10, stale-while-revalidate=20",
         },
       }
