@@ -5,48 +5,16 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useWallet } from "@/lib/hooks/useWallet";
-import { RESET_COOLDOWN_MS } from "@/types/domain";
 import { formatMoney } from "@/lib/domain/selectionLabel";
 
 export default function DashboardPage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
   const { wallet, loading: walletLoading } = useWallet();
-  const [tick, setTick] = useState(0);
-  const [resetSubmitting, setResetSubmitting] = useState(false);
-  const [resetError, setResetError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
-
-  useEffect(() => {
-    if (!wallet || wallet.balance !== 0 || wallet.resetPendingSince === null)
-      return;
-    const interval = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(interval);
-  }, [wallet]);
-
-  async function handleReset() {
-    if (!user) return;
-    setResetSubmitting(true);
-    setResetError(null);
-    try {
-      const idToken = await user.getIdToken();
-      const response = await fetch("/api/wallet/reset", {
-        method: "POST",
-        headers: { Authorization: "Bearer " + idToken },
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Could not reset wallet.");
-    } catch (err) {
-      setResetError(
-        err instanceof Error ? err.message : "Something went wrong."
-      );
-    } finally {
-      setResetSubmitting(false);
-    }
-  }
 
   if (loading || !user) {
     return (
@@ -54,21 +22,6 @@ export default function DashboardPage() {
         <p className="text-ink-muted">Loading…</p>
       </main>
     );
-  }
-
-  const isZero = wallet?.balance === 0;
-  const cooldownActive = isZero && wallet?.resetPendingSince != null;
-  const remainingMs = cooldownActive
-    ? RESET_COOLDOWN_MS - (Date.now() - wallet!.resetPendingSince!)
-    : 0;
-  const cooldownDone = cooldownActive && remainingMs <= 0;
-  void tick;
-
-  function formatRemaining(ms: number) {
-    const totalMinutes = Math.max(0, Math.ceil(ms / (60 * 1000)));
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    return hours > 0 ? hours + "h " + minutes + "m" : minutes + "m";
   }
 
   return (
@@ -95,7 +48,7 @@ export default function DashboardPage() {
 
       {/* Balance */}
       <div className="rounded-2xl bg-gradient-to-br from-brand to-emerald-800 p-5 text-white shadow-card">
-        <p className="text-xs font-medium text-white/70">Play-money balance</p>
+        <p className="text-xs font-medium text-white/70">Available points</p>
         <p
           className="mt-1 break-all font-display text-2xl font-bold tabular-nums"
           title={
@@ -110,35 +63,24 @@ export default function DashboardPage() {
               ? formatMoney(wallet.balance)
               : "—"}
         </p>
-        <p className="mt-1 text-[10px] text-white/50">
-          Virtual funds only · Nothing is real money
-        </p>
-
-        {cooldownActive && (
-          <div className="mt-4 border-t border-white/20 pt-4">
-            {cooldownDone ? (
-              <button
-                type="button"
-                onClick={handleReset}
-                disabled={resetSubmitting}
-                className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-brand disabled:opacity-50"
-              >
-                {resetSubmitting ? "Resetting…" : "Reset to ₦100,000"}
-              </button>
-            ) : (
-              <p className="text-sm text-white/70">
-                Reset available in {formatRemaining(remainingMs)}
-              </p>
-            )}
-            {resetError && (
-              <p className="mt-2 text-sm text-white/90">{resetError}</p>
-            )}
-          </div>
-        )}
+        <p className="mt-1 text-[10px] text-white/50">1 point = ₦1</p>
+        <Link
+          href="/account/deposit"
+          className="mt-4 flex w-full items-center justify-center rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-brand"
+        >
+          Buy points
+        </Link>
       </div>
 
       {/* Quick actions */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-4 gap-2">
+        <Link
+          href="/account/deposit"
+          className="flex flex-col items-center gap-1.5 rounded-2xl bg-surface p-3 shadow-card"
+        >
+          <span className="text-xl">💳</span>
+          <span className="text-[11px] font-medium">Buy points</span>
+        </Link>
         <Link
           href="/bets"
           className="flex flex-col items-center gap-1.5 rounded-2xl bg-surface p-3 shadow-card"
@@ -193,6 +135,7 @@ export default function DashboardPage() {
 
       {/* Menu */}
       <div className="overflow-hidden rounded-2xl bg-surface shadow-card">
+        <MenuItem icon="💳" label="Buy points" href="/account/deposit" />
         <MenuItem icon="👤" label="Profile" href="/account/profile" />
         <MenuItem icon="🎫" label="Bet history" href="/bets" />
         <MenuItem icon="📋" label="Transaction records" href="/transactions" />
