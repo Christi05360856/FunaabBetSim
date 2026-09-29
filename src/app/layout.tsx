@@ -12,11 +12,18 @@ const displayFont = Manrope({
   subsets: ["latin"],
   variable: "--font-display",
   weight: ["600", "700", "800"],
+  display: "swap",
+  fallback: ["system-ui", "arial"],
+  adjustFontFallback: true,
 });
+
 const bodyFont = Inter({
   subsets: ["latin"],
   variable: "--font-body",
   weight: ["400", "500", "600"],
+  display: "swap",
+  fallback: ["system-ui", "arial"],
+  adjustFontFallback: true,
 });
 
 export const metadata: Metadata = {
