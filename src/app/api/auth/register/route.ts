@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { verifyRequest } from "@/lib/auth/verifyRequest";
 import { adminDb } from "@/lib/firebase/admin";
-import { STARTING_BALANCE } from "@/types/domain";
+import { emptyWallet } from "@/lib/domain/wallet";
 
 const bodySchema = z.object({
   displayName: z.string().trim().min(2).max(60),
@@ -24,8 +24,7 @@ export async function POST(request: NextRequest) {
   const userRef = adminDb.collection("users").doc(uid);
   const walletRef = adminDb.collection("wallets").doc(uid);
 
-  // Idempotent: if this account was already provisioned (e.g. the client
-  // retried the request), do nothing rather than resetting the wallet.
+  // Idempotent: if this account was already provisioned, do not reset balances.
   await adminDb.runTransaction(async (tx) => {
     const existingWallet = await tx.get(walletRef);
     if (existingWallet.exists) return;
@@ -38,13 +37,7 @@ export async function POST(request: NextRequest) {
       createdAt: now,
     });
 
-    tx.set(walletRef, {
-      uid,
-      balance: STARTING_BALANCE,
-      lifetimeWagering: 0,
-      resetPendingSince: null,
-      updatedAt: now,
-    });
+    tx.set(walletRef, emptyWallet(uid, now));
   });
 
   return NextResponse.json({ ok: true });
