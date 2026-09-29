@@ -11,6 +11,7 @@ type Scope =
   | "funaab"
   | "manual"
   | "bets_tx"
+  | "bets_wallets"
   | "all"
   | "platform";
 
@@ -45,8 +46,15 @@ const OPTIONS: {
     scope: "bets_tx",
     title: "Clear bets & transactions",
     description:
-      "Deletes all user bets and wallet ledger entries. Fixtures and odds are kept.",
+      "Deletes all user bets and wallet ledger entries. Fixtures and odds are kept. Wallet balances are NOT changed.",
     phrase: false,
+  },
+  {
+    scope: "bets_wallets",
+    title: "Clear bets, transactions & reset wallets",
+    description:
+      "Deletes all bets and transactions, and resets every wallet to ₦100,000. Fixtures, odds, teams and competitions are kept. Use this before launch.",
+    phrase: true,
   },
   {
     scope: "all",
@@ -106,8 +114,8 @@ export default function DangerTab() {
         },
         body: JSON.stringify({ scope }),
       });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Reset failed");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Reset failed (" + res.status + ")");
       setResult(
         body.message +
           (body.counts
@@ -115,7 +123,8 @@ export default function DangerTab() {
               Object.entries(body.counts)
                 .map(([k, v]) => k + "=" + v)
                 .join(", ")
-            : "")
+            : "") +
+          " — reload this page to refresh the lists."
       );
       setOpen(false);
     } catch (e) {
@@ -217,4 +226,4 @@ export default function DangerTab() {
       </Modal>
     </div>
   );
-}
+            }
