@@ -2,7 +2,12 @@
 
 import { initializeApp, getApps, getApp, type FirebaseOptions } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from "firebase/firestore";
 
 const firebaseConfig: FirebaseOptions = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -16,4 +21,21 @@ const firebaseConfig: FirebaseOptions = {
 // Avoid re-initializing on every hot-reload in dev.
 export const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
-export const db = getFirestore(firebaseApp);
+
+// Persistent local cache: reloads and reconnects reuse cached documents
+// instead of re-reading everything from the server.
+function makeDb() {
+  if (typeof window === "undefined") return getFirestore(firebaseApp);
+  try {
+    return initializeFirestore(firebaseApp, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    });
+  } catch {
+    // Already initialised (hot reload) - reuse the existing instance.
+    return getFirestore(firebaseApp);
+  }
+}
+
+export const db = makeDb();
