@@ -22,7 +22,7 @@ const getMatches = unstable_cache(
     return snap.docs.map((d) => d.data() as Match);
   },
   ["fixtures-matches"],
-  { revalidate: 180, tags: ["fixtures-core"] }
+  { revalidate: 60, tags: ["fixtures-core"] }
 );
 
 const getStatic = unstable_cache(
@@ -40,7 +40,7 @@ const getStatic = unstable_cache(
   { revalidate: 3600, tags: ["fixtures-static"] }
 );
 
-function getMarkets(matchId: string) {
+function getMarkets(matchId: string): Promise<Market[]> {
   return unstable_cache(
     async (): Promise<Market[]> => {
       const snap = await adminDb
@@ -58,6 +58,7 @@ export async function GET() {
   try {
     const [matches, stat] = await Promise.all([getMatches(), getStatic()]);
     const marketLists = await Promise.all(matches.map((m) => getMarkets(m.id)));
+
     return NextResponse.json(
       {
         matches,
@@ -67,12 +68,16 @@ export async function GET() {
       },
       {
         headers: {
-          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+          // Short edge cache only; the server cache above already protects Firestore.
+          "Cache-Control": "public, s-maxage=10, stale-while-revalidate=20",
         },
       }
     );
   } catch (e) {
     console.error("fixtures api failed", e);
-    return NextResponse.json({ error: "Failed to load fixtures" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to load fixtures" },
+      { status: 500 }
+    );
   }
 }
