@@ -4,6 +4,7 @@ import { creditVerifiedDeposit } from "@/lib/domain/creditDeposit";
 
 /**
  * Browser redirect after checkout. Re-verifies server-side; does not trust query alone.
+ * Lands on /dashboard (Account tab) — /account page does not exist.
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -12,11 +13,16 @@ export async function GET(request: NextRequest) {
   const transactionId = searchParams.get("transaction_id");
 
   const origin =
-    process.env.NEXT_PUBLIC_APP_URL || "https://funaab-betsim.vercel.app";
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "https://funaab-betsim.vercel.app";
+
+  const dash = (q: string) =>
+    NextResponse.redirect(`${origin}/dashboard?${q}`);
 
   if (status !== "successful" || !txRef || !transactionId) {
-    return NextResponse.redirect(
-      `${origin}/account?deposit=failed&ref=${encodeURIComponent(txRef ?? "")}`
+    return dash(
+      `deposit=failed&ref=${encodeURIComponent(txRef ?? "")}`
     );
   }
 
@@ -27,9 +33,7 @@ export async function GET(request: NextRequest) {
       verified.currency !== "NGN" ||
       verified.tx_ref !== txRef
     ) {
-      return NextResponse.redirect(
-        `${origin}/account?deposit=failed&ref=${encodeURIComponent(txRef)}`
-      );
+      return dash(`deposit=failed&ref=${encodeURIComponent(txRef)}`);
     }
 
     const result = await creditVerifiedDeposit({
@@ -44,10 +48,8 @@ export async function GET(request: NextRequest) {
       ? `deposit=success&points=${result.points}`
       : `deposit=ok&reason=${encodeURIComponent(result.reason ?? "noop")}`;
 
-    return NextResponse.redirect(`${origin}/account?${q}&ref=${encodeURIComponent(txRef)}`);
+    return dash(`${q}&ref=${encodeURIComponent(txRef)}`);
   } catch {
-    return NextResponse.redirect(
-      `${origin}/account?deposit=failed&ref=${encodeURIComponent(txRef)}`
-    );
+    return dash(`deposit=failed&ref=${encodeURIComponent(txRef)}`);
   }
 }
