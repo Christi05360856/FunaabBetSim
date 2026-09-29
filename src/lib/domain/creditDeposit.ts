@@ -9,7 +9,6 @@ import type { Deposit, Wallet } from "@/types/domain";
 
 /**
  * Idempotent credit after Flutterwave verify success.
- * Safe to call from webhook and redirect callback.
  */
 export async function creditVerifiedDeposit(input: {
   txRef: string;
@@ -18,7 +17,7 @@ export async function creditVerifiedDeposit(input: {
   amountNgn: number;
   currency: string;
 }): Promise<{ credited: boolean; points: number; reason?: string }> {
-  if (input.currency !== "NGN") {
+  if (String(input.currency).toUpperCase() !== "NGN") {
     return { credited: false, points: 0, reason: "currency_not_ngn" };
   }
 
@@ -32,18 +31,28 @@ export async function creditVerifiedDeposit(input: {
     const deposit = depSnap.data() as Deposit;
 
     if (deposit.status === "success") {
-      return { credited: false, points: deposit.points, reason: "already_credited" };
+      return {
+        credited: false,
+        points: deposit.points,
+        reason: "already_credited",
+      };
     }
     if (deposit.status !== "initiated" && deposit.status !== "pending") {
       return { credited: false, points: 0, reason: `status_${deposit.status}` };
     }
 
-    // Amount must match what we created at init (allow equal only)
-    if (Number(input.amountNgn) !== Number(deposit.amountNgn)) {
-      return { credited: false, points: 0, reason: "amount_mismatch" };
+    // Round both sides — FLW may return floats
+    const paid = Math.round(Number(input.amountNgn));
+    const expected = Math.round(Number(deposit.amountNgn));
+    if (paid !== expected) {
+      return {
+        credited: false,
+        points: 0,
+        reason: `amount_mismatch_${paid}_vs_${expected}`,
+      };
     }
 
-    const points = Math.round(deposit.amountNgn * POINTS_PER_NAIRA);
+    const points = Math.round(expected * POINTS_PER_NAIRA);
     const walletRef = adminDb.collection("wallets").doc(deposit.uid);
     const walletSnap = await tx.get(walletRef);
     if (!walletSnap.exists) {
@@ -54,10 +63,7 @@ export async function creditVerifiedDeposit(input: {
     const purchased = before.purchased + points;
     const balance = Math.max(
       0,
-      purchased +
-        before.promo -
-        before.reservedStake -
-        before.reservedWithdrawal
+      purchased + before.promo - before.reservedStake - before.reservedWithdrawal
     );
     const now = Date.now();
 
@@ -94,13 +100,12 @@ export async function creditVerifiedDeposit(input: {
         metadata: {
           flwTransactionId: input.flwTransactionId,
           flwRef: input.flwRef,
-          amountNgn: deposit.amountNgn,
+          amountNgn: expected,
         },
         now,
       })
     );
 
-    // Legacy transactions feed for UI
     const trRef = adminDb.collection("transactions").doc();
     tx.set(trRef, {
       id: trRef.id,
