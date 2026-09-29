@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { adminDb } from "@/lib/firebase/admin";
@@ -33,6 +34,9 @@ export async function POST(request: NextRequest) {
   marketSnap.docs.forEach((doc) => batch.delete(doc.ref));
   batch.delete(adminDb.collection("matches").doc(matchId));
   await batch.commit();
+
+  revalidateTag("fixtures-core");
+  revalidateTag("markets");
 
   return NextResponse.json({ ok: true });
 }
