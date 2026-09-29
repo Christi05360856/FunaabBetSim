@@ -2,8 +2,20 @@ import { NextResponse, type NextRequest } from "next/server";
 import { verifyRequest } from "@/lib/auth/verifyRequest";
 import { adminDb } from "@/lib/firebase/admin";
 import { placeBetBodySchema } from "@/lib/validation/schemas";
-import { canPlaceStake } from "@/lib/domain/wallet";
-import type { Bet, BetLeg, Market, Match, Transaction, Wallet } from "@/types/domain";
+import { canPlaceStake, availableToBet } from "@/lib/domain/wallet";
+import {
+  applyStakeReserve,
+  buildLedgerEntry,
+  normalizeWallet,
+} from "@/lib/domain/ledgerEngine";
+import type {
+  Bet,
+  BetLeg,
+  Market,
+  Match,
+  Transaction,
+  Wallet,
+} from "@/types/domain";
 import { isBettingOpen } from "@/lib/domain/matchClock";
 
 type LegInput = {
@@ -30,7 +42,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Normalize to legs[]
   let legs: LegInput[];
   let stake: number;
 
@@ -51,7 +62,6 @@ export async function POST(request: NextRequest) {
     stake = s;
   }
 
-  // Unique matches only
   const matchIds = new Set(legs.map((l) => l.matchId));
   if (matchIds.size !== legs.length) {
     return NextResponse.json(
@@ -66,9 +76,10 @@ export async function POST(request: NextRequest) {
     const result = await adminDb.runTransaction(async (tx) => {
       const walletSnap = await tx.get(walletRef);
       if (!walletSnap.exists) throw new Error("Wallet not found");
-      const wallet = walletSnap.data() as Wallet;
+      const wallet = normalizeWallet(walletSnap.data() as Wallet);
+      const avail = availableToBet(wallet);
 
-      if (!canPlaceStake(wallet.balance, stake)) {
+      if (!canPlaceStake(avail, stake)) {
         throw new Error("Invalid stake for your current balance");
       }
 
@@ -82,26 +93,25 @@ export async function POST(request: NextRequest) {
           tx.get(matchRef),
           tx.get(marketRef),
         ]);
-
         if (!matchSnap.exists) throw new Error("Match not found");
-        const match = matchSnap.data() as Match;
-        if (!isBettingOpen(match)) {
-          throw new Error("Betting is not open for one of the matches");
-        }
-
         if (!marketSnap.exists) throw new Error("Market not found");
+
+        const match = matchSnap.data() as Match;
         const market = marketSnap.data() as Market;
-        if (market.status !== "active") {
-          throw new Error("A market on this ticket is not active");
+
+        if (!isBettingOpen(match)) {
+          throw new Error("Betting is closed for one or more selections");
         }
-        if (market.matchId !== leg.matchId) {
+        if (market.status !== "active") {
+          throw new Error("Market is not open for betting");
+        }
+        if (market.matchId !== match.id) {
           throw new Error("Market does not belong to match");
         }
 
         const selection = market.selections.find((s) => s.id === leg.selectionId);
         if (!selection) throw new Error("Selection not found on market");
 
-        // Live odds from market (never trust client odds for payout)
         const liveOdds = selection.odds;
         combinedOdds *= liveOdds;
 
@@ -114,14 +124,14 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      
       if (validatedLegs.length === 0) {
         throw new Error("No valid selections on this ticket");
       }
 
       const now = Date.now();
       const potentialPayout = Math.round(stake * combinedOdds);
-      const newBalance = wallet.balance - stake;
+      const balanceBefore = avail;
+      const { wallet: nextWallet, split } = applyStakeReserve(wallet, stake);
       const isAcca = validatedLegs.length > 1;
       const first = validatedLegs[0]!;
 
@@ -141,6 +151,8 @@ export async function POST(request: NextRequest) {
         selectionLabel: first.selectionLabel,
         oddsAtPlacement: combinedOdds,
         stake,
+        stakePurchased: split.fromPurchased,
+        stakePromo: split.fromPromo,
         potentialPayout,
         status: "open",
         placedAt: now,
@@ -148,32 +160,54 @@ export async function POST(request: NextRequest) {
         hidden: false,
       };
 
-      
-
       const transactionRef = adminDb.collection("transactions").doc();
       const transaction: Transaction = {
         id: transactionRef.id,
         uid,
         type: "debit_bet",
         amount: -stake,
-        balanceAfter: newBalance,
+        balanceAfter: nextWallet.balance,
+        balanceBefore,
         betId: betRef.id,
+        status: "success",
         createdAt: now,
       };
 
+      const ledgerRef = adminDb.collection("ledger").doc();
+      const ledger = buildLedgerEntry({
+        id: ledgerRef.id,
+        uid,
+        type: "BET_STAKE_RESERVE",
+        amount: -stake,
+        balanceBefore,
+        balanceAfter: nextWallet.balance,
+        betId: betRef.id,
+        metadata: {
+          fromPurchased: split.fromPurchased,
+          fromPromo: split.fromPromo,
+        },
+        now,
+      });
+
       tx.update(walletRef, {
-        balance: newBalance,
-        lifetimeWagering: wallet.lifetimeWagering + stake,
-        resetPendingSince:
-          newBalance === 0 && wallet.resetPendingSince === null
-            ? now
-            : wallet.resetPendingSince,
+        purchased: nextWallet.purchased,
+        promo: nextWallet.promo,
+        reservedStake: nextWallet.reservedStake,
+        reservedWithdrawal: nextWallet.reservedWithdrawal,
+        balance: nextWallet.balance,
+        lifetimeWagering: nextWallet.lifetimeWagering,
+        resetPendingSince: null,
         updatedAt: now,
       });
       tx.set(betRef, bet);
       tx.set(transactionRef, transaction);
+      tx.set(ledgerRef, ledger);
 
-      return { betId: betRef.id, balance: newBalance, potentialPayout };
+      return {
+        betId: betRef.id,
+        balance: nextWallet.balance,
+        potentialPayout,
+      };
     });
 
     return NextResponse.json({ ok: true, ...result });
@@ -181,4 +215,4 @@ export async function POST(request: NextRequest) {
     const message = err instanceof Error ? err.message : "Could not place bet";
     return NextResponse.json({ error: message }, { status: 400 });
   }
-                                                }
+}
