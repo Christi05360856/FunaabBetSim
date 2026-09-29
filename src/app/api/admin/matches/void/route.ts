@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { adminDb } from "@/lib/firebase/admin";
@@ -91,6 +92,10 @@ export async function POST(request: NextRequest) {
 
       return { alreadyFinal: false, betsRefunded: openBetsSnap.size };
     });
+
+    // Match voided + market disabled -> refresh the public cache.
+    revalidateTag("fixtures-core");
+    revalidateTag("markets");
 
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
