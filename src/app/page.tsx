@@ -2,8 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, orderBy, limit } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
 import type { Match, Team, Competition } from "@/types/domain";
 import { groupFixturesForBrowsing } from "@/lib/domain/fixtureDisplay";
 import { LiveClockBadge } from "@/components/LiveClock";
@@ -14,38 +12,54 @@ export default function HomePage() {
   const [competitions, setCompetitions] = useState<Record<string, Competition>>({});
   const [now, setNow] = useState(() => Date.now());
 
+  // One cached API call instead of three live Firestore listeners.
   useEffect(() => {
-    const unsub = onSnapshot(
-      query(collection(db, "matches"), orderBy("kickoffAt"), limit(20)),
-      (snap) => {
-        setMatches(snap.docs.map((d) => d.data() as Match).filter((m) => m?.id && m?.homeTeamId && m?.awayTeamId));
+    let cancelled = false;
+
+    async function load() {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const res = await fetch("/api/public/fixtures");
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          matches: Match[];
+          teams: Team[];
+          competitions: Competition[];
+        };
+        if (cancelled) return;
+
+        setMatches(
+          data.matches.filter((m) => m?.id && m?.homeTeamId && m?.awayTeamId)
+        );
+
+        const teamMap: Record<string, Team> = {};
+        data.teams.forEach((t) => {
+          if (t?.id) teamMap[t.id] = t;
+        });
+        setTeams(teamMap);
+
+        const compMap: Record<string, Competition> = {};
+        data.competitions.forEach((c) => {
+          if (c?.id) compMap[c.id] = c;
+        });
+        setCompetitions(compMap);
+      } catch {
+        /* keep showing the last data we had */
       }
-    );
-    return () => unsub();
-  }, []);
+    }
 
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, "teams"), (snap) => {
-      const map: Record<string, Team> = {};
-      snap.docs.forEach((d) => {
-        const t = d.data() as Team;
-        if (t?.id) map[t.id] = t;
-      });
-      setTeams(map);
-    });
-    return () => unsub();
-  }, []);
+    load();
+    const id = setInterval(load, 30_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, "competitions"), (snap) => {
-      const map: Record<string, Competition> = {};
-      snap.docs.forEach((d) => {
-        const c = d.data() as Competition;
-        if (c?.id) map[c.id] = c;
-      });
-      setCompetitions(map);
-    });
-    return () => unsub();
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   useEffect(() => {
