@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { adminDb } from "@/lib/firebase/admin";
@@ -33,5 +34,6 @@ export async function POST(request: NextRequest) {
   }
 
   await matchRef.update({ status: "open", updatedAt: Date.now() });
+  revalidateTag("fixtures-core");
   return NextResponse.json({ ok: true });
 }
