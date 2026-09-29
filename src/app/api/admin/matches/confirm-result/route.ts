@@ -20,6 +20,13 @@ import type {
   Transaction,
   Wallet,
 } from "@/types/domain";
+import {
+  applyStakeLoss,
+  applyStakeVoid,
+  applyStakeWin,
+  buildLedgerEntry,
+  normalizeWallet,
+} from "@/lib/domain/ledgerEngine";
 
 type LegResult = "won" | "lost" | "void" | "pending";
 
@@ -220,7 +227,7 @@ export async function POST(request: NextRequest) {
       const walletsByUid = new Map(
         uids.map((uid, i) => {
           const data = walletSnaps[i]?.data() as Wallet | undefined;
-          return [uid, data] as const;
+          return [uid, data ? normalizeWallet(data) : undefined] as const;
         })
       );
 
@@ -303,6 +310,40 @@ export async function POST(request: NextRequest) {
 
         if (anyLost) {
           if (bet.status === "open") {
+            if (wallet) {
+              const before = normalizeWallet(wallet);
+              const split = {
+                fromPurchased: bet.stakePurchased ?? bet.stake,
+                fromPromo: bet.stakePromo ?? 0,
+              };
+              const next = applyStakeLoss(before, bet.stake, split);
+              tx.update(walletRefs.get(bet.uid)!, {
+                purchased: next.purchased,
+                promo: next.promo,
+                reservedStake: next.reservedStake,
+                reservedWithdrawal: next.reservedWithdrawal,
+                balance: next.balance,
+                resetPendingSince: null,
+                updatedAt: now,
+              });
+              walletsByUid.set(bet.uid, next);
+
+              const ledgerRef = adminDb.collection("ledger").doc();
+              tx.set(
+                ledgerRef,
+                buildLedgerEntry({
+                  id: ledgerRef.id,
+                  uid: bet.uid,
+                  type: "BET_LOSS_SETTLEMENT",
+                  amount: -bet.stake,
+                  balanceBefore: before.balance,
+                  balanceAfter: next.balance,
+                  betId: bet.id,
+                  metadata: split,
+                  now,
+                })
+              );
+            }
             tx.update(betRef, {
               legs: updatedLegs,
               matchIds: legs.map((l) => l.matchId),
@@ -323,14 +364,18 @@ export async function POST(request: NextRequest) {
         if (allVoid) {
           if (bet.status === "open") {
             if (wallet) {
-              const newBalance = wallet.balance + bet.stake;
+              const before = normalizeWallet(wallet);
+              const next = applyStakeVoid(before, bet.stake);
               tx.update(walletRefs.get(bet.uid)!, {
-                balance: newBalance,
-                resetPendingSince:
-                  newBalance > 0 ? null : wallet.resetPendingSince,
+                purchased: next.purchased,
+                promo: next.promo,
+                reservedStake: next.reservedStake,
+                reservedWithdrawal: next.reservedWithdrawal,
+                balance: next.balance,
+                resetPendingSince: null,
                 updatedAt: now,
               });
-              walletsByUid.set(bet.uid, { ...wallet, balance: newBalance });
+              walletsByUid.set(bet.uid, next);
 
               const transactionRef = adminDb.collection("transactions").doc();
               const transaction: Transaction = {
@@ -338,11 +383,28 @@ export async function POST(request: NextRequest) {
                 uid: bet.uid,
                 type: "refund",
                 amount: bet.stake,
-                balanceAfter: newBalance,
+                balanceBefore: before.balance,
+                balanceAfter: next.balance,
                 betId: bet.id,
+                status: "success",
                 createdAt: now,
               };
               tx.set(transactionRef, transaction);
+
+              const ledgerRef = adminDb.collection("ledger").doc();
+              tx.set(
+                ledgerRef,
+                buildLedgerEntry({
+                  id: ledgerRef.id,
+                  uid: bet.uid,
+                  type: "BET_VOID_REFUND",
+                  amount: bet.stake,
+                  balanceBefore: before.balance,
+                  balanceAfter: next.balance,
+                  betId: bet.id,
+                  now,
+                })
+              );
             }
             tx.update(betRef, {
               legs: updatedLegs,
@@ -365,14 +427,22 @@ export async function POST(request: NextRequest) {
           if (bet.status === "open") {
             if (wallet) {
               const payout = bet.potentialPayout;
-              const newBalance = wallet.balance + payout;
+              const before = normalizeWallet(wallet);
+              const split = {
+                fromPurchased: bet.stakePurchased ?? bet.stake,
+                fromPromo: bet.stakePromo ?? 0,
+              };
+              const next = applyStakeWin(before, bet.stake, payout, split);
               tx.update(walletRefs.get(bet.uid)!, {
-                balance: newBalance,
-                resetPendingSince:
-                  newBalance > 0 ? null : wallet.resetPendingSince,
+                purchased: next.purchased,
+                promo: next.promo,
+                reservedStake: next.reservedStake,
+                reservedWithdrawal: next.reservedWithdrawal,
+                balance: next.balance,
+                resetPendingSince: null,
                 updatedAt: now,
               });
-              walletsByUid.set(bet.uid, { ...wallet, balance: newBalance });
+              walletsByUid.set(bet.uid, next);
 
               const transactionRef = adminDb.collection("transactions").doc();
               const transaction: Transaction = {
@@ -380,11 +450,29 @@ export async function POST(request: NextRequest) {
                 uid: bet.uid,
                 type: "payout",
                 amount: payout,
-                balanceAfter: newBalance,
+                balanceBefore: before.balance,
+                balanceAfter: next.balance,
                 betId: bet.id,
+                status: "success",
                 createdAt: now,
               };
               tx.set(transactionRef, transaction);
+
+              const ledgerRef = adminDb.collection("ledger").doc();
+              tx.set(
+                ledgerRef,
+                buildLedgerEntry({
+                  id: ledgerRef.id,
+                  uid: bet.uid,
+                  type: "BET_WIN_SETTLEMENT",
+                  amount: payout,
+                  balanceBefore: before.balance,
+                  balanceAfter: next.balance,
+                  betId: bet.id,
+                  metadata: { ...split, stake: bet.stake },
+                  now,
+                })
+              );
             }
             tx.update(betRef, {
               legs: updatedLegs,
@@ -424,4 +512,5 @@ export async function POST(request: NextRequest) {
       err instanceof Error ? err.message : "Could not settle match";
     return NextResponse.json({ error: message }, { status: 400 });
   }
-}
+                     }
+              
