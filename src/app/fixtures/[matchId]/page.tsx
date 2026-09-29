@@ -66,16 +66,21 @@ export default function MatchDetailPage({
     return () => unsub();
   }, [matchId]);
 
+  const homeTeamId = match?.homeTeamId;
+  const awayTeamId = match?.awayTeamId;
+  const competitionId = match?.competitionId;
+  const loadedMatchId = match?.id;
+
+  // Depend on the IDs only, so a score/clock update doesn't re-subscribe.
   useEffect(() => {
-    if (!match?.homeTeamId || !match?.awayTeamId || !match?.competitionId)
-      return;
-    const u1 = onSnapshot(doc(db, "teams", match.homeTeamId), (s) =>
+    if (!homeTeamId || !awayTeamId || !competitionId) return;
+    const u1 = onSnapshot(doc(db, "teams", homeTeamId), (s) =>
       setHome(s.exists() ? (s.data() as Team) : null)
     );
-    const u2 = onSnapshot(doc(db, "teams", match.awayTeamId), (s) =>
+    const u2 = onSnapshot(doc(db, "teams", awayTeamId), (s) =>
       setAway(s.exists() ? (s.data() as Team) : null)
     );
-    const u3 = onSnapshot(doc(db, "competitions", match.competitionId), (s) =>
+    const u3 = onSnapshot(doc(db, "competitions", competitionId), (s) =>
       setCompetition(s.exists() ? (s.data() as Competition) : null)
     );
     return () => {
@@ -83,16 +88,16 @@ export default function MatchDetailPage({
       u2();
       u3();
     };
-  }, [match]);
+  }, [homeTeamId, awayTeamId, competitionId]);
 
   useEffect(() => {
-    if (!match) return;
+    if (!loadedMatchId) return;
     const unsub = onSnapshot(
-      query(collection(db, "markets"), where("matchId", "==", match.id)),
+      query(collection(db, "markets"), where("matchId", "==", loadedMatchId)),
       (snap) => setMarkets(snap.docs.map((d) => d.data() as Market))
     );
     return () => unsub();
-  }, [match]);
+  }, [loadedMatchId]);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -479,4 +484,4 @@ function SelectionButton({
       </span>
     </button>
   );
-                        }
+}
