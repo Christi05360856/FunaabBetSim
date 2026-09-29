@@ -3,25 +3,24 @@ import "server-only";
 /**
  * Flutterwave Standard (v3) helpers — server only.
  * Env: FLW_PUBLIC_KEY, FLW_SECRET_KEY, FLW_SECRET_HASH
- * Use TEST keys until go-live; never expose secret key to the client.
  */
 
 const FLW_BASE = "https://api.flutterwave.com/v3";
 
 function secretKey(): string {
-  const k = process.env.FLW_SECRET_KEY;
+  const k = process.env.FLW_SECRET_KEY?.trim();
   if (!k) throw new Error("FLW_SECRET_KEY is not configured");
   return k;
 }
 
 export function flwPublicKey(): string {
-  const k = process.env.FLW_PUBLIC_KEY;
+  const k = process.env.FLW_PUBLIC_KEY?.trim();
   if (!k) throw new Error("FLW_PUBLIC_KEY is not configured");
   return k;
 }
 
 export function flwSecretHash(): string {
-  return process.env.FLW_SECRET_HASH ?? "";
+  return process.env.FLW_SECRET_HASH?.trim() ?? "";
 }
 
 export type FlwInitPayload = {
@@ -97,8 +96,33 @@ export async function flutterwaveVerifyTransaction(
   return body.data;
 }
 
-/** Webhook authenticity: header verif-hash must match FLW_SECRET_HASH. */
-export function isValidFlutterwaveWebhook(verifHashHeader: string | null): boolean {
+/** Fallback when redirect has tx_ref but no transaction_id. */
+export async function flutterwaveVerifyByReference(
+  txRef: string
+): Promise<FlwVerifyData> {
+  const url = new URL(`${FLW_BASE}/transactions/verify_by_reference`);
+  url.searchParams.set("tx_ref", txRef);
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: { Authorization: `Bearer ${secretKey()}` },
+    cache: "no-store",
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    status?: string;
+    message?: string;
+    data?: FlwVerifyData;
+  };
+  if (!res.ok || body.status !== "success" || !body.data) {
+    throw new Error(
+      body.message ?? `Flutterwave verify_by_reference failed (${res.status})`
+    );
+  }
+  return body.data;
+}
+
+export function isValidFlutterwaveWebhook(
+  verifHashHeader: string | null
+): boolean {
   const expected = flwSecretHash();
   if (!expected) return false;
   if (!verifHashHeader) return false;
