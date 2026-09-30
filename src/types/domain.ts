@@ -26,6 +26,8 @@ export interface Wallet {
   purchased: number;
   /** Promo points — spend only under promo bet rules; not withdrawable as cash. */
   promo: number;
+  /** Snapshot of rules from last promo credit (enforced when funding=promo). */
+  promoBetRules?: PromoBetRules | null;
   /** Stake locked in open bets. */
   reservedStake: number;
   /** Amount locked in pending withdrawals. */
@@ -302,6 +304,18 @@ export interface Deposit {
 
 export type PromotionRuleType = "welcome_fixed" | "custom";
 
+/** Rules applied when staking from promo balance. null fields = no restriction. */
+export interface PromoBetRules {
+  /** Exact leg count required, or null for any length */
+  requiredLegs: number | null;
+  /** Minimum odds per leg, or null */
+  minLegOdds: number | null;
+  /** If true, every leg must be match_winner (1X2) */
+  require1x2: boolean;
+  /** Short terms shown to user */
+  terms: string | null;
+}
+
 export interface Promotion {
   id: string;
   code: string;
@@ -314,6 +328,8 @@ export interface Promotion {
   exhaustedAt: number | null;
   createdAt: number;
   updatedAt: number;
+  /** Betting constraints for this code (applied to wallet on redeem) */
+  betRules?: PromoBetRules | null;
 }
 
 export interface PromoRedemption {
@@ -395,4 +411,4 @@ export interface Bet {
   settledAt: number | null;
   payout?: number;
   hidden?: boolean;
-}
+  }
