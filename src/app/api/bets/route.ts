@@ -34,6 +34,37 @@ export async function POST(request: NextRequest) {
   const uid = decoded.uid;
 
   const raw = await request.json().catch(() => ({}));
+  const idempotencyKey = (
+    request.headers.get("idempotency-key") ||
+    (typeof (raw as { idempotencyKey?: string }).idempotencyKey === "string"
+      ? (raw as { idempotencyKey?: string }).idempotencyKey
+      : "") ||
+    ""
+  )
+    .trim()
+    .slice(0, 128);
+
+  if (idempotencyKey) {
+    const idRef = adminDb
+      .collection("bet_idempotency")
+      .doc(uid + "_" + idempotencyKey);
+    const idSnap = await idRef.get();
+    if (idSnap.exists) {
+      const prev = idSnap.data() as {
+        betId?: string;
+        balance?: number;
+        potentialPayout?: number;
+      };
+      return NextResponse.json({
+        ok: true,
+        betId: prev.betId,
+        balance: prev.balance,
+        potentialPayout: prev.potentialPayout,
+        replayed: true,
+      });
+    }
+  }
+
   const parsed = placeBetBodySchema.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json(
@@ -114,8 +145,17 @@ export async function POST(request: NextRequest) {
 
         const selection = market.selections.find((s) => s.id === leg.selectionId);
         if (!selection) throw new Error("Selection not found on market");
+        if (
+          (selection as { suspended?: boolean }).suspended === true ||
+          (selection as { active?: boolean }).active === false
+        ) {
+          throw new Error("Selection is suspended");
+        }
 
-        const liveOdds = selection.odds;
+        const liveOdds = Number(selection.odds);
+        if (!Number.isFinite(liveOdds) || liveOdds <= 1) {
+          throw new Error("Invalid odds on server");
+        }
         combinedOdds *= liveOdds;
 
         validatedLegs.push({
@@ -135,10 +175,10 @@ export async function POST(request: NextRequest) {
       if (funding === "promo") {
         const rules = wallet.promoBetRules ?? null;
         if (!isValidPromoTicket(validatedLegs, marketTypes, rules)) {
-          const msg =
+          throw new Error(
             rules?.terms ||
-            "Ticket does not meet this promo's betting rules";
-          throw new Error(msg);
+              "Ticket does not meet this promo's betting rules"
+          );
         }
         if ((wallet.promo ?? 0) < stake) {
           throw new Error("Insufficient promo points for this stake");
@@ -231,9 +271,26 @@ export async function POST(request: NextRequest) {
       };
     });
 
+    if (idempotencyKey) {
+      await adminDb
+        .collection("bet_idempotency")
+        .doc(uid + "_" + idempotencyKey)
+        .set(
+          {
+            uid,
+            betId: result.betId,
+            balance: result.balance,
+            potentialPayout: result.potentialPayout,
+            createdAt: Date.now(),
+          },
+          { merge: true }
+        );
+    }
+
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not place bet";
     return NextResponse.json({ error: message }, { status: 400 });
   }
-        }
+      }
+      
