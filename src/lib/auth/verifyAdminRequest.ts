@@ -4,14 +4,31 @@ import { verifyRequest } from "@/lib/auth/verifyRequest";
 import type { DecodedIdToken } from "firebase-admin/auth";
 
 /**
- * Like verifyRequest, but additionally requires the `admin` custom claim.
- * Returns null for anyone not logged in AND for anyone logged in but not
- * an admin — callers treat both cases identically (403/401, no distinction
- * leaked to the caller about *why* they were rejected).
+ * Admin gate (Phase 0):
+ * 1) Firebase custom claim `admin: true`, OR
+ * 2) uid listed in env ADMIN_UIDS (comma-separated).
+ * Never trust the client to assert admin.
  */
-export async function verifyAdminRequest(request: NextRequest): Promise<DecodedIdToken | null> {
+function adminUidAllowlist(): Set<string> {
+  const raw = process.env.ADMIN_UIDS ?? "";
+  return new Set(
+    raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+}
+
+export async function verifyAdminRequest(
+  request: NextRequest
+): Promise<DecodedIdToken | null> {
   const decoded = await verifyRequest(request);
   if (!decoded) return null;
-  if (decoded.admin !== true) return null;
-  return decoded;
+
+  if (decoded.admin === true) return decoded;
+
+  const allow = adminUidAllowlist();
+  if (allow.size > 0 && allow.has(decoded.uid)) return decoded;
+
+  return null;
 }
