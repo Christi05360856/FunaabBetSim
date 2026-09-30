@@ -12,6 +12,7 @@ type Scope =
   | "manual"
   | "bets_tx"
   | "bets_wallets"
+  | "financial_cutover"
   | "all"
   | "platform";
 
@@ -21,6 +22,13 @@ const OPTIONS: {
   description: string;
   phrase: boolean;
 }[] = [
+  {
+    scope: "financial_cutover",
+    title: "Phase F — Financial cutover",
+    description:
+      "ZERO all wallets. Delete bets, transactions, ledger, deposits, withdrawals, promo redemptions. Reset WELCOME100. Keeps fixtures, teams, leagues, users.",
+    phrase: true,
+  },
   {
     scope: "external",
     title: "Clear external leagues",
@@ -53,7 +61,7 @@ const OPTIONS: {
     scope: "bets_wallets",
     title: "Clear bets, transactions & reset wallets",
     description:
-      "Deletes all bets and transactions, and resets every wallet to ₦100,000. Fixtures, odds, teams and competitions are kept. Use this before launch.",
+      "Deletes all bets and transactions, and resets every wallet to ₦100,000 play balance. Prefer Phase F for real-money launch.",
     phrase: true,
   },
   {
@@ -67,7 +75,7 @@ const OPTIONS: {
     scope: "platform",
     title: "PLATFORM RESET",
     description:
-      "Same as Clear ALL, plus every wallet balance reset to ₦100,000. Cannot be undone.",
+      "Same as Clear ALL, plus every wallet reset to ₦100,000 play balance. Cannot be undone.",
     phrase: true,
   },
 ];
@@ -94,13 +102,13 @@ export default function DangerTab() {
     setOpen(false);
     setScope(null);
     setTyped("");
+    setError(null);
   }
 
   async function handleReset() {
-    if (!scope || !user) return;
+    if (!user || !scope) return;
     const opt = OPTIONS.find((o) => o.scope === scope);
     if (opt?.phrase && typed.trim() !== PHRASE) return;
-
     setBusy(true);
     setError(null);
     setResult(null);
@@ -116,17 +124,10 @@ export default function DangerTab() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Reset failed (" + res.status + ")");
-      setResult(
-        body.message +
-          (body.counts
-            ? " · " +
-              Object.entries(body.counts)
-                .map(([k, v]) => k + "=" + v)
-                .join(", ")
-            : "") +
-          " — reload this page to refresh the lists."
-      );
+      setResult(body.message ?? "Done");
       setOpen(false);
+      setScope(null);
+      setTyped("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Reset failed");
     } finally {
@@ -138,11 +139,11 @@ export default function DangerTab() {
   const needsPhrase = Boolean(active?.phrase);
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold text-adm-bad">Danger zone</h2>
+    <div className="flex flex-col gap-4">
+      <h2 className="text-xl font-bold">Danger zone</h2>
       <p className="text-sm text-adm-muted">
-        Choose a scoped reset. Prefer the top options so you do not rebuild
-        FUNAABSU or external leagues from scratch.
+        Choose a scoped reset. Prefer Phase F for real-money launch so you do
+        not rebuild leagues from scratch.
       </p>
 
       {result && (
@@ -160,15 +161,10 @@ export default function DangerTab() {
         {OPTIONS.map((opt) => (
           <Card
             key={opt.scope}
-            className={
-              opt.phrase ? "border-adm-bad/40" : "border-adm-line"
-            }
+            className={opt.phrase ? "border-adm-bad/40" : "border-adm-line"}
           >
             <CardHeader title={opt.title} subtitle={opt.description} />
-            <Button
-              variant="danger"
-              onClick={() => openScope(opt.scope)}
-            >
+            <Button variant="danger" onClick={() => openScope(opt.scope)}>
               {opt.title}
             </Button>
           </Card>
@@ -180,9 +176,7 @@ export default function DangerTab() {
         onClose={close}
         title={active ? "Confirm: " + active.title : "Confirm reset"}
       >
-        <p className="mb-3 text-sm text-adm-muted">
-          {active?.description}
-        </p>
+        <p className="mb-3 text-sm text-adm-muted">{active?.description}</p>
         {needsPhrase ? (
           <>
             <p className="mb-2 text-sm text-adm-muted">
@@ -206,9 +200,7 @@ export default function DangerTab() {
             This cannot be undone for the selected scope.
           </p>
         )}
-        {error && (
-          <p className="mb-3 text-sm text-adm-bad">{error}</p>
-        )}
+        {error && <p className="mb-3 text-sm text-adm-bad">{error}</p>}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={close} disabled={busy}>
             Cancel
@@ -216,9 +208,7 @@ export default function DangerTab() {
           <Button
             variant="danger"
             onClick={handleReset}
-            disabled={
-              busy || (needsPhrase && typed.trim() !== PHRASE)
-            }
+            disabled={busy || (needsPhrase && typed.trim() !== PHRASE)}
           >
             {busy ? "Working…" : "Confirm"}
           </Button>
@@ -226,4 +216,4 @@ export default function DangerTab() {
       </Modal>
     </div>
   );
-            }
+}
