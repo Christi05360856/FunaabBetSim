@@ -12,6 +12,12 @@ type Promo = {
   maxRedemptions: number;
   redemptionCount: number;
   active: boolean;
+  betRules?: {
+    requiredLegs: number | null;
+    minLegOdds: number | null;
+    require1x2: boolean;
+    terms: string | null;
+  } | null;
 };
 
 export default function PromosTab() {
@@ -20,6 +26,13 @@ export default function PromosTab() {
   const [bonus, setBonus] = useState("100");
   const [maxR, setMaxR] = useState("100");
   const [minDep, setMinDep] = useState("200");
+  const [ruleMode, setRuleMode] = useState<"open" | "welcome" | "custom">(
+    "open"
+  );
+  const [reqLegs, setReqLegs] = useState("");
+  const [minOdds, setMinOdds] = useState("");
+  const [require1x2, setRequire1x2] = useState(false);
+  const [terms, setTerms] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -56,12 +69,17 @@ export default function PromosTab() {
           bonusPoints: Number(bonus),
           maxRedemptions: Number(maxR),
           minDepositNgn: Number(minDep),
+          ruleMode,
+          requiredLegs: reqLegs,
+          minLegOdds: minOdds,
+          require1x2,
+          terms,
         }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Failed");
       setCode("");
-      setMsg("Promo created — users enter this code on Buy points");
+      setMsg("Promo created — enter code on Buy points");
       await load();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Error");
@@ -85,13 +103,24 @@ export default function PromosTab() {
     await load();
   }
 
+  function rulesLabel(p: Promo): string {
+    const r = p.betRules;
+    if (!r) return p.code === "WELCOME100" ? "5×1X2 ≥2.00" : "Open";
+    if (r.requiredLegs == null && r.minLegOdds == null && !r.require1x2)
+      return "Open (any bet)";
+    const bits: string[] = [];
+    if (r.requiredLegs != null) bits.push(`${r.requiredLegs} legs`);
+    if (r.minLegOdds != null) bits.push(`odds ≥${r.minLegOdds}`);
+    if (r.require1x2) bits.push("1X2 only");
+    return bits.join(" · ") || "Custom";
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-xl font-bold">Promo codes</h2>
         <p className="text-sm text-adm-muted">
-          Users enter the code when buying points. Bonus is promo points (wager
-          only).
+          Bonus credits go to promo balance. Set betting rules per code.
         </p>
       </div>
 
@@ -121,22 +150,66 @@ export default function PromosTab() {
             onChange={(e) => setMinDep(e.target.value.replace(/\D/g, ""))}
           />
         </div>
-        <Button className="mt-3" disabled={busy} onClick={() => void create()}>
+
+        <p className="mb-1 mt-3 text-xs font-semibold text-adm-muted">
+          Betting rules for this promo
+        </p>
+        <select
+          value={ruleMode}
+          onChange={(e) =>
+            setRuleMode(e.target.value as "open" | "welcome" | "custom")
+          }
+          className="mb-2 w-full rounded-lg border border-adm-border bg-adm-card px-3 py-2 text-sm"
+        >
+          <option value="open">Open — any bet (no constraints)</option>
+          <option value="welcome">Strict — 5 × 1X2, each odds ≥ 2.00</option>
+          <option value="custom">Custom</option>
+        </select>
+
+        {ruleMode === "custom" && (
+          <div className="mb-2 grid gap-2 sm:grid-cols-2">
+            <Input
+              placeholder="Required legs (blank = any)"
+              value={reqLegs}
+              onChange={(e) => setReqLegs(e.target.value.replace(/\D/g, ""))}
+            />
+            <Input
+              placeholder="Min odds per leg (blank = none)"
+              value={minOdds}
+              onChange={(e) => setMinOdds(e.target.value)}
+            />
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={require1x2}
+                onChange={(e) => setRequire1x2(e.target.checked)}
+              />
+              1X2 markets only
+            </label>
+            <Input
+              placeholder="Terms (shown to user)"
+              value={terms}
+              onChange={(e) => setTerms(e.target.value)}
+            />
+          </div>
+        )}
+
+        <Button className="mt-2" disabled={busy} onClick={() => void create()}>
           {busy ? "…" : "Create promo"}
         </Button>
       </Card>
 
       {items.length === 0 ? (
-        <EmptyState title="No promos" hint="Create WELCOME100 or a custom code." />
+        <EmptyState title="No promos" hint="Create a code to get started." />
       ) : (
         <div className="overflow-x-auto rounded-xl border border-adm-border">
-          <table className="w-full min-w-[560px] text-left text-sm">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="bg-adm-card text-xs uppercase text-adm-muted">
               <tr>
                 <th className="px-3 py-2">Code</th>
                 <th className="px-3 py-2">Bonus</th>
                 <th className="px-3 py-2">Used</th>
-                <th className="px-3 py-2">Min dep</th>
+                <th className="px-3 py-2">Rules</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2" />
               </tr>
@@ -149,12 +222,14 @@ export default function PromosTab() {
                   <td className="px-3 py-2">
                     {p.redemptionCount}/{p.maxRedemptions}
                   </td>
-                  <td className="px-3 py-2">₦{p.minDepositNgn}</td>
+                  <td className="px-3 py-2 text-xs">{rulesLabel(p)}</td>
+                  <td className="px-3 py-2">{p.active ? "Active" : "Off"}</td>
                   <td className="px-3 py-2">
-                    {p.active ? "Active" : "Off"}
-                  </td>
-                  <td className="px-3 py-2">
-                    <Button size="sm" variant="ghost" onClick={() => void toggle(p)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void toggle(p)}
+                    >
                       {p.active ? "Disable" : "Enable"}
                     </Button>
                   </td>
@@ -166,4 +241,4 @@ export default function PromosTab() {
       )}
     </div>
   );
-}
+      }
