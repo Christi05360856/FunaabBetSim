@@ -48,7 +48,8 @@ export function BetSlip() {
   );
   const potential = Math.round(stakeNum * totalOdds);
 
-  const promoEligible = isValidPromoTicket(items);
+  const promoRules = wallet?.promoBetRules ?? null;
+  const promoEligible = isValidPromoTicket(items, undefined, promoRules);
   const promoCanCover =
     promoEligible && promo >= stakeNum && stakeNum >= MINIMUM_STAKE;
 
@@ -336,18 +337,23 @@ export function BetSlip() {
 
             {user && fundMode === "promo" && (
               <p className="mb-2 text-[11px] leading-snug text-ink-muted">
-                Using promo points. Need exactly {PROMO_REQUIRED_LEGS} × 1X2,
-                each odds ≥ {PROMO_MIN_LEG_ODDS.toFixed(2)}.{" "}
+                Using promo points
+                {promoRules?.terms
+                  ? `: ${promoRules.terms}`
+                  : promoRules == null
+                    ? " (default: 5×1X2 ≥2.00)"
+                    : " (open rules)"}
+                .{" "}
                 <Link href="/promo" className="text-emerald-700 underline">
                   Rules
                 </Link>
               </p>
             )}
 
-            {user && !promoEligible && items.length > 0 && (
+            {user && !promoEligible && items.length > 0 && fundMode === "promo" && (
               <p className="mb-2 text-[11px] text-ink-muted">
-                Promo unlocks with {PROMO_REQUIRED_LEGS} picks, 1X2 only, each
-                odds ≥ {PROMO_MIN_LEG_ODDS.toFixed(2)}.
+                {promoRules?.terms ||
+                  "Current picks do not meet promo betting rules."}
               </p>
             )}
 
@@ -504,4 +510,5 @@ function TicketIcon() {
     </svg>
   );
         }
-                      
+
+                          
