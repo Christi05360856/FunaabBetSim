@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth/AuthContext";
-import { Card, CardHeader, Badge, Button, EmptyState } from "./ui";
+import { Card, CardHeader, Button, EmptyState } from "./ui";
 
 type Stats = {
   generatedAt: number;
@@ -175,8 +175,8 @@ export default function PlatformTab() {
       <Card>
         <CardHeader
           title="Security events"
-          right={
-            <Badge tone="muted">{events.length} recent</Badge>
+          action={
+            <span className="text-[11px] text-adm-muted">{events.length} recent</span>
           }
         />
         {events.length === 0 ? (
@@ -233,4 +233,4 @@ function Stat({
       {sub ? <p className="text-[11px] text-adm-muted">{sub}</p> : null}
     </div>
   );
-}
+                        }
