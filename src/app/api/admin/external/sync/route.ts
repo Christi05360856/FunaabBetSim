@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { verifyRequest } from "@/lib/auth/verifyRequest";
+import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import {
   competitionDocId,
   competitionName,
@@ -33,10 +34,7 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function authorize(
-  request: NextRequest,
-  decoded: { uid: string } | null
-): boolean {
+function authorizeCron(request: NextRequest): boolean {
   const cron = request.headers.get("x-external-sync-secret");
   if (
     cron &&
@@ -45,13 +43,17 @@ function authorize(
   ) {
     return true;
   }
-  return Boolean(decoded);
+  return false;
 }
 
 export async function POST(request: NextRequest) {
-  const decoded = await verifyRequest(request).catch(() => null);
-  if (!authorize(request, decoded)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Phase 0: any logged-in user used to pass — that is closed.
+  // Allow: valid EXTERNAL_SYNC_SECRET header OR verified admin only.
+  if (!authorizeCron(request)) {
+    const admin = await verifyAdminRequest(request);
+    if (!admin) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
 
   const body = await request.json().catch(() => ({} as Record<string, unknown>));
@@ -421,4 +423,5 @@ async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
   return true;
                   }
 
-  
+
+        
