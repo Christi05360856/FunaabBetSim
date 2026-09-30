@@ -11,6 +11,7 @@ export type ResetScope =
   | "manual"
   | "bets_tx"
   | "bets_wallets"
+  | "financial_cutover"
   | "all"
   | "platform";
 
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
     "manual",
     "bets_tx",
     "bets_wallets",
+    "financial_cutover",
     "all",
     "platform",
   ];
@@ -76,7 +78,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "Invalid scope. Use: external | funaab | manual | bets_tx | bets_wallets | all | platform",
+          "Invalid scope. Use: external | funaab | manual | bets_tx | bets_wallets | financial_cutover | all | platform",
       },
       { status: 400 }
     );
@@ -116,7 +118,79 @@ export async function POST(request: NextRequest) {
     counts.wallets_reset = wallets.size;
   }
 
+  /** Phase F: hard zero multi-bucket wallets (no play starting balance). */
+  async function zeroAllWalletsFinancial() {
+    const wallets = await adminDb.collection("wallets").get();
+    const now = Date.now();
+    for (let i = 0; i < wallets.docs.length; i += BATCH_SIZE) {
+      const chunk = wallets.docs.slice(i, i + BATCH_SIZE);
+      const batch = adminDb.batch();
+      chunk.forEach((d) => {
+        batch.set(
+          d.ref,
+          {
+            uid: d.id,
+            balance: 0,
+            purchased: 0,
+            promo: 0,
+            reservedStake: 0,
+            reservedWithdrawal: 0,
+            lifetimeWagering: 0,
+            resetPendingSince: null,
+            updatedAt: now,
+          },
+          { merge: true }
+        );
+      });
+      await batch.commit();
+    }
+    counts.wallets_zeroed = wallets.size;
+  }
+
+  async function resetWelcomePromo() {
+    const ref = adminDb.collection("promotions").doc("WELCOME100");
+    const now = Date.now();
+    await ref.set(
+      {
+        id: "WELCOME100",
+        code: "WELCOME100",
+        ruleType: "welcome_fixed",
+        bonusPoints: 100,
+        minDepositNgn: 200,
+        maxRedemptions: 100,
+        redemptionCount: 0,
+        active: true,
+        exhaustedAt: null,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+    counts.promo_welcome_reset = 1;
+  }
+
+
   try {
+
+    // ---- Phase F financial cutover (fixtures kept) ----
+    if (scope === "financial_cutover") {
+      await wipeCollection("bets");
+      await wipeCollection("transactions");
+      await wipeCollection("ledger");
+      await wipeCollection("deposits");
+      await wipeCollection("withdrawals");
+      await wipeCollection("promo_redemptions");
+      await wipeCollection("booking_codes");
+      await zeroAllWalletsFinancial();
+      await resetWelcomePromo();
+      return NextResponse.json({
+        ok: true,
+        scope,
+        message:
+          "Phase F complete: wallets zeroed, bets/transactions/ledger/deposits/withdrawals/promo redemptions wiped. Fixtures kept. WELCOME100 reset.",
+        counts,
+      });
+    }
+
     // ---- bets + transactions only (fixtures untouched, wallets untouched) ----
     if (scope === "bets_tx") {
       await wipeCollection("bets");
@@ -290,4 +364,5 @@ export async function POST(request: NextRequest) {
     const message = err instanceof Error ? err.message : "Reset failed";
     return NextResponse.json({ error: message }, { status: 500 });
   }
-      }
+  }
+      
