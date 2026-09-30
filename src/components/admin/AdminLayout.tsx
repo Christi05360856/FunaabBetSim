@@ -3,12 +3,13 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Icons } from "./ui";
 
-export type AdminTabId = "overview" | "fixtures" | "import" | "danger";
+export type AdminTabId = "overview" | "fixtures" | "import" | "withdrawals" | "danger";
 
 const NAV: { id: AdminTabId; label: string; icon: ReactNode }[] = [
   { id: "overview", label: "Overview", icon: Icons.dashboard },
   { id: "fixtures", label: "Fixtures", icon: Icons.fixtures },
   { id: "import", label: "Import", icon: Icons.import },
+  { id: "withdrawals", label: "Withdrawals", icon: Icons.import },
   { id: "danger", label: "Danger", icon: Icons.danger },
 ];
 
