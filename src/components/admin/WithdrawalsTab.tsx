@@ -116,7 +116,7 @@ export default function WithdrawalsTab() {
       )}
 
       {items.length === 0 ? (
-        <EmptyState title="No withdrawals" description="Nothing in this filter." />
+        <EmptyState title="No withdrawals" hint="Nothing in this filter." />
       ) : (
         <div className="flex flex-col gap-3">
           {items.map((w) => (
@@ -172,4 +172,4 @@ export default function WithdrawalsTab() {
       )}
     </div>
   );
-}
+          }
