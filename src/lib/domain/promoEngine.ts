@@ -10,12 +10,15 @@ import {
   WELCOME_PROMO_CODE,
   MIN_DEPOSIT_NGN,
   type Promotion,
-  type PromoRedemption,
   type Wallet,
 } from "@/types/domain";
 import { buildLedgerEntry, normalizeWallet } from "@/lib/domain/ledgerEngine";
 
-/** Load or create WELCOME100 (read phase of a transaction). */
+function normalizeCode(code: string): string {
+  return code.trim().toUpperCase().replace(/\s+/g, "");
+}
+
+/** Ensure default WELCOME100 exists (read phase). */
 export async function getOrInitWelcomePromotion(
   db: Firestore,
   tx: Transaction
@@ -42,28 +45,57 @@ export async function getOrInitWelcomePromotion(
   return { ref, promo, isNew: true };
 }
 
+/** Load any promotion by code (doc id = CODE). */
+export async function getPromotionByCode(
+  db: Firestore,
+  tx: Transaction,
+  rawCode: string
+): Promise<{ ref: DocumentReference; promo: Promotion; isNew: boolean } | null> {
+  const code = normalizeCode(rawCode);
+  if (!code) return null;
+  if (code === WELCOME_PROMO_CODE) {
+    const w = await getOrInitWelcomePromotion(db, tx);
+    return { ref: w.ref, promo: w.promo, isNew: w.isNew };
+  }
+  const ref = db.collection("promotions").doc(code);
+  const snap = await tx.get(ref);
+  if (!snap.exists) return null;
+  return { ref, promo: snap.data() as Promotion, isNew: false };
+}
+
+export async function hasRedeemedCode(
+  db: Firestore,
+  tx: Transaction,
+  uid: string,
+  code: string
+): Promise<boolean> {
+  const prior = await tx.get(
+    db.collection("promo_redemptions").doc(`${uid}_${normalizeCode(code)}`)
+  );
+  return prior.exists;
+}
+
+/** @deprecated use hasRedeemedCode */
 export async function hasRedeemedWelcome(
   db: Firestore,
   tx: Transaction,
   uid: string
 ): Promise<boolean> {
-  // Deterministic id avoids composite index: {uid}_{code}
-  const prior = await tx.get(
-    db.collection("promo_redemptions").doc(`${uid}_${WELCOME_PROMO_CODE}`)
-  );
-  return prior.exists;
+  return hasRedeemedCode(db, tx, uid, WELCOME_PROMO_CODE);
 }
 
-export function evaluateWelcomeEligibility(input: {
+export function evaluatePromoEligibility(input: {
   promoCode: string | null;
   amountNgn: number;
   promo: Promotion;
   alreadyRedeemed: boolean;
 }): { ok: boolean; reason?: string } {
-  const code = (input.promoCode ?? "").trim().toUpperCase();
+  const code = normalizeCode(input.promoCode ?? "");
   if (!code) return { ok: false, reason: "no_code" };
-  if (code !== WELCOME_PROMO_CODE) return { ok: false, reason: "unknown_code" };
-  if (input.amountNgn < MIN_DEPOSIT_NGN)
+  if (code !== normalizeCode(input.promo.code))
+    return { ok: false, reason: "unknown_code" };
+  const minDep = input.promo.minDepositNgn || MIN_DEPOSIT_NGN;
+  if (input.amountNgn < minDep)
     return { ok: false, reason: "below_min_deposit" };
   if (
     !input.promo.active ||
@@ -74,8 +106,17 @@ export function evaluateWelcomeEligibility(input: {
   return { ok: true };
 }
 
-/** Write promo credit (after all reads). */
-export function writeWelcomePromoCredit(
+/** @deprecated use evaluatePromoEligibility */
+export function evaluateWelcomeEligibility(input: {
+  promoCode: string | null;
+  amountNgn: number;
+  promo: Promotion;
+  alreadyRedeemed: boolean;
+}): { ok: boolean; reason?: string } {
+  return evaluatePromoEligibility(input);
+}
+
+export function writePromoCredit(
   db: Firestore,
   tx: Transaction,
   input: {
@@ -95,6 +136,7 @@ export function writeWelcomePromoCredit(
     0,
     w.purchased + promoBal - w.reservedStake - w.reservedWithdrawal
   );
+  const code = normalizeCode(input.promo.code);
 
   tx.update(db.collection("wallets").doc(input.uid), {
     promo: promoBal,
@@ -102,43 +144,46 @@ export function writeWelcomePromoCredit(
     updatedAt: now,
   });
 
-  const nextCount = input.promo.redemptionCount + 1;
-  const exhausted = nextCount >= input.promo.maxRedemptions;
-  const nextPromo: Promotion = {
-    ...input.promo,
-    redemptionCount: nextCount,
-    active: !exhausted,
-    exhaustedAt: exhausted ? now : null,
-    updatedAt: now,
-  };
-  tx.set(input.promoRef, nextPromo);
+  if (input.isNewPromo) {
+    tx.set(input.promoRef, {
+      ...input.promo,
+      redemptionCount: 1,
+      updatedAt: now,
+    });
+  } else {
+    const nextCount = input.promo.redemptionCount + 1;
+    const exhausted =
+      nextCount >= input.promo.maxRedemptions ? now : input.promo.exhaustedAt;
+    tx.update(input.promoRef, {
+      redemptionCount: nextCount,
+      exhaustedAt: exhausted,
+      active: nextCount < input.promo.maxRedemptions && input.promo.active,
+      updatedAt: now,
+    });
+  }
 
-  const redRef = db
-    .collection("promo_redemptions")
-    .doc(`${input.uid}_${WELCOME_PROMO_CODE}`);
-  const redemption: PromoRedemption = {
+  const redRef = db.collection("promo_redemptions").doc(`${input.uid}_${code}`);
+  tx.set(redRef, {
     id: redRef.id,
     uid: input.uid,
-    code: WELCOME_PROMO_CODE,
+    code,
     depositId: input.depositId,
     pointsCredited: points,
     createdAt: now,
-  };
-  tx.set(redRef, redemption);
+  });
 
-  const ledgerRef = db.collection("ledger").doc();
+  const ledRef = db.collection("ledger").doc();
   tx.set(
-    ledgerRef,
+    ledRef,
     buildLedgerEntry({
-      id: ledgerRef.id,
+      id: ledRef.id,
       uid: input.uid,
       type: "PROMO_POINTS_CREDIT",
       amount: points,
       balanceBefore: w.balance,
       balanceAfter: balance,
       depositId: input.depositId,
-      referenceId: WELCOME_PROMO_CODE,
-      metadata: { code: WELCOME_PROMO_CODE },
+      referenceId: code,
       now,
     })
   );
@@ -153,9 +198,26 @@ export function writeWelcomePromoCredit(
     balanceAfter: balance,
     betId: null,
     status: "success",
-    referenceId: WELCOME_PROMO_CODE,
+    referenceId: code,
     createdAt: now,
   });
 
   return points;
 }
+
+/** @deprecated use writePromoCredit */
+export function writeWelcomePromoCredit(
+  db: Firestore,
+  tx: Transaction,
+  input: {
+    uid: string;
+    depositId: string;
+    promo: Promotion;
+    promoRef: DocumentReference;
+    isNewPromo: boolean;
+    walletAfterPurchase: Wallet;
+  }
+): number {
+  return writePromoCredit(db, tx, input);
+  }
+  
