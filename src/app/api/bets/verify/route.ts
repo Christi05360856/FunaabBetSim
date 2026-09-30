@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
 import { adminDb } from "@/lib/firebase/admin";
 import type { Bet, Match, Team } from "@/types/domain";
 
@@ -29,6 +30,10 @@ async function findBetSnap(raw: string) {
 }
 
 export async function GET(request: NextRequest) {
+  const ip = clientIp(request);
+  const limited = await enforceRateLimit("verify_ticket", `ip:${ip}`);
+  if (limited) return limited;
+
   const { searchParams } = new URL(request.url);
   const raw = (searchParams.get("id") || searchParams.get("ticket") || "").trim();
 
