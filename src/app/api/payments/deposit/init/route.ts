@@ -7,6 +7,8 @@ import {
 } from "@/lib/payments/flutterwave";
 import { MIN_DEPOSIT_NGN, POINTS_PER_NAIRA } from "@/types/domain";
 import type { Deposit } from "@/types/domain";
+import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
+import { securityLog } from "@/lib/security/securityLog";
 
 const bodySchema = z.object({
   amountNgn: z.number().finite().min(MIN_DEPOSIT_NGN).max(500_000),
@@ -23,6 +25,10 @@ export async function POST(request: NextRequest) {
   if (!decoded) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const ip = clientIp(request);
+  const limited = await enforceRateLimit("deposit_init", `uid:${decoded.uid}`);
+  if (limited) return limited;
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) {
@@ -92,6 +98,13 @@ export async function POST(request: NextRequest) {
 
     await adminDb.collection("deposits").doc(txRef).update({
       status: "pending",
+    });
+
+    void securityLog({
+      type: "DEPOSIT_INIT",
+      uid: decoded.uid,
+      ip,
+      meta: { amount },
     });
 
     return NextResponse.json({ ok: true, txRef, checkoutUrl: link, points });
