@@ -13,6 +13,7 @@ import OverviewTab from "@/components/admin/OverviewTab";
 import FixturesTab from "@/components/admin/FixturesTab";
 import ImportTab from "@/components/admin/ImportTab";
 import DangerTab from "@/components/admin/DangerTab";
+import WithdrawalsTab from "@/components/admin/WithdrawalsTab";
 
 type AdminStatus = "checking" | "admin" | "not-admin";
 type PostResult = { ok: boolean; message: string };
@@ -165,6 +166,7 @@ function AdminApp() {
             onGenerateOdds={(b) => post("/api/admin/markets/bulk-generate", b)}
           />
         )}
+        {tab === "withdrawals" && <WithdrawalsTab />}
         {tab === "danger" && (
           <DangerTab />
         )}
@@ -173,4 +175,5 @@ function AdminApp() {
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </>
   );
-}
+                                                                              }
+    
