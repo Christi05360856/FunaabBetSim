@@ -128,3 +128,55 @@ export function isValidFlutterwaveWebhook(
   if (!verifHashHeader) return false;
   return verifHashHeader === expected;
 }
+
+export type FlwTransferInput = {
+  account_bank: string;
+  account_number: string;
+  amount: number;
+  narration: string;
+  currency?: "NGN";
+  reference: string;
+  beneficiary_name?: string;
+};
+
+export type FlwTransferResult = {
+  id: number;
+  status: string;
+  reference: string;
+};
+
+/** Bank transfer (payout). Test mode may mock success. */
+export async function flutterwaveTransfer(
+  input: FlwTransferInput
+): Promise<FlwTransferResult> {
+  const res = await fetch(`${FLW_BASE}/transfers`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secretKey()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      account_bank: input.account_bank,
+      account_number: input.account_number,
+      amount: input.amount,
+      narration: input.narration,
+      currency: input.currency ?? "NGN",
+      reference: input.reference,
+      beneficiary_name: input.beneficiary_name,
+      debit_currency: "NGN",
+    }),
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    status?: string;
+    message?: string;
+    data?: { id?: number; status?: string; reference?: string };
+  };
+  if (!res.ok || body.status !== "success" || !body.data?.id) {
+    throw new Error(body.message ?? `Transfer failed (${res.status})`);
+  }
+  return {
+    id: body.data.id,
+    status: body.data.status ?? "NEW",
+    reference: body.data.reference ?? input.reference,
+  };
+}
