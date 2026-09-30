@@ -14,8 +14,7 @@ import FixturesTab from "@/components/admin/FixturesTab";
 import ImportTab from "@/components/admin/ImportTab";
 import DangerTab from "@/components/admin/DangerTab";
 import WithdrawalsTab from "@/components/admin/WithdrawalsTab";
-import PromosTab from "@/components/admin/PromosTab";
-import SponsorsTab from "@/components/admin/SponsorsTab";
+import PlatformTab from "@/components/admin/PlatformTab";
 
 type AdminStatus = "checking" | "admin" | "not-admin";
 type PostResult = { ok: boolean; message: string };
@@ -169,8 +168,7 @@ function AdminApp() {
           />
         )}
         {tab === "withdrawals" && <WithdrawalsTab />}
-        {tab === "promos" && <PromosTab />}
-        {tab === "sponsors" && <SponsorsTab />}
+        {tab === "platform" && <PlatformTab />}
         {tab === "danger" && (
           <DangerTab />
         )}
@@ -181,4 +179,4 @@ function AdminApp() {
   );
                                                                               }
 
-                            
+        
