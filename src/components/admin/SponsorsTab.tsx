@@ -13,6 +13,8 @@ type Sponsor = {
   sortOrder: number;
 };
 
+const MAX_BYTES = 400_000; // ~400KB — stays under Firestore 1MB doc limit
+
 export default function SponsorsTab() {
   const [items, setItems] = useState<Sponsor[]>([]);
   const [name, setName] = useState("");
@@ -35,6 +37,29 @@ export default function SponsorsTab() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function onFile(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setMsg("Please choose a PNG or JPG image");
+      return;
+    }
+    if (file.size > MAX_BYTES) {
+      setMsg("Image too large — use under ~400KB");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const data = String(reader.result ?? "");
+      if (data.length > 550_000) {
+        setMsg("Encoded image too large — compress the logo");
+        return;
+      }
+      setLogoUrl(data);
+      setMsg("Logo ready — click Add sponsor");
+    };
+    reader.readAsDataURL(file);
+  }
 
   async function create() {
     const user = auth.currentUser;
@@ -61,7 +86,7 @@ export default function SponsorsTab() {
       setName("");
       setLogoUrl("");
       setLinkUrl("");
-      setMsg("Sponsor added — shows on Support when active");
+      setMsg("Sponsor added");
       await load();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Error");
@@ -101,8 +126,8 @@ export default function SponsorsTab() {
       <div>
         <h2 className="text-xl font-bold">Sponsors</h2>
         <p className="text-sm text-adm-muted">
-          Paste a public logo image URL (Imgur, your CDN, etc.). Shown on the
-          Support page.
+          Upload a PNG/JPG (under ~400KB) or paste an image URL. Shows on
+          Support.
         </p>
       </div>
 
@@ -116,9 +141,26 @@ export default function SponsorsTab() {
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
+          <label className="text-xs text-adm-muted">
+            Upload logo
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="mt-1 block w-full text-sm"
+              onChange={(e) => void onFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          {logoUrl.startsWith("data:") && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoUrl}
+              alt="Preview"
+              className="h-16 w-16 rounded object-contain bg-adm-raised"
+            />
+          )}
           <Input
-            placeholder="Logo image URL (optional)"
-            value={logoUrl}
+            placeholder="Or logo image URL"
+            value={logoUrl.startsWith("data:") ? "" : logoUrl}
             onChange={(e) => setLogoUrl(e.target.value)}
           />
           <Input
@@ -160,7 +202,11 @@ export default function SponsorsTab() {
                 <Button size="sm" variant="ghost" onClick={() => void toggle(s)}>
                   {s.active ? "Hide" : "Show"}
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => void remove(s.id)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void remove(s.id)}
+                >
                   Delete
                 </Button>
               </div>
@@ -170,4 +216,4 @@ export default function SponsorsTab() {
       )}
     </div>
   );
-}
+  }
