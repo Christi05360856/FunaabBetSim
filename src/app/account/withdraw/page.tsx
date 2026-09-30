@@ -1,18 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useWallet } from "@/lib/hooks/useWallet";
 import { withdrawableBalance } from "@/lib/domain/wallet";
-import {
-  MAX_WITHDRAWAL,
-  MIN_WITHDRAWAL,
-} from "@/types/domain";
+import { MAX_WITHDRAWAL, MIN_WITHDRAWAL } from "@/types/domain";
 import { formatMoney } from "@/lib/domain/selectionLabel";
 
-/** Common Nigerian banks — Flutterwave bank codes */
 const BANKS: { code: string; name: string }[] = [
   { code: "058", name: "Guaranty Trust Bank" },
   { code: "033", name: "United Bank for Africa" },
@@ -32,6 +28,22 @@ const BANKS: { code: string; name: string }[] = [
   { code: "100004", name: "PalmPay" },
 ];
 
+type WRow = {
+  id: string;
+  amount: number;
+  status: string;
+  createdAt: number;
+  bankCode?: string;
+  accountNumber?: string;
+};
+
+const PENDING = new Set([
+  "requested",
+  "pending_review",
+  "approved",
+  "processing",
+]);
+
 export default function WithdrawPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -43,11 +55,14 @@ export default function WithdrawPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [history, setHistory] = useState<
-    { id: string; amount: number; status: string; createdAt: number }[]
-  >([]);
+  const [history, setHistory] = useState<WRow[]>([]);
+  const [showPendingOnly, setShowPendingOnly] = useState(false);
 
   const free = wallet ? withdrawableBalance(wallet) : 0;
+  const pendingItems = useMemo(
+    () => history.filter((h) => PENDING.has(h.status)),
+    [history]
+  );
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -111,13 +126,29 @@ export default function WithdrawPage() {
     );
   }
 
+  const list = showPendingOnly ? pendingItems : history;
+
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col gap-4 px-4 pb-28 pt-5">
       <div className="flex items-center gap-3">
         <Link href="/dashboard" className="text-lg" aria-label="Back">
           ←
         </Link>
-        <h1 className="font-display text-lg font-bold">Withdraw</h1>
+        <h1 className="flex-1 font-display text-lg font-bold">Withdraw</h1>
+        {pendingItems.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowPendingOnly((v) => !v)}
+            className={
+              "rounded-full px-2.5 py-1 text-[11px] font-bold " +
+              (showPendingOnly
+                ? "bg-amber-500 text-white"
+                : "bg-amber-100 text-amber-800")
+            }
+          >
+            Pending ({pendingItems.length})
+          </button>
+        )}
       </div>
 
       <div className="rounded-2xl bg-surface p-4 shadow-card">
@@ -126,97 +157,100 @@ export default function WithdrawPage() {
           {wLoading ? "…" : formatMoney(free)}
         </p>
         <p className="mt-1 text-[11px] text-ink-muted">
-          Promo points cannot be withdrawn. Min ₦{MIN_WITHDRAWAL.toLocaleString("en-NG")} · Max ₦
+          Promo points cannot be withdrawn. Min ₦
+          {MIN_WITHDRAWAL.toLocaleString("en-NG")} · Max ₦
           {MAX_WITHDRAWAL.toLocaleString("en-NG")} / day
         </p>
       </div>
 
-      <div className="rounded-2xl bg-surface p-4 shadow-card space-y-3">
-        <label className="block text-xs text-ink-muted">
-          Amount (₦)
-          <input
-            type="number"
-            inputMode="numeric"
-            min={MIN_WITHDRAWAL}
-            max={Math.min(MAX_WITHDRAWAL, free)}
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder={String(MIN_WITHDRAWAL)}
-            className="mt-1 w-full rounded-xl border border-ink-muted/20 bg-bg px-3 py-2.5 text-sm"
-          />
-        </label>
+      {!showPendingOnly && (
+        <div className="space-y-3 rounded-2xl bg-surface p-4 shadow-card">
+          <label className="block text-xs text-ink-muted">
+            Amount (₦)
+            <input
+              type="number"
+              inputMode="numeric"
+              min={MIN_WITHDRAWAL}
+              max={Math.min(MAX_WITHDRAWAL, free)}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={String(MIN_WITHDRAWAL)}
+              className="mt-1 w-full rounded-xl border border-ink-muted/20 bg-bg px-3 py-2.5 text-sm"
+            />
+          </label>
 
-        <label className="block text-xs text-ink-muted">
-          Bank
-          <select
-            value={bankCode}
-            onChange={(e) => setBankCode(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-ink-muted/20 bg-bg px-3 py-2.5 text-sm"
+          <label className="block text-xs text-ink-muted">
+            Bank
+            <select
+              value={bankCode}
+              onChange={(e) => setBankCode(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-ink-muted/20 bg-bg px-3 py-2.5 text-sm"
+            >
+              {BANKS.map((b) => (
+                <option key={b.code} value={b.code}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block text-xs text-ink-muted">
+            Account number (10 digits)
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={10}
+              value={accountNumber}
+              onChange={(e) =>
+                setAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 10))
+              }
+              className="mt-1 w-full rounded-xl border border-ink-muted/20 bg-bg px-3 py-2.5 text-sm tracking-wider"
+            />
+          </label>
+
+          <label className="block text-xs text-ink-muted">
+            Account name (must match bank)
+            <input
+              type="text"
+              value={accountName}
+              onChange={(e) => setAccountName(e.target.value)}
+              placeholder="As on bank account"
+              className="mt-1 w-full rounded-xl border border-ink-muted/20 bg-bg px-3 py-2.5 text-sm"
+            />
+          </label>
+
+          {error && (
+            <p className="text-sm text-loss" role="alert">
+              {error}
+            </p>
+          )}
+          {success && (
+            <p className="text-sm text-brand" role="status">
+              {success}
+            </p>
+          )}
+
+          <button
+            type="button"
+            disabled={busy || free < MIN_WITHDRAWAL}
+            onClick={() => void submit()}
+            className="w-full rounded-xl bg-brand py-3 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {BANKS.map((b) => (
-              <option key={b.code} value={b.code}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            {busy ? "Submitting…" : "Request withdrawal"}
+          </button>
+        </div>
+      )}
 
-        <label className="block text-xs text-ink-muted">
-          Account number (10 digits)
-          <input
-            type="text"
-            inputMode="numeric"
-            maxLength={10}
-            value={accountNumber}
-            onChange={(e) =>
-              setAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 10))
-            }
-            className="mt-1 w-full rounded-xl border border-ink-muted/20 bg-bg px-3 py-2.5 text-sm tracking-wider"
-          />
-        </label>
-
-        <label className="block text-xs text-ink-muted">
-          Account name (must match bank)
-          <input
-            type="text"
-            value={accountName}
-            onChange={(e) => setAccountName(e.target.value)}
-            placeholder="As on bank account"
-            className="mt-1 w-full rounded-xl border border-ink-muted/20 bg-bg px-3 py-2.5 text-sm"
-          />
-        </label>
-
-        {error && (
-          <p className="text-sm text-loss" role="alert">
-            {error}
-          </p>
-        )}
-        {success && (
-          <p className="text-sm text-brand" role="status">
-            {success}
-          </p>
-        )}
-
-        <button
-          type="button"
-          disabled={busy || free < MIN_WITHDRAWAL}
-          onClick={() => void submit()}
-          className="w-full rounded-xl bg-brand py-3 text-sm font-semibold text-white disabled:opacity-50"
-        >
-          {busy ? "Submitting…" : "Request withdrawal"}
-        </button>
-      </div>
-
-      {history.length > 0 && (
+      {list.length > 0 && (
         <div className="rounded-2xl bg-surface p-4 shadow-card">
           <p className="mb-2 text-xs font-semibold uppercase text-ink-muted">
-            Recent requests
+            {showPendingOnly ? "Pending requests" : "Recent requests"}
           </p>
           <ul className="space-y-2">
-            {history.map((h) => (
+            {list.map((h) => (
               <li
                 key={h.id}
-                className="flex items-center justify-between text-sm"
+                className="flex items-center justify-between gap-2 text-sm"
               >
                 <span className="text-ink-muted">
                   {new Date(h.createdAt).toLocaleDateString("en-NG", {
@@ -235,8 +269,17 @@ export default function WithdrawPage() {
               </li>
             ))}
           </ul>
+          {showPendingOnly && (
+            <button
+              type="button"
+              onClick={() => setShowPendingOnly(false)}
+              className="mt-3 w-full text-center text-xs font-semibold text-brand"
+            >
+              Back to request form
+            </button>
+          )}
         </div>
       )}
     </main>
   );
-}
+               }
