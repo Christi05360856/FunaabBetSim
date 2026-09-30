@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useWallet } from "@/lib/hooks/useWallet";
-import { useBetSlip, type SlipItem } from "@/lib/context/BetSlipContext";
-import { MINIMUM_STAKE } from "@/types/domain";
+import { useBetSlip } from "@/lib/context/BetSlipContext";
+import {
+  MINIMUM_STAKE,
+  PROMO_MIN_LEG_ODDS,
+  PROMO_REQUIRED_LEGS,
+} from "@/types/domain";
 import { formatMoney } from "@/lib/domain/selectionLabel";
+import { isValidPromoTicket } from "@/lib/domain/wallet";
 
 export function BetSlip() {
   const pathname = usePathname();
@@ -28,18 +34,40 @@ export function BetSlip() {
   const [bookingCode, setBookingCode] = useState<string | null>(null);
   const [loadCodeInput, setLoadCodeInput] = useState("");
   const [loadingCode, setLoadingCode] = useState(false);
+  /** cash = normal; promo = spend promo points only */
+  const [fundMode, setFundMode] = useState<"cash" | "promo">("cash");
 
   if (pathname?.startsWith("/admin")) return null;
 
   const stakeNum = Number(stake) || 0;
-  const balance = wallet?.balance ?? 0;
+  const purchased = Math.max(0, wallet?.purchased ?? 0);
+  const promo = Math.max(0, wallet?.promo ?? 0);
+  const balance = Math.max(
+    0,
+    wallet?.balance ?? purchased + promo
+  );
   const potential = Math.round(stakeNum * totalOdds);
-  const overBalance = stake !== "" && stakeNum > balance;
+
+  const promoEligible = isValidPromoTicket(items);
+  const promoCanCover =
+    promoEligible && promo >= stakeNum && stakeNum >= MINIMUM_STAKE;
+
+  // Clear stale success text when selections change
+  useEffect(() => {
+    setFeedback(null);
+    setBookingCode(null);
+    if (!promoEligible && fundMode === "promo") setFundMode("cash");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length, totalOdds]);
+
+  const activeBalance = fundMode === "promo" ? promo : balance;
+  const overBalance = stake !== "" && stakeNum > activeBalance;
   const stakeValid =
     stake !== "" &&
     stakeNum >= MINIMUM_STAKE &&
     !overBalance &&
-    items.length > 0;
+    items.length > 0 &&
+    (fundMode === "cash" || promoCanCover);
   const modeLabel = items.length <= 1 ? "Single" : "Multiple";
 
   async function placeBet() {
@@ -61,17 +89,23 @@ export function BetSlip() {
           Authorization: "Bearer " + token,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ legs, stake: stakeNum }),
+        body: JSON.stringify({
+          legs,
+          stake: stakeNum,
+          funding: fundMode === "promo" ? "promo" : "auto",
+        }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Could not place bet");
       setFeedback(
-        "Bet placed! Potential: " +
+        (fundMode === "promo" ? "Promo bet placed! " : "Bet placed! ") +
+          "Potential: " +
           formatMoney(body.potentialPayout ?? potential)
       );
       clearSlip();
       setStake("");
       setBookingCode(null);
+      setFundMode("cash");
       setIsOpen(false);
     } catch (e) {
       setFeedback(e instanceof Error ? e.message : "Something went wrong");
@@ -81,9 +115,11 @@ export function BetSlip() {
   }
 
   async function bookCode() {
+    if (!user || items.length === 0) return;
+    setSubmitting(true);
     setFeedback(null);
-    setBookingCode(null);
     try {
+      const token = await user.getIdToken();
       const legs = items.map((i) => ({
         matchId: i.matchId,
         marketId: i.marketId,
@@ -93,14 +129,20 @@ export function BetSlip() {
       }));
       const res = await fetch("/api/bets/book", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: "Bearer " + token,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ legs }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Could not book");
       setBookingCode(body.code as string);
+      setFeedback(null);
     } catch (e) {
-      setFeedback(e instanceof Error ? e.message : "Booking failed");
+      setFeedback(e instanceof Error ? e.message : "Book failed");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -115,30 +157,24 @@ export function BetSlip() {
       );
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Code not found");
-      const legs = (body.booking?.legs ?? []) as Array<{
+      const legs = (body.booking?.legs ?? []) as {
         matchId: string;
         marketId: string;
         selectionId: string;
         selectionLabel: string;
         odds: number;
-        homeTeamName?: string;
-        awayTeamName?: string;
-        marketName?: string;
-      }>;
-      if (legs.length === 0) throw new Error("Code has no selections");
-      const mapped: SlipItem[] = legs.map((l) => ({
-        matchId: l.matchId,
-        marketId: l.marketId,
-        selectionId: l.selectionId,
-        selectionLabel: l.selectionLabel,
-        odds: l.odds,
-        homeTeamName: l.homeTeamName ?? "Home",
-        awayTeamName: l.awayTeamName ?? "Away",
-        marketName: l.marketName ?? "Market",
-      }));
-      loadLegs(mapped);
+      }[];
+      if (!legs.length) throw new Error("Empty booking");
+      loadLegs(
+        legs.map((l) => ({
+          ...l,
+          homeTeamName: (l as { homeTeamName?: string }).homeTeamName ?? "Home",
+          awayTeamName: (l as { awayTeamName?: string }).awayTeamName ?? "Away",
+          marketName: (l as { marketName?: string }).marketName ?? "1X2",
+        }))
+      );
       setLoadCodeInput("");
-      setFeedback("Loaded " + mapped.length + " pick(s)");
+      setFeedback("Code loaded");
     } catch (e) {
       setFeedback(e instanceof Error ? e.message : "Could not load code");
     } finally {
@@ -146,70 +182,53 @@ export function BetSlip() {
     }
   }
 
-  // ——— Collapsed floating badge (SportyBet green orb) ———
-  if (!isOpen) {
-    return (
-      <div className="pointer-events-none fixed bottom-20 right-4 z-40 flex flex-col items-end gap-2">
-        {/* Always show a small ticket icon so empty slip can load a code */}
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center">
+      {/* FAB */}
+      {!isOpen && (
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          className="pointer-events-auto relative flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg shadow-emerald-600/30"
+          className="pointer-events-auto mb-[calc(4.25rem+env(safe-area-inset-bottom))] flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg"
           aria-label="Open bet slip"
         >
-          <TicketIcon />
-          {items.length > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-surface px-1 text-[11px] font-bold text-emerald-700">
-              {items.length}
-            </span>
-          )}
-        </button>
-        {items.length > 0 && (
-          <span className="pointer-events-none rounded-full bg-emerald-700 px-2.5 py-0.5 text-xs font-bold text-white shadow">
-            {totalOdds.toFixed(2)}
+          <span className="relative">
+            <TicketIcon />
+            {items.length > 0 && (
+              <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-emerald-700">
+                {items.length}
+              </span>
+            )}
           </span>
-        )}
-      </div>
-    );
-  }
+        </button>
+      )}
 
-  // ——— Expanded sheet ———
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end">
-      {/* Dim backdrop — tap to close, fixtures stay usable after close */}
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/40"
-        aria-label="Close bet slip"
-        onClick={() => setIsOpen(false)}
-      />
-
-      <div className="relative flex max-h-[85vh] flex-col rounded-t-2xl bg-surface shadow-2xl">
-        {/* Header */}
+      {/* Sheet */}
+      <div
+        className={`pointer-events-auto absolute inset-x-0 bottom-0 max-h-[85vh] overflow-hidden rounded-t-2xl bg-surface shadow-2xl transition-transform duration-200 ${
+          isOpen ? "translate-y-0" : "translate-y-full"
+        }`}
+      >
         <div className="flex items-center justify-between border-b border-ink-muted/10 px-4 py-3">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">
               {items.length}
             </span>
             <div>
-              <p className="text-sm font-bold text-ink">Bet slip</p>
+              <p className="text-sm font-bold">Bet slip</p>
               <p className="text-[11px] text-ink-muted">
                 {items.length === 0
                   ? "Empty — load a code or pick odds"
-                  : modeLabel + " · odds " + totalOdds.toFixed(2)}
+                  : `${modeLabel} · odds ${totalOdds.toFixed(2)}`}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {items.length > 0 && (
               <button
                 type="button"
-                onClick={() => {
-                  clearSlip();
-                  setStake("");
-                  setBookingCode(null);
-                }}
-                className="text-xs font-medium text-rose-600"
+                onClick={() => clearSlip()}
+                className="text-xs font-semibold text-rose-600"
               >
                 Clear
               </button>
@@ -217,67 +236,33 @@ export function BetSlip() {
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="rounded-full bg-ink-muted/10 px-2.5 py-1 text-sm text-ink-muted"
+              className="text-lg text-ink-muted"
+              aria-label="Close"
             >
-              ✕
+              ×
             </button>
           </div>
         </div>
 
-        {/* Mode tabs */}
-        <div className="flex border-b border-ink-muted/10 text-sm font-semibold">
-          <div
-            className={
-              "flex-1 py-2.5 text-center " +
-              (items.length <= 1
-                ? "border-b-2 border-emerald-600 text-emerald-700"
-                : "text-ink-muted")
-            }
-          >
-            Single
-          </div>
-          <div
-            className={
-              "flex-1 py-2.5 text-center " +
-              (items.length > 1
-                ? "border-b-2 border-emerald-600 text-emerald-700"
-                : "text-ink-muted")
-            }
-          >
-            Multiple
-          </div>
-        </div>
-
-        {/* Legs list */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+        <div className="max-h-[40vh] overflow-y-auto px-4 py-2">
           {items.length === 0 ? (
-            <div className="space-y-4 py-4">
-              <p className="text-center text-sm text-ink-muted">
-                Tap odds on fixtures to add picks
-              </p>
-              <div className="rounded-xl border border-ink-muted/15 p-3">
-                <p className="mb-2 text-xs font-semibold text-ink">
-                  Load booking code
-                </p>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={loadCodeInput}
-                    onChange={(e) =>
-                      setLoadCodeInput(e.target.value.toUpperCase())
-                    }
-                    placeholder="FB-XXXX"
-                    className="min-w-0 flex-1 rounded-lg border border-ink-muted/15 px-3 py-2 text-sm uppercase tracking-wider"
-                  />
-                  <button
-                    type="button"
-                    disabled={loadingCode || !loadCodeInput.trim()}
-                    onClick={loadBookingCode}
-                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                  >
-                    {loadingCode ? "…" : "Load"}
-                  </button>
-                </div>
+            <div className="py-6 text-center text-sm text-ink-muted">
+              <p className="mb-3">Tap odds on fixtures to add picks</p>
+              <div className="mx-auto flex max-w-xs gap-2">
+                <input
+                  value={loadCodeInput}
+                  onChange={(e) => setLoadCodeInput(e.target.value)}
+                  placeholder="FB-XXXX"
+                  className="min-w-0 flex-1 rounded-xl border border-ink-muted/15 px-3 py-2 text-sm"
+                />
+                <button
+                  type="button"
+                  disabled={loadingCode}
+                  onClick={() => void loadBookingCode()}
+                  className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white"
+                >
+                  Load
+                </button>
               </div>
             </div>
           ) : (
@@ -318,16 +303,75 @@ export function BetSlip() {
           )}
         </div>
 
-        {/* Footer: stake + actions */}
         {items.length > 0 && (
           <div className="border-t border-ink-muted/10 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
+            {/* Funding tabs — Bet | Promo (Paripesa-style) */}
             {user && (
-              <p className="mb-2 text-[11px] text-ink-muted">
-                Balance{" "}
-                <span className="font-semibold text-ink">
-                  {formatMoney(balance)}
-                </span>
+              <div className="mb-3 flex rounded-xl bg-ink-muted/10 p-1">
+                <button
+                  type="button"
+                  onClick={() => setFundMode("cash")}
+                  className={`flex-1 rounded-lg py-2 text-xs font-bold ${
+                    fundMode === "cash"
+                      ? "bg-surface text-ink shadow-sm"
+                      : "text-ink-muted"
+                  }`}
+                >
+                  Bet
+                </button>
+                <button
+                  type="button"
+                  disabled={!promoEligible || promo < MINIMUM_STAKE}
+                  onClick={() => setFundMode("promo")}
+                  className={`flex-1 rounded-lg py-2 text-xs font-bold disabled:opacity-40 ${
+                    fundMode === "promo"
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "text-ink-muted"
+                  }`}
+                >
+                  Promo ({promo.toLocaleString("en-NG")})
+                </button>
+              </div>
+            )}
+
+            {user && fundMode === "promo" && (
+              <p className="mb-2 text-[11px] leading-snug text-ink-muted">
+                Using promo points. Need exactly {PROMO_REQUIRED_LEGS} × 1X2,
+                each odds ≥ {PROMO_MIN_LEG_ODDS.toFixed(2)}.{" "}
+                <Link href="/promo" className="text-emerald-700 underline">
+                  Rules
+                </Link>
               </p>
+            )}
+
+            {user && !promoEligible && items.length > 0 && (
+              <p className="mb-2 text-[11px] text-ink-muted">
+                Promo unlocks with {PROMO_REQUIRED_LEGS} picks, 1X2 only, each
+                odds ≥ {PROMO_MIN_LEG_ODDS.toFixed(2)}.
+              </p>
+            )}
+
+            {user && (
+              <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-muted">
+                <span>
+                  Cash{" "}
+                  <span className="font-semibold text-ink">
+                    {formatMoney(purchased)}
+                  </span>
+                </span>
+                <span>
+                  Promo{" "}
+                  <span className="font-semibold text-emerald-700">
+                    {formatMoney(promo)}
+                  </span>
+                </span>
+                <span>
+                  Available{" "}
+                  <span className="font-semibold text-ink">
+                    {formatMoney(activeBalance)}
+                  </span>
+                </span>
+              </div>
             )}
 
             {!user ? (
@@ -340,13 +384,13 @@ export function BetSlip() {
             ) : (
               <>
                 <div className="mb-2 flex flex-wrap gap-1.5">
-                  {[1000, 5000, 20000].map((amt) => (
+                  {[100, 500, 1000].map((amt) => (
                     <button
                       key={amt}
                       type="button"
                       onClick={() => {
                         const next = (Number(stake) || 0) + amt;
-                        setStake(String(Math.min(next, balance)));
+                        setStake(String(Math.min(next, activeBalance)));
                       }}
                       className="rounded-lg bg-ink-muted/10 px-2.5 py-1 text-xs font-semibold text-ink"
                     >
@@ -375,7 +419,9 @@ export function BetSlip() {
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
-                    placeholder={"Stake min ₦" + MINIMUM_STAKE.toLocaleString("en-NG")}
+                    placeholder={
+                      "Stake min ₦" + MINIMUM_STAKE.toLocaleString("en-NG")
+                    }
                     value={stake}
                     onChange={(e) =>
                       setStake(e.target.value.replace(/[^0-9]/g, ""))
@@ -385,14 +431,16 @@ export function BetSlip() {
                 </div>
                 {overBalance && (
                   <p className="mt-1 text-xs font-medium text-rose-600">
-                    Balance not enough
+                    {fundMode === "promo"
+                      ? "Not enough promo points"
+                      : "Balance not enough"}
                   </p>
                 )}
 
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={bookCode}
+                    onClick={() => void bookCode()}
                     className="rounded-xl border-2 border-emerald-600 py-3 text-sm font-bold text-emerald-700"
                   >
                     Book bet
@@ -400,10 +448,14 @@ export function BetSlip() {
                   <button
                     type="button"
                     disabled={!stakeValid || submitting}
-                    onClick={placeBet}
+                    onClick={() => void placeBet()}
                     className="rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white disabled:opacity-40"
                   >
-                    {submitting ? "…" : "Place bet"}
+                    {submitting
+                      ? "…"
+                      : fundMode === "promo"
+                        ? "Place promo bet"
+                        : "Place bet"}
                   </button>
                 </div>
 
@@ -428,7 +480,15 @@ export function BetSlip() {
             )}
 
             {feedback && (
-              <p className="mt-2 text-center text-xs text-ink">{feedback}</p>
+              <p
+                className={`mt-2 text-center text-xs ${
+                  feedback.toLowerCase().includes("placed")
+                    ? "text-emerald-700"
+                    : "text-ink"
+                }`}
+              >
+                {feedback}
+              </p>
             )}
           </div>
         )}
@@ -443,4 +503,5 @@ function TicketIcon() {
       <path d="M20 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v2a2 2 0 010 4v2a2 2 0 002 2h12a2 2 0 002-2v-2a2 2 0 010-4zM8 13H6v-2h2v2zm0-4H6V7h2v2zm4 4h-2v-2h2v2zm0-4h-2V7h2v2zm4 4h-2v-2h2v2zm0-4h-2V7h2v2z" />
     </svg>
   );
-                          }
+        }
+                      
