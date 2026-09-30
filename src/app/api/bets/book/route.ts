@@ -1,4 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
+import { securityLog } from "@/lib/security/securityLog";
 import { adminDb } from "@/lib/firebase/admin";
 import type { BetLeg, BookingCode, Match } from "@/types/domain";
 
@@ -22,6 +24,10 @@ function isMatchFinished(status: string | undefined): boolean {
 }
 
 export async function POST(request: NextRequest) {
+  const ip = clientIp(request);
+  const limited = await enforceRateLimit("book_code", `ip:${ip}`);
+  if (limited) return limited;
+
   const body = await request.json().catch(() => ({}));
   const { legs } = body as { legs?: BetLeg[] };
 
