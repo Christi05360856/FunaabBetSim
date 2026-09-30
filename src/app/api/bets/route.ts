@@ -133,10 +133,12 @@ export async function POST(request: NextRequest) {
       }
 
       if (funding === "promo") {
-        if (!isValidPromoTicket(validatedLegs, marketTypes)) {
-          throw new Error(
-            "Promo bets require exactly 5 × 1X2 selections, each with odds ≥ 2.00"
-          );
+        const rules = wallet.promoBetRules ?? null;
+        if (!isValidPromoTicket(validatedLegs, marketTypes, rules)) {
+          const msg =
+            rules?.terms ||
+            "Ticket does not meet this promo's betting rules";
+          throw new Error(msg);
         }
         if ((wallet.promo ?? 0) < stake) {
           throw new Error("Insufficient promo points for this stake");
@@ -234,4 +236,4 @@ export async function POST(request: NextRequest) {
     const message = err instanceof Error ? err.message : "Could not place bet";
     return NextResponse.json({ error: message }, { status: 400 });
   }
-}
+        }
