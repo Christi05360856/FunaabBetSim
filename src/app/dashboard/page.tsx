@@ -73,36 +73,44 @@ export default function DashboardPage() {
 
       {/* Balance */}
       <div className="rounded-2xl bg-gradient-to-br from-brand to-emerald-800 p-5 text-white shadow-card">
-        <p className="text-xs font-medium text-white/70">Available points</p>
-        <p
-          className="mt-1 break-all font-display text-2xl font-bold tabular-nums"
-          title={
-            wallet
-              ? "₦" + wallet.balance.toLocaleString("en-NG")
-              : undefined
-          }
-        >
-          {walletLoading
-            ? "…"
-            : wallet
-              ? formatMoney(wallet.balance)
-              : "—"}
-        </p>
-        <p className="mt-1 text-[10px] text-white/50">1 point = ₦1</p>
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <Link
-            href="/account/deposit"
-            className="flex items-center justify-center rounded-xl bg-white px-3 py-2.5 text-sm font-semibold text-brand"
-          >
-            Buy points
-          </Link>
-          <Link
-            href="/account/withdraw"
-            className="flex items-center justify-center rounded-xl border border-white/40 px-3 py-2.5 text-sm font-semibold text-white"
-          >
-            Withdraw
-          </Link>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-xs font-medium text-white/70">Cash</p>
+            <p className="mt-1 break-all font-display text-xl font-bold tabular-nums">
+              {walletLoading
+                ? "…"
+                : wallet
+                  ? formatMoney(wallet.purchased ?? 0)
+                  : "—"}
+            </p>
+            <Link
+              href="/account/deposit"
+              className="mt-2 flex items-center justify-center rounded-xl bg-white px-2 py-2 text-xs font-semibold text-brand"
+            >
+              Buy points
+            </Link>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-white/70">Bonus (promo)</p>
+            <p className="mt-1 break-all font-display text-xl font-bold tabular-nums">
+              {walletLoading
+                ? "…"
+                : wallet
+                  ? formatMoney(wallet.promo ?? 0)
+                  : "—"}
+            </p>
+            <Link
+              href="/account/withdraw"
+              className="mt-2 flex items-center justify-center rounded-xl border border-white/40 px-2 py-2 text-xs font-semibold text-white"
+            >
+              Withdraw
+            </Link>
+          </div>
         </div>
+        <p className="mt-3 text-[10px] text-white/50">
+          Total {wallet ? formatMoney(wallet.balance) : "—"} · Promo not
+          withdrawable · 1 point = ₦1
+        </p>
       </div>
 
       {/* Quick actions */}
@@ -175,8 +183,6 @@ export default function DashboardPage() {
         <MenuItem icon="📋" label="Transaction records" href="/transactions" />
         <MenuItem icon="⚙️" label="Settings" href="/account/settings" />
         <MenuItem icon="❓" label="How to play" href="/how-to-play" />
-        <MenuItem icon="💬" label="Support" href="/support" />
-        <MenuItem icon="🎁" label="Promos" href="/promo" />
         <MenuItem icon="ℹ️" label="About FUNAAB BetSim" href="/about" />
         <MenuItem icon="🔍" label="Verify ticket" href="/verify" />
         <MenuItem icon="📄" label="Terms of use" href="/terms" />
@@ -223,4 +229,4 @@ function MenuItem({
       </svg>
     </Link>
   );
-          }
+      }
