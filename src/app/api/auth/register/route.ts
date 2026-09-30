@@ -3,6 +3,8 @@ import { z } from "zod";
 import { verifyRequest } from "@/lib/auth/verifyRequest";
 import { adminDb } from "@/lib/firebase/admin";
 import { emptyWallet } from "@/lib/domain/wallet";
+import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
+import { securityLog } from "@/lib/security/securityLog";
 
 const bodySchema = z.object({
   displayName: z.string().trim().min(2).max(60),
@@ -13,6 +15,12 @@ export async function POST(request: NextRequest) {
   if (!decoded) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const ip = clientIp(request);
+  const limited = await enforceRateLimit("register", `uid:${decoded.uid}`);
+  if (limited) return limited;
+  const limitedIp = await enforceRateLimit("register", `ip:${ip}`);
+  if (limitedIp) return limitedIp;
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) {
@@ -39,6 +47,8 @@ export async function POST(request: NextRequest) {
 
     tx.set(walletRef, emptyWallet(uid, now));
   });
+
+  void securityLog({ type: "AUTH_REGISTER", uid, ip });
 
   return NextResponse.json({ ok: true });
 }
