@@ -16,6 +16,25 @@ type WItem = {
   createdAt: number;
 };
 
+const BANK_NAMES: Record<string, string> = {
+  "058": "GTBank",
+  "033": "UBA",
+  "011": "First Bank",
+  "044": "Access",
+  "057": "Zenith",
+  "032": "Union",
+  "221": "Stanbic",
+  "050": "Ecobank",
+  "070": "Fidelity",
+  "232": "Sterling",
+  "076": "Polaris",
+  "035": "Wema",
+  "215": "Unity",
+  "101": "Providus",
+  "999": "Opay",
+  "100004": "PalmPay",
+};
+
 export default function WithdrawalsTab() {
   const [items, setItems] = useState<WItem[]>([]);
   const [filter, setFilter] = useState("pending_review");
@@ -94,8 +113,8 @@ export default function WithdrawalsTab() {
         <div>
           <h2 className="text-xl font-bold">Withdrawals</h2>
           <p className="text-sm text-adm-muted">
-            Review requests. Prefer Mark paid until Flutterwave transfers are
-            verified in test.
+            Prefer <strong>Mark paid</strong> until Flutterwave transfers are
+            verified. FLW may require IP whitelist.
           </p>
         </div>
         <select
@@ -118,58 +137,78 @@ export default function WithdrawalsTab() {
       {items.length === 0 ? (
         <EmptyState title="No withdrawals" hint="Nothing in this filter." />
       ) : (
-        <div className="flex flex-col gap-3">
-          {items.map((w) => (
-            <Card key={w.id}>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-lg font-bold">
+        <div className="overflow-x-auto rounded-xl border border-adm-border">
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead className="bg-adm-card text-xs uppercase text-adm-muted">
+              <tr>
+                <th className="px-3 py-2">Name</th>
+                <th className="px-3 py-2">Amount</th>
+                <th className="px-3 py-2">Bank</th>
+                <th className="px-3 py-2">Account</th>
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((w) => (
+                <tr key={w.id} className="border-t border-adm-border">
+                  <td className="px-3 py-2.5">
+                    <p className="font-semibold">{w.accountName}</p>
+                    <p className="text-[10px] text-adm-muted">
+                      {w.uid.slice(0, 10)}…
+                    </p>
+                  </td>
+                  <td className="px-3 py-2.5 font-bold tabular-nums">
                     ₦{w.amount.toLocaleString("en-NG")}
-                  </p>
-                  <p className="text-sm">
-                    {w.accountName} · {w.accountNumber} · bank {w.bankCode}
-                  </p>
-                  <p className="text-xs text-adm-muted">
-                    {w.uid.slice(0, 8)}… · {w.status} ·{" "}
-                    {new Date(w.createdAt).toLocaleString()}
-                  </p>
-                  {w.adminNote && (
-                    <p className="text-xs text-adm-bad">{w.adminNote}</p>
-                  )}
-                </div>
-                {(w.status === "pending_review" ||
-                  w.status === "payment_failed") && (
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      disabled={busy === w.id}
-                      onClick={() => void act(w.id, "approve-manual")}
-                    >
-                      Mark paid
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busy === w.id}
-                      onClick={() => void act(w.id, "approve-flw")}
-                    >
-                      FLW transfer
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busy === w.id}
-                      onClick={() => void act(w.id, "reject")}
-                    >
-                      Reject
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </Card>
-          ))}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {BANK_NAMES[w.bankCode] ?? w.bankCode}
+                  </td>
+                  <td className="px-3 py-2.5 font-mono text-xs">
+                    {w.accountNumber}
+                  </td>
+                  <td className="px-3 py-2.5 capitalize">
+                    {w.status.replace(/_/g, " ")}
+                    {w.adminNote && (
+                      <p className="text-[10px] text-adm-bad">{w.adminNote}</p>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {(w.status === "pending_review" ||
+                      w.status === "payment_failed") && (
+                      <div className="flex flex-wrap gap-1">
+                        <Button
+                          size="sm"
+                          disabled={busy === w.id}
+                          onClick={() => void act(w.id, "approve-manual")}
+                        >
+                          Mark paid
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy === w.id}
+                          onClick={() => void act(w.id, "approve-flw")}
+                        >
+                          FLW
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy === w.id}
+                          onClick={() => void act(w.id, "reject")}
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
   );
-          }
+}
