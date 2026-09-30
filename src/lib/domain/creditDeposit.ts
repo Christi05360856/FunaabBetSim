@@ -5,10 +5,10 @@ import {
   normalizeWallet,
 } from "@/lib/domain/ledgerEngine";
 import {
-  evaluateWelcomeEligibility,
-  getOrInitWelcomePromotion,
-  hasRedeemedWelcome,
-  writeWelcomePromoCredit,
+  evaluatePromoEligibility,
+  getPromotionByCode,
+  hasRedeemedCode,
+  writePromoCredit,
 } from "@/lib/domain/promoEngine";
 import { POINTS_PER_NAIRA } from "@/types/domain";
 import type { Deposit, Wallet } from "@/types/domain";
@@ -70,15 +70,26 @@ export async function creditVerifiedDeposit(input: {
       return { credited: false, points: 0, reason: "wallet_missing" };
     }
 
-    const { ref: promoRef, promo, isNew } = await getOrInitWelcomePromotion(
-      adminDb,
-      tx
-    );
-    const alreadyRedeemed = await hasRedeemedWelcome(
-      adminDb,
-      tx,
-      deposit.uid
-    );
+    const codeRaw = String(deposit.promoCode ?? "").trim();
+    let promoRef: import("firebase-admin/firestore").DocumentReference | null =
+      null;
+    let promo: import("@/types/domain").Promotion | null = null;
+    let isNew = false;
+    let alreadyRedeemed = false;
+    if (codeRaw) {
+      const found = await getPromotionByCode(adminDb, tx, codeRaw);
+      if (found) {
+        promoRef = found.ref;
+        promo = found.promo;
+        isNew = found.isNew;
+        alreadyRedeemed = await hasRedeemedCode(
+          adminDb,
+          tx,
+          deposit.uid,
+          found.promo.code
+        );
+      }
+    }
 
     // ---- WRITES ----
     const points = Math.round(expected * POINTS_PER_NAIRA);
@@ -143,34 +154,37 @@ export async function creditVerifiedDeposit(input: {
       createdAt: now,
     });
 
-    const eligibility = evaluateWelcomeEligibility({
-      promoCode: deposit.promoCode,
-      amountNgn: expected,
-      promo,
-      alreadyRedeemed,
-    });
-
     let promoPoints = 0;
-    if (eligibility.ok) {
-      promoPoints = writeWelcomePromoCredit(adminDb, tx, {
-        uid: deposit.uid,
-        depositId: deposit.id,
+    let promoReason: string | undefined = codeRaw ? "unknown_code" : "no_code";
+    if (promo && promoRef) {
+      const eligibility = evaluatePromoEligibility({
+        promoCode: deposit.promoCode,
+        amountNgn: expected,
         promo,
-        promoRef,
-        isNewPromo: isNew,
-        walletAfterPurchase: {
-          ...before,
-          purchased,
-          balance: balanceAfterPurchase,
-        },
+        alreadyRedeemed,
       });
+      promoReason = eligibility.ok ? undefined : eligibility.reason;
+      if (eligibility.ok) {
+        promoPoints = writePromoCredit(adminDb, tx, {
+          uid: deposit.uid,
+          depositId: deposit.id,
+          promo,
+          promoRef,
+          isNewPromo: isNew,
+          walletAfterPurchase: {
+            ...before,
+            purchased,
+            balance: balanceAfterPurchase,
+          },
+        });
+      }
     }
 
     return {
       credited: true,
       points,
       promoPoints,
-      reason: eligibility.ok ? undefined : eligibility.reason,
+      reason: promoReason,
     };
   });
 }
