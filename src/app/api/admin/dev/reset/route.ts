@@ -62,6 +62,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // Phase 0: destructive scopes blocked in production unless explicitly allowed
+  const bodyEarly = await request.clone().json().catch(() => ({}));
+  const scopeEarly = String((bodyEarly as { scope?: string }).scope ?? "");
+  const destructive = ["all", "platform", "financial_cutover", "bets_wallets"].includes(
+    scopeEarly
+  );
+  if (
+    destructive &&
+    process.env.VERCEL_ENV === "production" &&
+    process.env.ALLOW_PROD_RESET !== "true"
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Destructive reset blocked in production. Set ALLOW_PROD_RESET=true only when intentional.",
+      },
+      { status: 403 }
+    );
+  }
+
+
   const body = await request.json().catch(() => ({}));
   const scope = body.scope as ResetScope | undefined;
   const allowed: ResetScope[] = [
@@ -365,4 +386,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
   }
-      
+
+          
