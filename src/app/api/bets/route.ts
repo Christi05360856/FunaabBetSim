@@ -17,6 +17,8 @@ import type {
   Wallet,
 } from "@/types/domain";
 import { isBettingOpen } from "@/lib/domain/matchClock";
+import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
+import { securityLog } from "@/lib/security/securityLog";
 
 type LegInput = {
   matchId: string;
@@ -32,6 +34,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const uid = decoded.uid;
+  const ip = clientIp(request);
+  const limited = await enforceRateLimit("place_bet", `uid:${uid}`);
+  if (limited) return limited;
 
   const raw = await request.json().catch(() => ({}));
   const idempotencyKey = (
@@ -287,10 +292,18 @@ export async function POST(request: NextRequest) {
         );
     }
 
+    void securityLog({
+      type: "BET_PLACED",
+      uid,
+      ip,
+      meta: { betId: result.betId, stake: "stake" in parsed.data ? undefined : undefined },
+    });
+
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not place bet";
     return NextResponse.json({ error: message }, { status: 400 });
   }
       }
+
       
