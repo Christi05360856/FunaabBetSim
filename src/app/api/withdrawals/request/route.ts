@@ -13,6 +13,8 @@ import {
   type Wallet,
   type Withdrawal,
 } from "@/types/domain";
+import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
+import { securityLog } from "@/lib/security/securityLog";
 
 function startOfTodayMs(): number {
   const d = new Date();
@@ -26,6 +28,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const uid = decoded.uid;
+  const ip = clientIp(request);
+  const limited = await enforceRateLimit("withdraw_request", `uid:${uid}`);
+  if (limited) return limited;
 
   const body = await request.json().catch(() => ({}));
   const amount = Math.round(Number(body.amount));
@@ -162,6 +167,7 @@ export async function POST(request: NextRequest) {
       return { id: wRef.id, amount, withdrawableAfter: withdrawableBalance(nextWallet) };
     });
 
+    void securityLog({ type: "WITHDRAW_REQUESTED", uid, ip, meta: { amount } });
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Request failed";
