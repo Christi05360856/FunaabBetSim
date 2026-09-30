@@ -13,6 +13,10 @@ import {
   type Wallet,
 } from "@/types/domain";
 import { buildLedgerEntry, normalizeWallet } from "@/lib/domain/ledgerEngine";
+import {
+  defaultWelcomeBetRules,
+  openPromoBetRules,
+} from "@/lib/domain/wallet";
 
 function normalizeCode(code: string): string {
   return code.trim().toUpperCase().replace(/\s+/g, "");
@@ -41,6 +45,7 @@ export async function getOrInitWelcomePromotion(
     exhaustedAt: null,
     createdAt: now,
     updatedAt: now,
+    betRules: defaultWelcomeBetRules(),
   };
   return { ref, promo, isNew: true };
 }
@@ -138,9 +143,16 @@ export function writePromoCredit(
   );
   const code = normalizeCode(input.promo.code);
 
+  const rules =
+    input.promo.betRules ??
+    (normalizeCode(input.promo.code) === WELCOME_PROMO_CODE
+      ? defaultWelcomeBetRules()
+      : openPromoBetRules());
+
   tx.update(db.collection("wallets").doc(input.uid), {
     promo: promoBal,
     balance,
+    promoBetRules: rules,
     updatedAt: now,
   });
 
@@ -219,5 +231,4 @@ export function writeWelcomePromoCredit(
   }
 ): number {
   return writePromoCredit(db, tx, input);
-  }
-  
+}
