@@ -193,3 +193,38 @@ export function buildLedgerEntry(input: {
     createdAt: input.now ?? Date.now(),
   };
 }
+
+/**
+ * Lock points for a pending withdrawal (from withdrawable purchased only).
+ */
+export function applyWithdrawalRequest(wallet: Wallet, amount: number): Wallet {
+  const w = normalizeWallet(wallet);
+  const free =
+    w.purchased - w.reservedStake - w.reservedWithdrawal;
+  if (amount <= 0 || amount > free + 1e-9) {
+    throw new Error("Insufficient withdrawable balance");
+  }
+  return syncBalance({
+    ...w,
+    reservedWithdrawal: w.reservedWithdrawal + amount,
+  });
+}
+
+/** Admin rejected / failed: release lock, purchased unchanged. */
+export function applyWithdrawalReject(wallet: Wallet, amount: number): Wallet {
+  const w = normalizeWallet(wallet);
+  return syncBalance({
+    ...w,
+    reservedWithdrawal: Math.max(0, w.reservedWithdrawal - amount),
+  });
+}
+
+/** Paid out: release lock and deduct from purchased. */
+export function applyWithdrawalComplete(wallet: Wallet, amount: number): Wallet {
+  const w = normalizeWallet(wallet);
+  return syncBalance({
+    ...w,
+    purchased: Math.max(0, w.purchased - amount),
+    reservedWithdrawal: Math.max(0, w.reservedWithdrawal - amount),
+  });
+}
