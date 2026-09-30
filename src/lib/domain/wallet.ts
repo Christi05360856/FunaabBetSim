@@ -3,6 +3,7 @@ import {
   PROMO_MIN_LEG_ODDS,
   PROMO_REQUIRED_LEGS,
   type BetLeg,
+  type PromoBetRules,
   type Wallet,
 } from "@/types/domain";
 
@@ -19,7 +20,6 @@ export function availableToBet(wallet: Pick<
     (wallet.reservedStake ?? 0) -
     (wallet.reservedWithdrawal ?? 0);
   if (Number.isFinite(fromBuckets)) {
-    // Prefer buckets when present; fall back to legacy balance-only wallets.
     if (
       wallet.purchased != null ||
       wallet.promo != null ||
@@ -31,10 +31,6 @@ export function availableToBet(wallet: Pick<
   return Math.max(0, wallet.balance ?? 0);
 }
 
-/**
- * Points eligible for withdrawal (promo excluded in MVP policy).
- * Phase B will refine proportional win attribution; Phase A is structural only.
- */
 export function withdrawableBalance(wallet: Pick<
   Wallet,
   "purchased" | "reservedStake" | "reservedWithdrawal"
@@ -47,9 +43,6 @@ export function withdrawableBalance(wallet: Pick<
   );
 }
 
-/**
- * UX pre-check only — server re-validates on place bet.
- */
 export function canPlaceStake(balance: number, stake: number): boolean {
   if (!Number.isFinite(balance) || !Number.isFinite(stake)) return false;
   if (stake < MINIMUM_STAKE) return false;
@@ -57,24 +50,54 @@ export function canPlaceStake(balance: number, stake: number): boolean {
   return true;
 }
 
+/** Default WELCOME-style rules (strict). */
+export function defaultWelcomeBetRules(): PromoBetRules {
+  return {
+    requiredLegs: PROMO_REQUIRED_LEGS,
+    minLegOdds: PROMO_MIN_LEG_ODDS,
+    require1x2: true,
+    terms: "Exactly 5 × 1X2 selections, each odds ≥ 2.00",
+  };
+}
+
+/** Open rules — any ticket shape. */
+export function openPromoBetRules(): PromoBetRules {
+  return {
+    requiredLegs: null,
+    minLegOdds: null,
+    require1x2: false,
+    terms: null,
+  };
+}
+
 /**
- * Promo funding rule: exactly 5 legs, each match_winner (1X2), each odds >= 2.00.
- * Callers pass legs already constrained to match_winner when building promo tickets.
+ * Validate legs against promo bet rules.
+ * If rules is null/undefined, falls back to WELCOME defaults (safe).
  */
 export function isValidPromoTicket(
   legs: Pick<BetLeg, "odds">[],
-  marketTypes?: (string | undefined)[]
+  marketTypes?: (string | undefined)[],
+  rules?: PromoBetRules | null
 ): boolean {
-  if (legs.length !== PROMO_REQUIRED_LEGS) return false;
-  if (marketTypes && marketTypes.length === legs.length) {
+  const r = rules ?? defaultWelcomeBetRules();
+
+  if (r.requiredLegs != null && legs.length !== r.requiredLegs) return false;
+  if (legs.length < 1) return false;
+
+  if (r.require1x2 && marketTypes && marketTypes.length === legs.length) {
     if (marketTypes.some((t) => t != null && t !== "match_winner")) return false;
   }
-  return legs.every(
-    (l) => Number.isFinite(l.odds) && l.odds >= PROMO_MIN_LEG_ODDS
-  );
+
+  const minOdds = r.minLegOdds;
+  if (minOdds != null) {
+    if (!legs.every((l) => Number.isFinite(l.odds) && l.odds >= minOdds))
+      return false;
+  } else {
+    if (!legs.every((l) => Number.isFinite(l.odds) && l.odds > 1)) return false;
+  }
+  return true;
 }
 
-/** Empty financial wallet for new registrations (Phase A). */
 export function emptyWallet(uid: string, now = Date.now()): Wallet {
   return {
     uid,
@@ -86,5 +109,6 @@ export function emptyWallet(uid: string, now = Date.now()): Wallet {
     lifetimeWagering: 0,
     resetPendingSince: null,
     updatedAt: now,
+    promoBetRules: null,
   };
 }
