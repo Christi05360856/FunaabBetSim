@@ -26,7 +26,7 @@ export type FixtureFilter = "all" | "active" | "final" | "open" | "live" | "sche
 const ENDPOINTS: Record<ConfirmType, string> = {
   open: "/api/admin/matches/open",
   close: "/api/admin/matches/close",
-  settle: "/api/admin/matches/settle",
+  settle: "/api/admin/matches/confirm-result",
   void: "/api/admin/matches/void",
   delete: "/api/admin/matches/delete",
   reopen: "/api/admin/matches/reopen",
