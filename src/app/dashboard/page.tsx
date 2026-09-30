@@ -89,12 +89,20 @@ export default function DashboardPage() {
               : "—"}
         </p>
         <p className="mt-1 text-[10px] text-white/50">1 point = ₦1</p>
-        <Link
-          href="/account/deposit"
-          className="mt-4 flex w-full items-center justify-center rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-brand"
-        >
-          Buy points
-        </Link>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Link
+            href="/account/deposit"
+            className="flex items-center justify-center rounded-xl bg-white px-3 py-2.5 text-sm font-semibold text-brand"
+          >
+            Buy points
+          </Link>
+          <Link
+            href="/account/withdraw"
+            className="flex items-center justify-center rounded-xl border border-white/40 px-3 py-2.5 text-sm font-semibold text-white"
+          >
+            Withdraw
+          </Link>
+        </div>
       </div>
 
       {/* Quick actions */}
@@ -161,6 +169,7 @@ export default function DashboardPage() {
       {/* Menu */}
       <div className="overflow-hidden rounded-2xl bg-surface shadow-card">
         <MenuItem icon="💳" label="Buy points" href="/account/deposit" />
+        <MenuItem icon="🏦" label="Withdraw" href="/account/withdraw" />
         <MenuItem icon="👤" label="Profile" href="/account/profile" />
         <MenuItem icon="🎫" label="Bet history" href="/bets" />
         <MenuItem icon="📋" label="Transaction records" href="/transactions" />
@@ -212,4 +221,4 @@ function MenuItem({
       </svg>
     </Link>
   );
-                                  }
+  }
