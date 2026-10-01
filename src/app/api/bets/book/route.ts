@@ -4,13 +4,23 @@ import { securityLog } from "@/lib/security/securityLog";
 import { adminDb } from "@/lib/firebase/admin";
 import type { BetLeg, BookingCode, Match } from "@/types/domain";
 
+/** Phase 4: longer code space (8 chars ≈ 32^8, avoids easy enumeration). */
 function generateCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 8; i++) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return "FB-" + code;
+}
+
+async function allocateUniqueCode(maxAttempts = 6): Promise<string> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const code = generateCode();
+    const existing = await adminDb.collection("booking_codes").doc(code).get();
+    if (!existing.exists) return code;
+  }
+  throw new Error("Could not allocate booking code");
 }
 
 function isMatchFinished(status: string | undefined): boolean {
@@ -38,26 +48,50 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const code = generateCode();
-  const totalOdds = legs.reduce((acc, l) => acc * (l.odds || 1), 1);
-  const now = Date.now();
+  // Cap legs to stop payload abuse
+  if (legs.length > 20) {
+    return NextResponse.json(
+      { error: "Too many selections on one booking code" },
+      { status: 400 }
+    );
+  }
 
-  const doc: BookingCode = {
-    id: code,
-    legs,
-    totalOdds,
-    createdAt: now,
-  };
+  try {
+    const code = await allocateUniqueCode();
+    const totalOdds = legs.reduce((acc, l) => acc * (Number(l.odds) || 1), 1);
+    const now = Date.now();
 
-  await adminDb.collection("booking_codes").doc(code).set(doc);
+    const doc: BookingCode = {
+      id: code,
+      legs,
+      totalOdds,
+      createdAt: now,
+    };
 
-  return NextResponse.json({ ok: true, code, totalOdds });
+    await adminDb.collection("booking_codes").doc(code).set(doc);
+    void securityLog({
+      type: "BOOK_CODE",
+      ip,
+      meta: { code, legCount: legs.length },
+    });
+
+    return NextResponse.json({ ok: true, code, totalOdds });
+  } catch {
+    return NextResponse.json(
+      { error: "Could not create booking code" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function GET(request: NextRequest) {
+  const ip = clientIp(request);
+  const limited = await enforceRateLimit("book_code", `load:${ip}`);
+  if (limited) return limited;
+
   const { searchParams } = new URL(request.url);
   const raw = searchParams.get("code")?.trim() ?? "";
-  const code = raw.toUpperCase();
+  const code = raw.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 16);
 
   if (!code) {
     return NextResponse.json(
@@ -126,4 +160,4 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, booking });
-}
+      }
