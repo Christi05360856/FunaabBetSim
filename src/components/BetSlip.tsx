@@ -70,6 +70,19 @@ export function BetSlip() {
     setMounted(true);
   }, []);
 
+  // Lock page scroll while bet slip sheet is open (stops fixtures scrolling underneath)
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    const prevTouch = document.body.style.touchAction;
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouch;
+    };
+  }, [isOpen]);
+
   // Stale code when selection count changes
   useEffect(() => {
     setBookingCode(null);
@@ -122,6 +135,9 @@ export function BetSlip() {
         selectionId: i.selectionId,
         selectionLabel: i.selectionLabel,
         odds: i.odds,
+        homeTeamName: i.homeTeamName,
+        awayTeamName: i.awayTeamName,
+        marketName: i.marketName,
       }));
       const res = await fetch("/api/bets", {
         method: "POST",
@@ -171,6 +187,9 @@ export function BetSlip() {
         selectionId: i.selectionId,
         selectionLabel: i.selectionLabel,
         odds: i.odds,
+        homeTeamName: i.homeTeamName,
+        awayTeamName: i.awayTeamName,
+        marketName: i.marketName,
       }));
       const res = await fetch("/api/bets/book", {
         method: "POST",
@@ -212,12 +231,19 @@ export function BetSlip() {
       }[];
       if (!legs.length) throw new Error("Empty booking");
       loadLegs(
-        legs.map((l) => ({
-          ...l,
-          homeTeamName: (l as { homeTeamName?: string }).homeTeamName ?? "Home",
-          awayTeamName: (l as { awayTeamName?: string }).awayTeamName ?? "Away",
-          marketName: (l as { marketName?: string }).marketName ?? "1X2",
-        }))
+        legs.map((l) => {
+          const x = l as {
+            homeTeamName?: string;
+            awayTeamName?: string;
+            marketName?: string;
+          };
+          return {
+            ...l,
+            homeTeamName: (x.homeTeamName || "").trim() || "Home",
+            awayTeamName: (x.awayTeamName || "").trim() || "Away",
+            marketName: (x.marketName || "").trim() || "Market",
+          };
+        })
       );
       setLoadCodeInput("");
       setFeedback("Code loaded");
@@ -702,4 +728,4 @@ function TicketIcon() {
       <path d="M20 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v2a2 2 0 010 4v2a2 2 0 002 2h12a2 2 0 002-2v-2a2 2 0 010-4zM8 13H6v-2h2v2zm0-4H6V7h2v2zm4 4h-2v-2h2v2zm0-4h-2V7h2v2zm4 4h-2v-2h2v2zm0-4h-2V7h2v2z" />
     </svg>
   );
-}
+                }
