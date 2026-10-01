@@ -91,7 +91,7 @@ export default function WithdrawPage() {
     setSuccess(null);
     setBusy(true);
     try {
-      const token = await user.getIdToken();
+      const token = await user.getIdToken(true); // Phase 3: fresh token / auth_time
       const res = await fetch("/api/withdrawals/request", {
         method: "POST",
         headers: {
@@ -161,6 +161,16 @@ export default function WithdrawPage() {
           {MIN_WITHDRAWAL.toLocaleString("en-NG")} · Max ₦
           {MAX_WITHDRAWAL.toLocaleString("en-NG")} / day
         </p>
+      </div>
+
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] leading-relaxed text-amber-950">
+        <p className="font-bold">Security</p>
+        <ul className="mt-1 list-disc space-y-0.5 pl-4">
+          <li>Sign in again if you have been logged in a long time — withdrawals need a recent session.</li>
+          <li>New accounts wait about 1 hour before the first withdrawal.</li>
+          <li>After your first request, payout bank stays locked to that account.</li>
+          <li>Never share your password. Staff will never ask for it.</li>
+        </ul>
       </div>
 
       {!showPendingOnly && (
@@ -282,4 +292,4 @@ export default function WithdrawPage() {
       )}
     </main>
   );
-               }
+            }
