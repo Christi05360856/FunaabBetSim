@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { revalidateTag } from "next/cache";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
+import { requireRecentAuth } from "@/lib/security/sessionGate";
+import { securityLog } from "@/lib/security/securityLog";
+import { clientIp } from "@/lib/security/rateLimit";
 import { adminDb } from "@/lib/firebase/admin";
 import type { Competition, Match, Wallet } from "@/types/domain";
 import { STARTING_BALANCE } from "@/types/domain";
@@ -61,6 +64,11 @@ export async function POST(request: NextRequest) {
   if (!decoded) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  const recent = requireRecentAuth(decoded, 15 * 60); // 15 min for Danger
+  if (!recent.ok) {
+    return NextResponse.json({ error: recent.error }, { status: 401 });
+  }
+
 
   // Phase 0: destructive scopes blocked in production unless explicitly allowed
   const bodyEarly = await request.clone().json().catch(() => ({}));
@@ -387,4 +395,4 @@ export async function POST(request: NextRequest) {
   }
   }
 
-          
+  
