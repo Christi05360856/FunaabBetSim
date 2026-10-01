@@ -8,7 +8,7 @@ import type { BetLeg, BookingCode, Match } from "@/types/domain";
 function generateCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 5; i++) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return "FB-" + code;
@@ -159,5 +159,63 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ ok: true, booking });
+  // Hydrate team / market labels (stored on new codes; older codes get lookup)
+  const teamIds = new Set<string>();
+  const matchMap = new Map<string, Match>();
+  for (const ms of matchSnaps) {
+    if (!ms.exists) continue;
+    const m = ms.data() as Match;
+    matchMap.set(ms.id, m);
+    if (m.homeTeamId) teamIds.add(m.homeTeamId);
+    if (m.awayTeamId) teamIds.add(m.awayTeamId);
+  }
+  const teamMap = new Map<string, { name?: string; shortName?: string }>();
+  if (teamIds.size > 0) {
+    const snaps = await Promise.all(
+      Array.from(teamIds).map((id) => adminDb.collection("teams").doc(id).get())
+    );
+    for (const s of snaps) {
+      if (s.exists) {
+        teamMap.set(s.id, s.data() as { name?: string; shortName?: string });
       }
+    }
+  }
+
+  const enrichedLegs = legs.map((l) => {
+    const leg = l as BetLeg & {
+      homeTeamName?: string;
+      awayTeamName?: string;
+      marketName?: string;
+    };
+    const m = matchMap.get(leg.matchId);
+    const homeTeam = m?.homeTeamId ? teamMap.get(m.homeTeamId) : undefined;
+    const awayTeam = m?.awayTeamId ? teamMap.get(m.awayTeamId) : undefined;
+    const home =
+      (leg.homeTeamName && leg.homeTeamName !== "Home"
+        ? leg.homeTeamName
+        : null) ||
+      homeTeam?.name ||
+      homeTeam?.shortName ||
+      leg.homeTeamName ||
+      "Home";
+    const away =
+      (leg.awayTeamName && leg.awayTeamName !== "Away"
+        ? leg.awayTeamName
+        : null) ||
+      awayTeam?.name ||
+      awayTeam?.shortName ||
+      leg.awayTeamName ||
+      "Away";
+    return {
+      ...leg,
+      homeTeamName: home,
+      awayTeamName: away,
+      marketName: leg.marketName || "Market",
+    };
+  });
+
+  return NextResponse.json({
+    ok: true,
+    booking: { ...booking, legs: enrichedLegs },
+  });
+}
