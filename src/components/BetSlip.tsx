@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -14,7 +15,33 @@ import {
 import { formatMoney } from "@/lib/domain/selectionLabel";
 import { isValidPromoTicket } from "@/lib/domain/wallet";
 
+async function copyText(value: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = value;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export function BetSlip() {
+
   const pathname = usePathname();
   const { user } = useAuth();
   const { wallet } = useWallet();
@@ -37,6 +64,17 @@ export function BetSlip() {
   const [loadingCode, setLoadingCode] = useState(false);
   /** cash = normal; promo = spend promo points only */
   const [fundMode, setFundMode] = useState<"cash" | "promo">("cash");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Stale code when selection count changes
+  useEffect(() => {
+    setBookingCode(null);
+    setCodeCopied(false);
+  }, [items.length, totalOdds]);
 
   if (pathname?.startsWith("/admin")) return null;
 
@@ -116,8 +154,13 @@ export function BetSlip() {
     }
   }
 
-  async function bookCode() {
+  async function bookCode(forceNew = false) {
     if (!user || items.length === 0) return;
+    // Re-open existing code instead of minting a new one on every tap
+    if (bookingCode && !forceNew) {
+      setCodeCopied(false);
+      return;
+    }
     setSubmitting(true);
     setFeedback(null);
     try {
@@ -499,128 +542,156 @@ export function BetSlip() {
         )}
       </div>
 
-      {/* Phase 4+ booking share sheet */}
-      {bookingCode && (
-        <div
-          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="booking-code-title"
-          onClick={() => setBookingCode(null)}
-        >
+
+      {mounted &&
+        bookingCode &&
+        createPortal(
           <div
-            className="w-full max-w-md rounded-t-3xl bg-surface px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4 shadow-xl sm:rounded-3xl"
-            onClick={(e) => e.stopPropagation()}
+            className="pointer-events-auto fixed inset-0 z-[200] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="booking-code-title"
           >
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-muted/25 sm:hidden" />
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p
-                  id="booking-code-title"
-                  className="text-sm font-bold text-ink"
+            <button
+              type="button"
+              className="absolute inset-0 cursor-default"
+              aria-label="Close booking code"
+              onClick={() => {
+                setBookingCode(null);
+                setCodeCopied(false);
+              }}
+            />
+            <div className="relative z-[201] w-full max-w-md rounded-t-3xl bg-surface px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4 shadow-xl sm:rounded-3xl">
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-muted/25 sm:hidden" />
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p id="booking-code-title" className="text-sm font-bold text-ink">
+                    Booking code
+                  </p>
+                  <p className="text-[11px] text-ink-muted">
+                    Share this code so a friend can load the same picks
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-ink-muted/10 text-xl leading-none text-ink"
+                  aria-label="Close"
+                  onClick={() => {
+                    setBookingCode(null);
+                    setCodeCopied(false);
+                  }}
                 >
-                  Booking code
+                  ×
+                </button>
+              </div>
+
+              <div className="mt-4 select-all rounded-2xl border border-ink-muted/10 bg-bg px-4 py-5 text-center">
+                <p className="font-mono text-2xl font-extrabold tracking-[0.15em] text-ink sm:text-3xl">
+                  {bookingCode}
                 </p>
-                <p className="text-[11px] text-ink-muted">
-                  Share this code so a friend can load the same picks
+                <p className="mt-2 text-[11px] text-ink-muted">
+                  {items.length} selection{items.length === 1 ? "" : "s"} · odds{" "}
+                  {totalOdds.toFixed(2)}
                 </p>
               </div>
-              <button
-                type="button"
-                className="rounded-full px-2 py-1 text-lg leading-none text-ink-muted"
-                aria-label="Close"
-                onClick={() => setBookingCode(null)}
-              >
-                ×
-              </button>
-            </div>
 
-            <div className="mt-4 rounded-2xl border border-ink-muted/10 bg-bg px-4 py-5 text-center">
-              <p className="font-mono text-2xl font-extrabold tracking-[0.2em] text-ink sm:text-3xl">
-                {bookingCode}
-              </p>
-              <p className="mt-2 text-[11px] text-ink-muted">
-                {items.length} selection{items.length === 1 ? "" : "s"} · odds{" "}
-                {totalOdds.toFixed(2)}
-              </p>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                className="rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(bookingCode);
-                    setCodeCopied(true);
-                  } catch {
-                    setCodeCopied(false);
-                  }
-                }}
-              >
-                {codeCopied ? "Copied ✓" : "Copy code"}
-              </button>
-              <button
-                type="button"
-                className="rounded-xl border-2 border-emerald-600 py-3 text-sm font-bold text-emerald-700"
-                onClick={async () => {
-                  const text =
-                    "FUNAAB BetSim booking code: " +
-                    bookingCode +
-                    " — load it in Bet slip to get my picks.";
-                  try {
-                    if (navigator.share) {
-                      await navigator.share({ title: "Booking code", text });
-                    } else {
-                      await navigator.clipboard.writeText(text);
-                      setCodeCopied(true);
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className="rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white active:opacity-90"
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const ok = await copyText(bookingCode);
+                    setCodeCopied(ok);
+                    if (!ok) {
+                      setFeedback("Long-press the code to copy");
                     }
-                  } catch {
-                    /* user cancelled share */
-                  }
-                }}
-              >
-                Share
-              </button>
-            </div>
-
-            <div className="mt-3 flex justify-center gap-4 text-xs font-semibold text-emerald-700">
-              <a
-                className="underline"
-                href={
-                  "https://wa.me/?text=" +
-                  encodeURIComponent(
-                    "FUNAAB BetSim code " +
+                  }}
+                >
+                  {codeCopied ? "Copied ✓" : "Copy code"}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl border-2 border-emerald-600 py-3 text-sm font-bold text-emerald-700 active:opacity-90"
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const text =
+                      "FUNAAB BetSim booking code: " +
                       bookingCode +
-                      " — open Bet slip → Load code"
-                  )
-                }
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                WhatsApp
-              </a>
-              <a
-                className="underline"
-                href={
-                  "https://t.me/share/url?url=" +
-                  encodeURIComponent("https://funaab-betsim.vercel.app") +
-                  "&text=" +
-                  encodeURIComponent("Booking code: " + bookingCode)
-                }
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Telegram
-              </a>
-            </div>
+                      " — open Bet slip → Load code to get my picks.";
+                    try {
+                      if (navigator.share) {
+                        await navigator.share({
+                          title: "FUNAAB BetSim",
+                          text,
+                        });
+                      } else {
+                        const ok = await copyText(text);
+                        setCodeCopied(ok);
+                        setFeedback(ok ? "Share text copied" : "Could not share");
+                      }
+                    } catch {
+                      /* cancelled */
+                    }
+                  }}
+                >
+                  Share
+                </button>
+              </div>
 
-            <p className="mt-4 text-center text-[10px] text-ink-muted">
-              Codes stop working after matches finish
-            </p>
-          </div>
-        </div>
-      )}
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-4 text-xs font-semibold text-emerald-700">
+                <a
+                  className="underline"
+                  href={
+                    "https://wa.me/?text=" +
+                    encodeURIComponent(
+                      "FUNAAB BetSim code " +
+                        bookingCode +
+                        " — open Bet slip → Load code"
+                    )
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  WhatsApp
+                </a>
+                <a
+                  className="underline"
+                  href={
+                    "https://t.me/share/url?url=" +
+                    encodeURIComponent("https://funaab-betsim.vercel.app") +
+                    "&text=" +
+                    encodeURIComponent("Booking code: " + bookingCode)
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Telegram
+                </a>
+                <button
+                  type="button"
+                  className="text-ink-muted underline"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void bookCode(true);
+                  }}
+                >
+                  New code
+                </button>
+              </div>
+
+              <p className="mt-4 text-center text-[10px] text-ink-muted">
+                Codes stop working after matches finish
+              </p>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
