@@ -15,6 +15,12 @@ import {
 } from "@/types/domain";
 import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
 import { securityLog } from "@/lib/security/securityLog";
+import {
+  requireRecentAuth,
+  requireAccountAge,
+  requireStablePayoutDestination,
+  normalizeAccountName,
+} from "@/lib/security/sessionGate";
 
 function startOfTodayMs(): number {
   const d = new Date();
@@ -56,11 +62,32 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  if (accountName.length < 3) {
+  if (accountName.length < 5) {
     return NextResponse.json(
       { error: "Account name is required (must match bank records)" },
       { status: 400 }
     );
+  }
+  const normalizedName = normalizeAccountName(accountName);
+  if (normalizedName.length < 3) {
+    return NextResponse.json(
+      { error: "Account name must contain a valid name (letters)" },
+      { status: 400 }
+    );
+  }
+
+  // Phase 3 — session & account gates
+  const recent = requireRecentAuth(decoded);
+  if (!recent.ok) {
+    return NextResponse.json({ error: recent.error }, { status: 401 });
+  }
+  const ageGate = await requireAccountAge(uid);
+  if (!ageGate.ok) {
+    return NextResponse.json({ error: ageGate.error }, { status: 403 });
+  }
+  const payoutLock = await requireStablePayoutDestination(uid, bankCode, accountNumber);
+  if (!payoutLock.ok) {
+    return NextResponse.json({ error: payoutLock.error }, { status: 403 });
   }
 
   try {
@@ -176,4 +203,5 @@ export async function POST(request: NextRequest) {
       : 500;
     return NextResponse.json({ error: msg }, { status });
   }
-}
+      }
+          
