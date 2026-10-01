@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
+import { securityLog } from "@/lib/security/securityLog";
 import { adminDb } from "@/lib/firebase/admin";
 import type { Bet, Match, Team } from "@/types/domain";
 
@@ -106,6 +107,13 @@ export async function GET(request: NextRequest) {
 
   const ticketCode =
     (bet as Bet & { ticketCode?: string }).ticketCode || bet.id.toUpperCase();
+
+  // Phase 4: public verify — no uid, no bank, no internal ids beyond ticket
+  void securityLog({
+    type: "VERIFY_TICKET",
+    ip,
+    meta: { ticket: String(ticketCode).slice(0, 16) },
+  });
 
   return NextResponse.json({
     ok: true,
