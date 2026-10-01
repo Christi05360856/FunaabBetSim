@@ -37,11 +37,35 @@ export default function FixturesPage() {
   const [marketsByMatch, setMarketsByMatch] = useState<
     Record<string, Partial<Record<Market["type"], Market>>>
   >({});
-  const [activeFilter, setActiveFilter] = useState<FilterTab>("today");
+  const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [marketTab, setMarketTab] = useState<MarketTab>("match_winner");
   const [ouLine, setOuLine] = useState<number>(2.5);
   const [sortBy, setSortBy] = useState<SortBy>("time");
   const [leagueId, setLeagueId] = useState<string>("all");
+
+  // Restore filter/league when returning from match detail
+  useEffect(() => {
+    try {
+      const f = sessionStorage.getItem("fixtures_filter") as FilterTab | null;
+      const l = sessionStorage.getItem("fixtures_league");
+      if (f === "all" || f === "today" || f === "live" || f === "hot") {
+        setActiveFilter(f);
+      }
+      if (l) setLeagueId(l);
+    } catch {
+      /* private mode */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("fixtures_filter", activeFilter);
+      sessionStorage.setItem("fixtures_league", leagueId);
+    } catch {
+      /* private mode */
+    }
+  }, [activeFilter, leagueId]);
+
   const slip = useBetSlip();
 
   // One cached API call instead of four live Firestore listeners.
