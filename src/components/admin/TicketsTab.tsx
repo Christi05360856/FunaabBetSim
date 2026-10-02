@@ -3,25 +3,36 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth/AuthContext";
 
+type Msg = {
+  id: string;
+  from: "user" | "admin" | "bot";
+  body: string;
+  createdAt: number;
+};
+
 type Ticket = {
   id: string;
   uid: string;
   email: string | null;
   subject: string;
-  body: string;
+  category: string;
   status: string;
-  adminNote: string | null;
+  closeReason?: string | null;
   createdAt: number;
   updatedAt: number;
+  messages: Msg[];
+  body?: string;
 };
 
 export default function TicketsTab() {
   const { user } = useAuth();
   const [items, setItems] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>("");
+  const [filter, setFilter] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [reply, setReply] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -47,12 +58,9 @@ export default function TicketsTab() {
     void load();
   }, [load]);
 
-  async function update(
-    id: string,
-    patch: { status?: string; adminNote?: string }
-  ) {
+  async function setStatus(id: string, status: string) {
     if (!user) return;
-    setBusy(id);
+    setBusy(true);
     try {
       const token = await user.getIdToken();
       const res = await fetch("/api/admin/tickets", {
@@ -61,7 +69,7 @@ export default function TicketsTab() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ id, ...patch }),
+        body: JSON.stringify({ id, status }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Update failed");
@@ -69,8 +77,49 @@ export default function TicketsTab() {
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Update failed");
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
+  }
+
+  async function sendReply(id: string) {
+    if (!user || !reply.trim()) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/admin/tickets", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id, body: reply.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Reply failed");
+      setReply("");
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Reply failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function threadMessages(t: Ticket): Msg[] {
+    if (t.messages?.length) return t.messages;
+    if (t.body) {
+      return [
+        { id: "legacy", from: "user", body: t.body, createdAt: t.createdAt },
+      ];
+    }
+    return [];
+  }
+
+  function bubbleClass(from: string) {
+    if (from === "admin") return "bg-brand text-white ml-auto";
+    if (from === "bot") return "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100";
+    return "bg-adm-bg text-adm-ink";
   }
 
   return (
@@ -78,7 +127,8 @@ export default function TicketsTab() {
       <div>
         <h2 className="font-display text-lg font-bold">Support tickets</h2>
         <p className="text-sm text-adm-faint">
-          User messages from the Support page. Mark in progress or closed.
+          Users reach you after the help bot. Reply in the thread. Idle chats
+          auto-close after 1 hour.
         </p>
       </div>
 
@@ -123,75 +173,144 @@ export default function TicketsTab() {
         <p className="text-sm text-adm-faint">No tickets yet.</p>
       ) : (
         <ul className="space-y-3">
-          {items.map((t) => (
-            <li
-              key={t.id}
-              className="rounded-xl border border-adm-border bg-adm-surface p-4"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <p className="font-semibold">{t.subject}</p>
-                  <p className="text-xs text-adm-faint">
-                    {t.email || t.uid} ·{" "}
-                    {new Date(t.createdAt).toLocaleString()}
-                  </p>
-                </div>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                    t.status === "open"
-                      ? "bg-amber-500/15 text-amber-600"
-                      : t.status === "closed"
-                        ? "bg-zinc-500/15 text-zinc-500"
-                        : "bg-sky-500/15 text-sky-600"
-                  }`}
+          {items.map((t) => {
+            const expanded = openId === t.id;
+            const msgs = threadMessages(t);
+            const preview =
+              msgs.length > 0 ? msgs[msgs.length - 1].body : t.subject;
+            return (
+              <li
+                key={t.id}
+                className="rounded-xl border border-adm-border bg-adm-surface p-4"
+              >
+                <button
+                  type="button"
+                  className="flex w-full flex-wrap items-start justify-between gap-2 text-left"
+                  onClick={() => {
+                    setOpenId(expanded ? null : t.id);
+                    setReply("");
+                  }}
                 >
-                  {t.status.replace("_", " ")}
-                </span>
-              </div>
-              <p className="mt-2 whitespace-pre-wrap text-sm">{t.body}</p>
-              {t.adminNote && (
-                <p className="mt-2 text-xs text-adm-faint">
-                  Note: {t.adminNote}
-                </p>
-              )}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {t.status !== "in_progress" && (
-                  <button
-                    type="button"
-                    disabled={busy === t.id}
-                    onClick={() =>
-                      void update(t.id, { status: "in_progress" })
-                    }
-                    className="rounded-lg bg-sky-600/90 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                  <div className="min-w-0">
+                    <p className="font-semibold">{t.subject}</p>
+                    <p className="text-xs text-adm-faint">
+                      {t.email || t.uid} · {t.category}
+                      {t.closeReason ? ` · ${t.closeReason}` : ""} ·{" "}
+                      {new Date(t.updatedAt || t.createdAt).toLocaleString()}
+                    </p>
+                    {!expanded && (
+                      <p className="mt-1 line-clamp-2 text-sm text-adm-faint">
+                        {preview}
+                      </p>
+                    )}
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                      t.status === "open"
+                        ? "bg-amber-500/15 text-amber-600"
+                        : t.status === "closed"
+                          ? "bg-zinc-500/15 text-zinc-500"
+                          : "bg-sky-500/15 text-sky-600"
+                    }`}
                   >
-                    In progress
-                  </button>
+                    {t.status.replace("_", " ")}
+                  </span>
+                </button>
+
+                {expanded && (
+                  <div className="mt-3 space-y-3 border-t border-adm-border pt-3">
+                    <div className="flex max-h-72 flex-col gap-2 overflow-y-auto">
+                      {msgs.map((m) => (
+                        <div
+                          key={m.id}
+                          className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm ${bubbleClass(
+                            m.from
+                          )} ${m.from === "admin" ? "self-end" : "self-start"}`}
+                        >
+                          <p className="whitespace-pre-wrap">{m.body}</p>
+                          <p className="mt-1 text-[10px] opacity-70">
+                            {m.from === "admin"
+                              ? "You"
+                              : m.from === "bot"
+                                ? "Bot"
+                                : "User"}{" "}
+                            · {new Date(m.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {t.status !== "closed" ? (
+                      <div className="flex gap-2">
+                        <input
+                          value={reply}
+                          onChange={(e) => setReply(e.target.value)}
+                          placeholder="Reply as agent…"
+                          disabled={busy}
+                          className="min-w-0 flex-1 rounded-xl border border-adm-border bg-adm-bg px-3 py-2 text-sm outline-none focus:border-brand"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              void sendReply(t.id);
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          disabled={busy || !reply.trim()}
+                          onClick={() => void sendReply(t.id)}
+                          className="rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                        >
+                          Reply
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-adm-faint">
+                        Closed
+                        {t.closeReason ? ` (${t.closeReason})` : ""}. Reopen to
+                        reply.
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap gap-2">
+                      {t.status !== "in_progress" && t.status !== "closed" && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void setStatus(t.id, "in_progress")}
+                          className="rounded-lg bg-sky-600/90 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                        >
+                          In progress
+                        </button>
+                      )}
+                      {t.status !== "closed" && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void setStatus(t.id, "closed")}
+                          className="rounded-lg bg-zinc-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                        >
+                          Close
+                        </button>
+                      )}
+                      {t.status === "closed" && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void setStatus(t.id, "open")}
+                          className="rounded-lg border border-adm-border px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                        >
+                          Reopen
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 )}
-                {t.status !== "closed" && (
-                  <button
-                    type="button"
-                    disabled={busy === t.id}
-                    onClick={() => void update(t.id, { status: "closed" })}
-                    className="rounded-lg bg-zinc-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                  >
-                    Close
-                  </button>
-                )}
-                {t.status === "closed" && (
-                  <button
-                    type="button"
-                    disabled={busy === t.id}
-                    onClick={() => void update(t.id, { status: "open" })}
-                    className="rounded-lg border border-adm-border px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
-                  >
-                    Reopen
-                  </button>
-                )}
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
   );
-}
+                      }
