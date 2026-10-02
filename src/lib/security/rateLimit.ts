@@ -9,7 +9,8 @@ export type RateLimitBucket =
   | "withdraw_request"
   | "book_code"
   | "verify_ticket"
-  | "auth_fail";
+  | "auth_fail"
+  | "support_ticket";
 
 type LimitConfig = { max: number; windowMs: number };
 
@@ -21,6 +22,7 @@ const LIMITS: Record<RateLimitBucket, LimitConfig> = {
   book_code: { max: 30, windowMs: 60 * 60 * 1000 }, // 30 / hour
   verify_ticket: { max: 40, windowMs: 60 * 60 * 1000 }, // 40 / hour
   auth_fail: { max: 20, windowMs: 15 * 60 * 1000 }, // 20 / 15 min
+  support_ticket: { max: 8, windowMs: 24 * 60 * 60 * 1000 }, // 8 / day
 };
 
 /**
