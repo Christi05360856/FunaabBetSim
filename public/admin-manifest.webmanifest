@@ -3,7 +3,7 @@
   "name": "FUNAAB BetSim Admin",
   "short_name": "BetSim Admin",
   "description": "Admin console for FUNAAB BetSim — KYC, withdrawals, fixtures.",
-  "start_url": "/admin",
+  "start_url": "/admin?source=pwa_admin",
   "scope": "/admin",
   "display": "standalone",
   "orientation": "portrait-primary",
@@ -21,7 +21,7 @@
       "src": "/icons/admin-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable"
     }
   ]
 }
