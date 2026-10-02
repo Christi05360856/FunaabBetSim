@@ -15,20 +15,57 @@ export type RateLimitBucket =
 type LimitConfig = { max: number; windowMs: number };
 
 const LIMITS: Record<RateLimitBucket, LimitConfig> = {
-  register: { max: 5, windowMs: 60 * 60 * 1000 }, // 5 / hour per key
-  place_bet: { max: 40, windowMs: 60 * 1000 }, // 40 / min
-  deposit_init: { max: 10, windowMs: 60 * 60 * 1000 }, // 10 / hour
-  withdraw_request: { max: 8, windowMs: 24 * 60 * 60 * 1000 }, // 8 / day
-  book_code: { max: 30, windowMs: 60 * 60 * 1000 }, // 30 / hour
-  verify_ticket: { max: 40, windowMs: 60 * 60 * 1000 }, // 40 / hour
-  auth_fail: { max: 20, windowMs: 15 * 60 * 1000 }, // 20 / 15 min
-  support_ticket: { max: 8, windowMs: 24 * 60 * 60 * 1000 }, // 8 / day
+  register: { max: 5, windowMs: 60 * 60 * 1000 },
+  place_bet: { max: 40, windowMs: 60 * 1000 },
+  deposit_init: { max: 10, windowMs: 60 * 60 * 1000 },
+  withdraw_request: { max: 8, windowMs: 24 * 60 * 60 * 1000 },
+  book_code: { max: 30, windowMs: 60 * 60 * 1000 },
+  verify_ticket: { max: 40, windowMs: 60 * 60 * 1000 },
+  auth_fail: { max: 20, windowMs: 15 * 60 * 1000 },
+  support_ticket: { max: 8, windowMs: 24 * 60 * 60 * 1000 },
 };
 
+function humanWait(ms: number): string {
+  const sec = Math.max(1, Math.ceil(ms / 1000));
+  if (sec < 60) return `${sec} second${sec === 1 ? "" : "s"}`;
+  const min = Math.ceil(sec / 60);
+  if (min < 60) return `${min} minute${min === 1 ? "" : "s"}`;
+  const hr = Math.floor(min / 60);
+  const remMin = min % 60;
+  if (hr < 48) {
+    if (remMin === 0) return `${hr} hour${hr === 1 ? "" : "s"}`;
+    return `${hr}h ${remMin}m`;
+  }
+  const days = Math.ceil(hr / 24);
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+function messageFor(
+  bucket: RateLimitBucket,
+  retryAfterMs: number
+): string {
+  const wait = humanWait(retryAfterMs);
+  if (bucket === "withdraw_request") {
+    return `Withdrawal request limit reached (8 attempts per day). Try again in about ${wait}`;
+  }
+  if (bucket === "deposit_init") {
+    return `Too many deposit attempts. Try again in about ${wait}.`;
+  }
+  if (bucket === "place_bet") {
+    return `You're placing bets too quickly. Wait about ${wait} and try again.`;
+  }
+  if (bucket === "auth_fail") {
+    return `Too many failed sign-in attempts. Try again in about ${wait}.`;
+  }
+  if (bucket === "support_ticket") {
+    return `Support request limit reached. Try again in about ${wait}.`;
+  }
+  return `Too many requests. Please try again in about ${wait}.`;
+}
+
 /**
- * Firestore sliding-window counter (works on Vercel without Redis).
- * key should include uid and/or IP, e.g. `uid:abc` or `ip:1.2.3.4`.
- * Returns null if allowed, or a 429 NextResponse if blocked.
+ * Firestore sliding-window counter.
+ * Returns null if allowed, or a 429 NextResponse with clear retry timing.
  */
 export async function enforceRateLimit(
   bucket: RateLimitBucket,
@@ -43,7 +80,7 @@ export async function enforceRateLimit(
   const now = Date.now();
 
   try {
-    const blocked = await adminDb.runTransaction(async (tx) => {
+    const result = await adminDb.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       let count = 0;
       let windowStart = now;
@@ -59,7 +96,8 @@ export async function enforceRateLimit(
       }
 
       if (count >= cfg.max) {
-        return true;
+        const retryAfterMs = Math.max(1000, windowStart + cfg.windowMs - now);
+        return { blocked: true as const, retryAfterMs, windowStart, count };
       }
 
       tx.set(
@@ -75,24 +113,26 @@ export async function enforceRateLimit(
         },
         { merge: true }
       );
-      return false;
+      return { blocked: false as const, retryAfterMs: 0, windowStart, count };
     });
 
-    if (blocked) {
+    if (result.blocked) {
+      const retrySec = Math.max(1, Math.ceil(result.retryAfterMs / 1000));
       return NextResponse.json(
         {
-          error: "Too many requests. Please wait and try again.",
+          error: messageFor(bucket, result.retryAfterMs),
           bucket,
+          retryAfterSeconds: retrySec,
+          retryAfterMs: result.retryAfterMs,
         },
         {
           status: 429,
-          headers: { "Retry-After": "60" },
+          headers: { "Retry-After": String(retrySec) },
         }
       );
     }
     return null;
   } catch (err) {
-    // Fail open on rate-limit infra errors so money paths still work
     console.error("rateLimit error", bucket, err);
     return null;
   }
