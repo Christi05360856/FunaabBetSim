@@ -8,6 +8,9 @@ import {
 } from "@/lib/domain/ledgerEngine";
 import { flutterwaveTransfer } from "@/lib/payments/flutterwave";
 import type { Wallet, Withdrawal } from "@/types/domain";
+import { requireAdminTotp } from "@/lib/security/adminTotp";
+import { resolveUserEmail, sendMail } from "@/lib/email/send";
+import { withdrawalEmailHtml } from "@/lib/email/templates";
 
 /**
  * body: { withdrawalId, mode: "manual" | "flutterwave", note? }
@@ -24,6 +27,11 @@ export async function POST(request: NextRequest) {
   const withdrawalId = String(body.withdrawalId ?? "").trim();
   const mode = body.mode === "flutterwave" ? "flutterwave" : "manual";
   const note = body.note != null ? String(body.note).slice(0, 300) : null;
+
+  const totpErr = requireAdminTotp((body as { totpCode?: string }).totpCode);
+  if (totpErr) {
+    return NextResponse.json({ error: totpErr }, { status: 401 });
+  }
 
   if (!withdrawalId) {
     return NextResponse.json({ error: "withdrawalId required" }, { status: 400 });
@@ -137,6 +145,25 @@ export async function POST(request: NextRequest) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Complete failed";
     return NextResponse.json({ error: msg }, { status: 500 });
+  }
+
+  // P1 email
+  try {
+    const email = await resolveUserEmail(withdrawal.uid);
+    if (email) {
+      const tpl = withdrawalEmailHtml({
+        status: "completed",
+        amount: withdrawal.amount,
+      });
+      void sendMail({
+        to: email,
+        subject: tpl.subject,
+        html: tpl.html,
+        text: tpl.text,
+      });
+    }
+  } catch (e) {
+    console.error("withdrawal email failed", e);
   }
 
   return NextResponse.json({
