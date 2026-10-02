@@ -8,6 +8,7 @@ import {
 } from "@/lib/domain/ledgerEngine";
 import type { Wallet, Withdrawal } from "@/types/domain";
 import { requireAdminTotp } from "@/lib/security/adminTotp";
+import { writeAdminAudit } from "@/lib/security/adminAudit";
 import { resolveUserEmail, sendMail } from "@/lib/email/send";
 import { withdrawalEmailHtml } from "@/lib/email/templates";
 
@@ -126,5 +127,15 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  await writeAdminAudit({
+    adminUid: admin.uid,
+    adminEmail: admin.email ?? null,
+    action: "withdrawal_reject",
+    targetType: "withdrawal",
+    targetId: withdrawalId,
+    meta: { note, amount: mailAmount, uid: mailUid },
+  });
+
   return NextResponse.json({ ok: true });
 }
+
