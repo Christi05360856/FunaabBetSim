@@ -63,6 +63,13 @@ export default function WithdrawalsTab() {
   ) {
     const user = auth.currentUser;
     if (!user) return;
+    // P1: optional until ADMIN_TOTP_SECRET is set on server
+    const totpCode =
+      typeof window !== "undefined"
+        ? window.prompt(
+            "Admin authenticator code (6 digits). Leave blank if TOTP not configured yet."
+          )
+        : null;
     setBusy(id);
     setMsg(null);
     try {
@@ -74,7 +81,11 @@ export default function WithdrawalsTab() {
             Authorization: "Bearer " + token,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ withdrawalId: id, note: "Rejected" }),
+          body: JSON.stringify({
+            withdrawalId: id,
+            note: "Rejected",
+            totpCode: totpCode || undefined,
+          }),
         });
         const body = await res.json();
         if (!res.ok) throw new Error(body.error ?? "Reject failed");
@@ -89,6 +100,7 @@ export default function WithdrawalsTab() {
           body: JSON.stringify({
             withdrawalId: id,
             mode: action === "approve-flw" ? "flutterwave" : "manual",
+            totpCode: totpCode || undefined,
           }),
         });
         const body = await res.json();
