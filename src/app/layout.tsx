@@ -36,7 +36,6 @@ export const metadata: Metadata = {
   description:
     "Sports betting for the FUNAAB community — fixtures, accumulators, points wallet.",
   applicationName: "FUNAAB BetSim",
-  manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -45,7 +44,7 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
     ],
     apple: [{ url: "/icons/icon-192.png" }],
   },
@@ -76,6 +75,10 @@ export default function RootLayout({
       className={`${displayFont.variable} ${bodyFont.variable}`}
       suppressHydrationWarning
     >
+      <head>
+        {/* Plain manifest link — no crossorigin. Next metadata.manifest uses use-credentials and can block install on Chrome. */}
+        <link rel="manifest" href="/manifest.webmanifest" />
+      </head>
       <body>
         <ThemeProvider>
           <AuthProvider>
