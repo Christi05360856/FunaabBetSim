@@ -6,6 +6,8 @@ import { ThemeProvider } from "@/lib/context/ThemeProvider";
 import { BetSlip } from "@/components/BetSlip";
 import AppHeader from "@/components/AppHeader";
 import BottomNav from "@/components/BottomNav";
+import PwaRegister from "@/components/PwaRegister";
+import InstallPrompt from "@/components/InstallPrompt";
 import "./globals.css";
 
 const displayFont = Manrope({
@@ -41,8 +43,11 @@ export const metadata: Metadata = {
     title: "BetSim",
   },
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
-    apple: [{ url: "/icon.svg" }],
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/icons/icon-192.png" }],
   },
   formatDetection: {
     telephone: false,
@@ -79,6 +84,8 @@ export default function RootLayout({
               {children}
               <BetSlip />
               <BottomNav />
+              <InstallPrompt />
+              <PwaRegister />
             </BetSlipProvider>
           </AuthProvider>
         </ThemeProvider>
