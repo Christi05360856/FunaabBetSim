@@ -26,10 +26,10 @@ const NAV: { id: AdminTabId; label: string; icon: ReactNode }[] = [
   { id: "fixtures", label: "Fixtures", icon: Icons.fixtures },
   { id: "import", label: "Import", icon: Icons.import },
   { id: "withdrawals", label: "Withdrawals", icon: Icons.import },
+  { id: "compliance", label: "KYC / Audit", icon: Icons.dashboard },
   { id: "promos", label: "Promos", icon: Icons.import },
   { id: "sponsors", label: "Sponsors", icon: Icons.import },
   { id: "tickets", label: "Tickets", icon: Icons.import },
-  { id: "compliance", label: "Compliance", icon: Icons.import },
   { id: "platform", label: "Platform", icon: Icons.dashboard },
   { id: "danger", label: "Danger", icon: Icons.danger },
 ];
@@ -74,6 +74,52 @@ export function AdminThemeProvider({ children }: { children: ReactNode }) {
         {children}
       </div>
     </ThemeContext.Provider>
+  );
+}
+
+
+function AdminInstallButton() {
+  const [deferred, setDeferred] = useState<Event & {
+    prompt: () => Promise<void>;
+    userChoice: Promise<{ outcome: string }>;
+  } | null>(null);
+  const [hidden, setHidden] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(display-mode: standalone)").matches) {
+      setHidden(true);
+      return;
+    }
+    function onBip(e: Event) {
+      e.preventDefault();
+      setDeferred(e as Event & {
+        prompt: () => Promise<void>;
+        userChoice: Promise<{ outcome: string }>;
+      });
+    }
+    window.addEventListener("beforeinstallprompt", onBip);
+    return () => window.removeEventListener("beforeinstallprompt", onBip);
+  }, []);
+
+  if (hidden || !deferred) return null;
+
+  return (
+    <button
+      type="button"
+      className="rounded-lg border border-adm-brand/40 bg-adm-brand/10 px-2 py-1 text-xs font-semibold text-adm-brand-ink"
+      onClick={async () => {
+        try {
+          await deferred.prompt();
+          await deferred.userChoice;
+        } catch {
+          /* ignore */
+        }
+        setDeferred(null);
+      }}
+    >
+      Install app
+    </button>
   );
 }
 
@@ -159,6 +205,7 @@ export default function AdminLayout({
             <span className="hidden max-w-[16rem] truncate text-sm text-adm-muted sm:block">
               {email}
             </span>
+            <AdminInstallButton />
             <ThemeToggle />
           </div>
         </div>
