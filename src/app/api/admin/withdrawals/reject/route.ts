@@ -7,6 +7,9 @@ import {
   normalizeWallet,
 } from "@/lib/domain/ledgerEngine";
 import type { Wallet, Withdrawal } from "@/types/domain";
+import { requireAdminTotp } from "@/lib/security/adminTotp";
+import { resolveUserEmail, sendMail } from "@/lib/email/send";
+import { withdrawalEmailHtml } from "@/lib/email/templates";
 
 export async function POST(request: NextRequest) {
   const admin = await verifyAdminRequest(request);
@@ -18,9 +21,17 @@ export async function POST(request: NextRequest) {
   const withdrawalId = String(body.withdrawalId ?? "").trim();
   const note = body.note != null ? String(body.note).slice(0, 300) : "Rejected by admin";
 
+  const totpErr = requireAdminTotp((body as { totpCode?: string }).totpCode);
+  if (totpErr) {
+    return NextResponse.json({ error: totpErr }, { status: 401 });
+  }
+
   if (!withdrawalId) {
     return NextResponse.json({ error: "withdrawalId required" }, { status: 400 });
   }
+
+  let mailUid: string | null = null;
+  let mailAmount = 0;
 
   try {
     await adminDb.runTransaction(async (tx) => {
@@ -28,6 +39,8 @@ export async function POST(request: NextRequest) {
       const wSnap = await tx.get(wRef);
       if (!wSnap.exists) throw new Error("Not found");
       const w = wSnap.data() as Withdrawal;
+      mailUid = w.uid;
+      mailAmount = w.amount;
 
       if (w.status === "completed" || w.status === "rejected") {
         throw new Error(`Already ${w.status}`);
@@ -90,6 +103,27 @@ export async function POST(request: NextRequest) {
     const msg = e instanceof Error ? e.message : "Reject failed";
     const status = msg === "Not found" ? 404 : 400;
     return NextResponse.json({ error: msg }, { status });
+  }
+
+  if (mailUid) {
+    try {
+      const email = await resolveUserEmail(mailUid);
+      if (email) {
+        const tpl = withdrawalEmailHtml({
+          status: "rejected",
+          amount: mailAmount,
+          note,
+        });
+        void sendMail({
+          to: email,
+          subject: tpl.subject,
+          html: tpl.html,
+          text: tpl.text,
+        });
+      }
+    } catch (e) {
+      console.error("withdrawal reject email failed", e);
+    }
   }
 
   return NextResponse.json({ ok: true });
