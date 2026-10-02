@@ -102,7 +102,15 @@ function AdminInstallButton() {
     return () => window.removeEventListener("beforeinstallprompt", onBip);
   }, []);
 
-  if (hidden || !deferred) return null;
+  if (hidden) return null;
+
+  if (!deferred) {
+    return (
+      <span className="hidden max-w-[9rem] text-[10px] leading-tight text-adm-faint sm:inline">
+        Chrome menu → Install app for Admin (FA)
+      </span>
+    );
+  }
 
   return (
     <button
@@ -118,7 +126,7 @@ function AdminInstallButton() {
         setDeferred(null);
       }}
     >
-      Install app
+      Install Admin
     </button>
   );
 }
@@ -149,6 +157,26 @@ export default function AdminLayout({
   children: ReactNode;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Use a separate manifest so Admin can install as its own app (FA icon, opens /admin).
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    let link = document.querySelector(
+      'link[rel="manifest"]'
+    ) as HTMLLinkElement | null;
+    const previous = link?.getAttribute("href");
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "manifest";
+      document.head.appendChild(link);
+    }
+    link.setAttribute("href", "/admin-manifest.webmanifest");
+    return () => {
+      if (link && previous) link.setAttribute("href", previous);
+      else if (link && !previous) link.setAttribute("href", "/manifest.webmanifest");
+    };
+  }, []);
+
   const activeColor = (id: AdminTabId) =>
     id === "danger" ? "text-adm-bad" : "text-adm-brand-ink";
 
@@ -273,4 +301,4 @@ export default function AdminLayout({
       </nav>
     </>
   );
-}
+      }
