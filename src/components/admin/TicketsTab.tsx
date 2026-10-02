@@ -176,8 +176,8 @@ export default function TicketsTab() {
           {items.map((t) => {
             const expanded = openId === t.id;
             const msgs = threadMessages(t);
-            const preview =
-              msgs.length > 0 ? msgs[msgs.length - 1].body : t.subject;
+            const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : undefined;
+            const preview = lastMsg?.body ?? t.subject;
             return (
               <li
                 key={t.id}
@@ -313,4 +313,4 @@ export default function TicketsTab() {
       )}
     </div>
   );
-                      }
+                            }
