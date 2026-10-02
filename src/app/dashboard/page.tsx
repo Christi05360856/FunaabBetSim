@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useWallet } from "@/lib/hooks/useWallet";
+import { availableToBet, withdrawableBalance } from "@/lib/domain/wallet";
 import { formatMoney } from "@/lib/domain/selectionLabel";
 
 export default function DashboardPage() {
@@ -71,46 +72,79 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Balance */}
+      {/* Balance — free amounts only (not gross ledger buckets) */}
       <div className="rounded-2xl bg-gradient-to-br from-brand to-emerald-800 p-5 text-white shadow-card">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-xs font-medium text-white/70">Cash</p>
-            <p className="mt-1 break-all font-display text-xl font-bold tabular-nums">
+        <p className="text-xs font-medium text-white/70">Available to bet</p>
+        <p className="mt-1 break-all font-display text-3xl font-bold tabular-nums">
+          {walletLoading
+            ? "…"
+            : wallet
+              ? formatMoney(availableToBet(wallet))
+              : "—"}
+        </p>
+        <p className="mt-1 text-[11px] text-white/60">
+          Free cash + free promo · locks open bets & pending withdrawals
+        </p>
+
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="rounded-xl bg-white/10 px-3 py-2.5">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-white/60">
+              Withdrawable
+            </p>
+            <p className="mt-0.5 font-display text-lg font-bold tabular-nums">
               {walletLoading
                 ? "…"
                 : wallet
-                  ? formatMoney(wallet.purchased ?? 0)
+                  ? formatMoney(withdrawableBalance(wallet))
                   : "—"}
             </p>
-            <Link
-              href="/account/deposit"
-              className="mt-2 flex items-center justify-center rounded-xl bg-white px-2 py-2 text-xs font-semibold text-brand"
-            >
-              Buy points
-            </Link>
+            <p className="text-[10px] text-white/50">Cash only</p>
           </div>
-          <div>
-            <p className="text-xs font-medium text-white/70">Bonus (promo)</p>
-            <p className="mt-1 break-all font-display text-xl font-bold tabular-nums">
+          <div className="rounded-xl bg-white/10 px-3 py-2.5">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-white/60">
+              Promo total
+            </p>
+            <p className="mt-0.5 font-display text-lg font-bold tabular-nums">
               {walletLoading
                 ? "…"
                 : wallet
                   ? formatMoney(wallet.promo ?? 0)
                   : "—"}
             </p>
-            <Link
-              href="/account/withdraw"
-              className="mt-2 flex items-center justify-center rounded-xl border border-white/40 px-2 py-2 text-xs font-semibold text-white"
-            >
-              Withdraw
-            </Link>
+            <p className="text-[10px] text-white/50">Not withdrawable</p>
           </div>
         </div>
-        <p className="mt-3 text-[10px] text-white/50">
-          Total {wallet ? formatMoney(wallet.balance) : "—"} · Promo not
-          withdrawable · 1 point = ₦1
-        </p>
+
+        {(wallet?.reservedStake ?? 0) + (wallet?.reservedWithdrawal ?? 0) > 0 && (
+          <p className="mt-3 text-[10px] text-white/55">
+            Locked now:{" "}
+            {formatMoney(
+              (wallet?.reservedStake ?? 0) + (wallet?.reservedWithdrawal ?? 0)
+            )}
+            {(wallet?.reservedStake ?? 0) > 0
+              ? ` · stakes ${formatMoney(wallet?.reservedStake ?? 0)}`
+              : ""}
+            {(wallet?.reservedWithdrawal ?? 0) > 0
+              ? ` · withdrawal ${formatMoney(wallet?.reservedWithdrawal ?? 0)}`
+              : ""}
+          </p>
+        )}
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Link
+            href="/account/deposit"
+            className="flex items-center justify-center rounded-xl bg-white px-2 py-2.5 text-xs font-semibold text-brand"
+          >
+            Buy points
+          </Link>
+          <Link
+            href="/account/withdraw"
+            className="flex items-center justify-center rounded-xl border border-white/40 px-2 py-2.5 text-xs font-semibold text-white"
+          >
+            Withdraw
+          </Link>
+        </div>
+        <p className="mt-3 text-[10px] text-white/45">1 point = ₦1</p>
       </div>
 
       {/* Quick actions */}
@@ -162,12 +196,12 @@ export default function DashboardPage() {
               </p>
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] text-ink-muted">Current balance</p>
+              <p className="text-[11px] text-ink-muted">Available to bet</p>
               <p
                 className="truncate font-display text-base font-bold tabular-nums text-brand"
-                title={"₦" + wallet.balance.toLocaleString("en-NG")}
+                title={"₦" + availableToBet(wallet).toLocaleString("en-NG")}
               >
-                {formatMoney(wallet.balance)}
+                {formatMoney(availableToBet(wallet))}
               </p>
             </div>
           </div>
@@ -227,4 +261,4 @@ function MenuItem({
       </svg>
     </Link>
   );
-}
+      }
