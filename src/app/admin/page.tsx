@@ -16,6 +16,7 @@ import DangerTab from "@/components/admin/DangerTab";
 import WithdrawalsTab from "@/components/admin/WithdrawalsTab";
 import PlatformTab from "@/components/admin/PlatformTab";
 import TicketsTab from "@/components/admin/TicketsTab";
+import ComplianceTab from "@/components/admin/ComplianceTab";
 
 type AdminStatus = "checking" | "admin" | "not-admin";
 type PostResult = { ok: boolean; message: string };
@@ -170,6 +171,7 @@ function AdminApp() {
         )}
         {tab === "withdrawals" && <WithdrawalsTab />}
         {tab === "tickets" && <TicketsTab />}
+        {tab === "compliance" && <ComplianceTab />}
         {tab === "platform" && <PlatformTab />}
         {tab === "danger" && (
           <DangerTab />
@@ -183,4 +185,4 @@ function AdminApp() {
 
 
 
-      
+
