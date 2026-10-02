@@ -202,7 +202,7 @@ export default function MyBetsPage() {
           try {
             const snap = await getDoc(doc(db, "matches", id));
             if (snap.exists()) {
-              const m = { id: snap.id, ...(snap.data() as Match) };
+              const m = { ...(snap.data() as Match), id: snap.id };
               matchMap[id] = m;
               if (m.homeTeamId) teamIds.add(m.homeTeamId);
               if (m.awayTeamId) teamIds.add(m.awayTeamId);
@@ -221,7 +221,7 @@ export default function MyBetsPage() {
           try {
             const snap = await getDoc(doc(db, "teams", id));
             if (snap.exists()) {
-              teamMap[id] = { id: snap.id, ...(snap.data() as Team) };
+              teamMap[id] = { ...(snap.data() as Team), id: snap.id };
             }
           } catch {
             /* skip */
