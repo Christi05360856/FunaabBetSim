@@ -90,6 +90,39 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: payoutLock.error }, { status: 403 });
   }
 
+  // KYC must be verified before cash leaves the platform
+  const kycSnap = await adminDb.collection("kyc").doc(uid).get();
+  const kyc = kycSnap.exists ? kycSnap.data() : null;
+  if (!kyc || kyc.status !== "verified") {
+    return NextResponse.json(
+      {
+        error:
+          !kyc || kyc.status === "none"
+            ? "Complete identity verification (KYC) before withdrawing. Open Account → Verify identity."
+            : kyc.status === "pending"
+              ? "Your KYC is still under review. Withdrawals unlock after approval."
+              : "Your KYC was rejected. Update details under Account → Verify identity.",
+        code: "kyc_required",
+        kycStatus: kyc?.status ?? "none",
+      },
+      { status: 403 }
+    );
+  }
+  // Payout bank should match verified KYC bank (prevents sudden account swap)
+  if (
+    String(kyc.bankCode) !== bankCode ||
+    String(kyc.accountNumber) !== accountNumber
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Withdrawal bank must match your verified KYC details. Update KYC via support if your bank changed.",
+        code: "kyc_bank_mismatch",
+      },
+      { status: 403 }
+    );
+  }
+
   try {
     const result = await adminDb.runTransaction(async (tx) => {
       const walletRef = adminDb.collection("wallets").doc(uid);
@@ -204,4 +237,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: msg }, { status });
   }
       }
-          
+
+    
