@@ -41,6 +41,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, status });
   }
 
+  // Audit every successful-looking webhook hit (idempotent key = FLW id)
+  const eventRef = adminDb.collection("webhook_events").doc(`flw_${id}`);
+  try {
+    const prev = await eventRef.get();
+    if (prev.exists && prev.data()?.processed === true) {
+      return NextResponse.json({
+        ok: true,
+        duplicate: true,
+        reason: prev.data()?.creditReason ?? "already_processed",
+      });
+    }
+    await eventRef.set(
+      {
+        id: `flw_${id}`,
+        provider: "flutterwave",
+        txRef,
+        status,
+        receivedAt: Date.now(),
+        processed: false,
+      },
+      { merge: true }
+    );
+  } catch (e) {
+    console.error("webhook_events write failed", e);
+  }
+
   try {
     const verified = await flutterwaveVerifyTransaction(id as number | string);
     if (
@@ -83,6 +109,21 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         console.error("deposit email failed", e);
       }
+    }
+
+    try {
+      await eventRef.set(
+        {
+          processed: true,
+          processedAt: Date.now(),
+          credited: result.credited,
+          creditReason: result.reason ?? null,
+          points: result.points ?? null,
+        },
+        { merge: true }
+      );
+    } catch (e) {
+      console.error("webhook_events finalize failed", e);
     }
 
     return NextResponse.json({ ok: true, ...result });
