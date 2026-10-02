@@ -199,8 +199,9 @@ export function buildLedgerEntry(input: {
  */
 export function applyWithdrawalRequest(wallet: Wallet, amount: number): Wallet {
   const w = normalizeWallet(wallet);
-  const free =
-    w.purchased - w.reservedStake - w.reservedWithdrawal;
+  // Same rule as withdrawableBalance: bet locks hit promo first, then cash.
+  const stakeLockOnCash = Math.max(0, w.reservedStake - w.promo);
+  const free = Math.max(0, w.purchased - stakeLockOnCash - w.reservedWithdrawal);
   if (amount <= 0 || amount > free + 1e-9) {
     throw new Error("Insufficient withdrawable balance");
   }
@@ -227,4 +228,4 @@ export function applyWithdrawalComplete(wallet: Wallet, amount: number): Wallet 
     purchased: Math.max(0, w.purchased - amount),
     reservedWithdrawal: Math.max(0, w.reservedWithdrawal - amount),
   });
-}
+    }
