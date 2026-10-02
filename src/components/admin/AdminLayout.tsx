@@ -17,6 +17,7 @@ export type AdminTabId =
   | "promos"
   | "sponsors"
   | "tickets"
+  | "compliance"
   | "platform"
   | "danger";
 
@@ -28,6 +29,7 @@ const NAV: { id: AdminTabId; label: string; icon: ReactNode }[] = [
   { id: "promos", label: "Promos", icon: Icons.import },
   { id: "sponsors", label: "Sponsors", icon: Icons.import },
   { id: "tickets", label: "Tickets", icon: Icons.import },
+  { id: "compliance", label: "Compliance", icon: Icons.import },
   { id: "platform", label: "Platform", icon: Icons.dashboard },
   { id: "danger", label: "Danger", icon: Icons.danger },
 ];
