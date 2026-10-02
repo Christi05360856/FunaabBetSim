@@ -8,12 +8,20 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
-const DISMISS_KEY = "fb_install_dismissed";
-const SHOWN_KEY = "fb_install_shown";
+const DISMISS_KEY = "fb_install_dismissed_v2";
+const SHOWN_KEY = "fb_install_shown_v2";
+
+function isStandalone(): boolean {
+  if (typeof window === "undefined") return true;
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (navigator as unknown as { standalone?: boolean }).standalone === true
+  );
+}
 
 /**
- * Scripture-Quest-style deferred install: capture beforeinstallprompt,
- * show a clean banner after login (not on every page load forever).
+ * User-app install banner. Does not use the admin manifest.
+ * Chrome only fires beforeinstallprompt when criteria pass AND no overlapping install.
  */
 export default function InstallPrompt() {
   const { user } = useAuth();
@@ -25,6 +33,19 @@ export default function InstallPrompt() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (isStandalone()) return;
+    // Don't show on admin routes — AdminLayout handles that install
+    if (window.location.pathname.startsWith("/admin")) return;
+
+    // Allow force-show: /?install=1
+    try {
+      if (new URLSearchParams(window.location.search).get("install") === "1") {
+        localStorage.removeItem(DISMISS_KEY);
+        localStorage.removeItem(SHOWN_KEY);
+      }
+    } catch {
+      /* */
+    }
 
     function onBip(e: Event) {
       e.preventDefault();
@@ -32,42 +53,39 @@ export default function InstallPrompt() {
     }
     window.addEventListener("beforeinstallprompt", onBip);
 
-    // iOS: no beforeinstallprompt — soft tip only once
     const isIos =
       /iphone|ipad|ipod/i.test(navigator.userAgent) &&
       !(window as unknown as { MSStream?: unknown }).MSStream;
-    const isStandalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      (navigator as unknown as { standalone?: boolean }).standalone === true;
-
-    if (isIos && !isStandalone) {
-      try {
-        if (
-          !localStorage.getItem(DISMISS_KEY) &&
-          !localStorage.getItem(SHOWN_KEY)
-        ) {
-          setIosHint(true);
-        }
-      } catch {
-        /* private */
-      }
-    }
+    if (isIos) setIosHint(true);
 
     return () => window.removeEventListener("beforeinstallprompt", onBip);
   }, []);
 
   useEffect(() => {
-    if (!user || (!deferred && !iosHint)) return;
     if (typeof window === "undefined") return;
-    if (window.matchMedia("(display-mode: standalone)").matches) return;
+    if (isStandalone()) return;
+    if (window.location.pathname.startsWith("/admin")) return;
+    if (!user && !deferred && !iosHint) return;
+
     try {
       if (localStorage.getItem(DISMISS_KEY)) return;
-      if (localStorage.getItem(SHOWN_KEY)) return;
-      localStorage.setItem(SHOWN_KEY, "1");
     } catch {
       return;
     }
-    const t = window.setTimeout(() => setVisible(true), 1400);
+
+    // Show if we have native prompt OR user is logged in (manual tip)
+    const canShow = Boolean(deferred || iosHint || user);
+    if (!canShow) return;
+
+    try {
+      if (!localStorage.getItem(SHOWN_KEY)) {
+        localStorage.setItem(SHOWN_KEY, "1");
+      }
+    } catch {
+      /* */
+    }
+
+    const t = window.setTimeout(() => setVisible(true), 1200);
     return () => window.clearTimeout(t);
   }, [user, deferred, iosHint]);
 
@@ -81,30 +99,26 @@ export default function InstallPrompt() {
   }, []);
 
   const install = useCallback(async () => {
-    if (!deferred || !("prompt" in deferred)) {
+    if (!deferred) {
       dismiss();
       return;
     }
     try {
       await deferred.prompt();
-      const { outcome } = await deferred.userChoice;
-      if (outcome === "dismissed") {
-        try {
-          localStorage.setItem(DISMISS_KEY, "1");
-        } catch {
-          /* */
-        }
-      }
+      await deferred.userChoice;
     } catch {
       /* */
     }
     setDeferred(null);
     setVisible(false);
+    try {
+      localStorage.setItem(DISMISS_KEY, "1");
+    } catch {
+      /* */
+    }
   }, [deferred, dismiss]);
 
-  if (!visible) return null;
-
-  const isIosHint = iosHint && !deferred;
+  if (!visible || isStandalone()) return null;
 
   return (
     <div
@@ -119,12 +133,14 @@ export default function InstallPrompt() {
         <div className="min-w-0 flex-1">
           <p className="font-display text-sm font-bold">Install FUNAAB BetSim</p>
           <p className="mt-0.5 text-xs text-ink-muted">
-            {isIosHint
-              ? "Tap Share, then “Add to Home Screen” for the full app feel."
-              : "Add to your home screen — faster access, fullscreen, like a real app."}
+            {iosHint && !deferred
+              ? "Tap Share, then “Add to Home Screen”."
+              : deferred
+                ? "Add to your home screen — fullscreen, faster access."
+                : "Chrome menu (⋮) → Install app / Add to Home screen. Use the F icon (not Admin FA)."}
           </p>
           <div className="mt-3 flex gap-2">
-            {!isIosHint && (
+            {deferred && (
               <button
                 type="button"
                 onClick={() => void install()}
