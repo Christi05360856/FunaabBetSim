@@ -11,6 +11,7 @@ import type { Wallet, Withdrawal } from "@/types/domain";
 import { requireAdminTotp } from "@/lib/security/adminTotp";
 import { resolveUserEmail, sendMail } from "@/lib/email/send";
 import { withdrawalEmailHtml } from "@/lib/email/templates";
+import { writeAdminAudit } from "@/lib/security/adminAudit";
 
 /**
  * body: { withdrawalId, mode: "manual" | "flutterwave", note? }
@@ -165,6 +166,15 @@ export async function POST(request: NextRequest) {
   } catch (e) {
     console.error("withdrawal email failed", e);
   }
+
+  await writeAdminAudit({
+    adminUid: admin.uid,
+    adminEmail: admin.email ?? null,
+    action: "withdrawal_approve",
+    targetType: "withdrawal",
+    targetId: withdrawalId,
+    meta: { mode, flwTransferId, amount: withdrawal.amount, uid: withdrawal.uid },
+  });
 
   return NextResponse.json({
     ok: true,
