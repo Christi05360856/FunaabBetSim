@@ -49,7 +49,7 @@ export default function HomePage() {
     }
 
     load();
-    const id = setInterval(load, 30_000);
+    const id = setInterval(load, 120_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") load();
     };
@@ -132,4 +132,4 @@ export default function HomePage() {
       )}
     </main>
   );
-    }
+}
