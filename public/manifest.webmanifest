@@ -1,7 +1,7 @@
 {
   "name": "FUNAAB BetSim",
   "short_name": "BetSim",
-  "description": "FUNAAB sports betting — points, fixtures, and live scores.",
+  "description": "FUNAAB sports betting — fixtures, accumulators, points wallet.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -11,16 +11,28 @@
   "lang": "en",
   "icons": [
     {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
-    },
-    {
-      "src": "/icon.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "maskable"
     }
   ]
 }
