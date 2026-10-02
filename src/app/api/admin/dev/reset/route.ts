@@ -4,6 +4,7 @@ import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { requireRecentAuth } from "@/lib/security/sessionGate";
 import { securityLog } from "@/lib/security/securityLog";
 import { clientIp } from "@/lib/security/rateLimit";
+import { requireAdminTotp } from "@/lib/security/adminTotp";
 import { adminDb } from "@/lib/firebase/admin";
 import type { Competition, Match, Wallet } from "@/types/domain";
 import { STARTING_BALANCE } from "@/types/domain";
@@ -64,15 +65,23 @@ export async function POST(request: NextRequest) {
   if (!decoded) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  const bodyEarly = await request.json().catch(() => ({}));
+  const totpErr = requireAdminTotp((bodyEarly as { totpCode?: string }).totpCode);
+  if (totpErr) {
+    return NextResponse.json({ error: totpErr }, { status: 401 });
+  }
+
   const recent = requireRecentAuth(decoded, 15 * 60); // 15 min for Danger
   if (!recent.ok) {
     return NextResponse.json({ error: recent.error }, { status: 401 });
   }
 
 
+  const body = bodyEarly as Record<string, unknown>;
+  const scopeEarly = String(body.scope ?? "");
+
   // Phase 0: destructive scopes blocked in production unless explicitly allowed
-  const bodyEarly = await request.clone().json().catch(() => ({}));
-  const scopeEarly = String((bodyEarly as { scope?: string }).scope ?? "");
   const destructive = ["all", "platform", "financial_cutover", "bets_wallets"].includes(
     scopeEarly
   );
@@ -91,7 +100,6 @@ export async function POST(request: NextRequest) {
   }
 
 
-  const body = await request.json().catch(() => ({}));
   const scope = body.scope as ResetScope | undefined;
   const allowed: ResetScope[] = [
     "external",
@@ -395,4 +403,5 @@ export async function POST(request: NextRequest) {
   }
   }
 
-  
+
+    
