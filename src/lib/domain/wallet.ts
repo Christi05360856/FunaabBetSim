@@ -31,16 +31,22 @@ export function availableToBet(wallet: Pick<
   return Math.max(0, wallet.balance ?? 0);
 }
 
+/**
+ * Cash that may leave to bank.
+ * Open-bet locks are applied to promo first (already non-withdrawable),
+ * then to cash — so a fresh deposit stays fully withdrawable until you bet it.
+ * Pending withdrawal locks always sit on cash.
+ */
 export function withdrawableBalance(wallet: Pick<
   Wallet,
-  "purchased" | "reservedStake" | "reservedWithdrawal"
+  "purchased" | "promo" | "reservedStake" | "reservedWithdrawal"
 >): number {
-  return Math.max(
-    0,
-    (wallet.purchased ?? 0) -
-      (wallet.reservedStake ?? 0) -
-      (wallet.reservedWithdrawal ?? 0)
-  );
+  const purchased = wallet.purchased ?? 0;
+  const promo = wallet.promo ?? 0;
+  const reservedStake = wallet.reservedStake ?? 0;
+  const reservedWithdrawal = wallet.reservedWithdrawal ?? 0;
+  const stakeLockOnCash = Math.max(0, reservedStake - promo);
+  return Math.max(0, purchased - stakeLockOnCash - reservedWithdrawal);
 }
 
 export function canPlaceStake(balance: number, stake: number): boolean {
