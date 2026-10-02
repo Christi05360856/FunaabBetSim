@@ -4,6 +4,9 @@ import {
   isValidFlutterwaveWebhook,
 } from "@/lib/payments/flutterwave";
 import { creditVerifiedDeposit } from "@/lib/domain/creditDeposit";
+import { adminDb } from "@/lib/firebase/admin";
+import { resolveUserEmail, sendMail } from "@/lib/email/send";
+import { depositEmailHtml } from "@/lib/email/templates";
 
 /**
  * Flutterwave webhook. Always re-verify via API; never trust payload alone.
@@ -55,6 +58,32 @@ export async function POST(request: NextRequest) {
       amountNgn: verified.amount,
       currency: verified.currency,
     });
+
+    // P1: notify user (never block webhook success on email failure)
+    if (result.credited) {
+      try {
+        const depSnap = await adminDb.collection("deposits").doc(verified.tx_ref).get();
+        const uid = depSnap.exists ? String(depSnap.data()?.uid ?? "") : "";
+        const email = uid ? await resolveUserEmail(uid) : null;
+        if (email) {
+          const amountNgn = Math.round(Number(verified.amount));
+          const tpl = depositEmailHtml({
+            points: result.points,
+            amountNgn,
+            promoPoints: result.promoPoints,
+            txRef: verified.tx_ref,
+          });
+          void sendMail({
+            to: email,
+            subject: tpl.subject,
+            html: tpl.html,
+            text: tpl.text,
+          });
+        }
+      } catch (e) {
+        console.error("deposit email failed", e);
+      }
+    }
 
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
