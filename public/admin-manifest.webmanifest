@@ -1,10 +1,10 @@
 {
-  "id": "/admin",
+  "id": "/admin-app",
   "name": "FUNAAB BetSim Admin",
   "short_name": "BetSim Admin",
   "description": "Admin console for FUNAAB BetSim — KYC, withdrawals, fixtures.",
   "start_url": "/admin",
-  "scope": "/",
+  "scope": "/admin",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#0f172a",
