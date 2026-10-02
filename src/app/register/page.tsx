@@ -11,6 +11,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [ageOk, setAgeOk] = useState(false);
   const [termsOk, setTermsOk] = useState(false);
@@ -61,7 +62,7 @@ export default function RegisterPage() {
         </span>
         <h1 className="mt-3 font-display text-2xl font-bold">FUNAAB BetSim</h1>
         <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-accent">
-          Play money only · Nothing is real
+          Real points · Play responsibly · 18+
         </p>
       </div>
 
@@ -93,9 +94,18 @@ export default function RegisterPage() {
             />
           </label>
           <label className="flex flex-col gap-1.5 text-sm font-medium">
-            Password
+            <span className="flex items-center justify-between">
+              Password
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="text-xs font-semibold text-brand"
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </span>
             <input
-              type="password"
+              type={showPassword ? "text" : "password"}
               className="rounded-xl border border-ink-muted/25 bg-surface-raised px-3 py-2.5 outline-none focus:border-brand"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
