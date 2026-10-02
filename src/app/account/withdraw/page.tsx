@@ -135,6 +135,14 @@ export default function WithdrawPage() {
           ←
         </Link>
         <h1 className="flex-1 font-display text-lg font-bold">Withdraw</h1>
+
+      <div className="mt-3 rounded-xl border border-brand/20 bg-brand/5 px-3 py-2 text-xs text-ink-muted">
+        Withdrawals require verified identity.{" "}
+        <Link href="/account/kyc" className="font-semibold text-brand">
+          Verify identity →
+        </Link>
+      </div>
+
         {pendingItems.length > 0 && (
           <button
             type="button"
@@ -292,4 +300,4 @@ export default function WithdrawPage() {
       )}
     </main>
   );
-            }
+}
