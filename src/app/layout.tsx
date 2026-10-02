@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Manrope, Inter } from "next/font/google";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { BetSlipProvider } from "@/lib/context/BetSlipContext";
@@ -27,9 +27,37 @@ const bodyFont = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "FUNAAB BetSim",
+  title: {
+    default: "FUNAAB BetSim",
+    template: "%s · FUNAAB BetSim",
+  },
   description:
-    "A virtual, play-money sports-betting simulation for FUNAAB football.",
+    "Sports betting for the FUNAAB community — fixtures, accumulators, points wallet.",
+  applicationName: "FUNAAB BetSim",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "BetSim",
+  },
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/icon.svg" }],
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#059669" },
+    { media: "(prefers-color-scheme: dark)", color: "#064e3b" },
+  ],
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
