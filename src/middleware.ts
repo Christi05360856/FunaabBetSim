@@ -1,21 +1,25 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * Security headers + CSP Report-Only (P2).
- * Report-Only does not block resources — safe while we tune for Firebase / Flutterwave.
+ * Security headers + enforced CSP.
+ * Tuned for Firebase Auth/Firestore, Flutterwave checkout, Google Fonts, and same-origin SW.
  */
-const CSP_REPORT_ONLY = [
+const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.gstatic.com https://www.gstatic.com",
+  // Next.js needs unsafe-inline/eval in production for some chunks; tighten later with nonces if needed.
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.gstatic.com https://www.gstatic.com https://checkout.flutterwave.com https://*.flutterwave.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com data:",
   "img-src 'self' data: blob: https:",
-  "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net wss://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.flutterwave.com https://*.flutterwave.com",
+  "connect-src 'self' https://*.googleapis.com https://firestore.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net wss://*.firebaseio.com wss://*.googleapis.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.flutterwave.com https://*.flutterwave.com",
   "frame-src 'self' https://checkout.flutterwave.com https://*.flutterwave.com",
+  "worker-src 'self' blob:",
+  "manifest-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self' https://*.flutterwave.com",
   "frame-ancestors 'none'",
+  "upgrade-insecure-requests",
 ].join("; ");
 
 export function middleware(request: NextRequest) {
@@ -28,7 +32,10 @@ export function middleware(request: NextRequest) {
     "Permissions-Policy",
     "camera=(), microphone=(), geolocation=()"
   );
-  response.headers.set("Content-Security-Policy-Report-Only", CSP_REPORT_ONLY);
+  // Enforced (blocks violations). Was Report-Only in P2.
+  response.headers.set("Content-Security-Policy", CSP);
+  // Drop any leftover Report-Only so browsers only see one policy.
+  response.headers.delete("Content-Security-Policy-Report-Only");
 
   if (request.nextUrl.pathname.startsWith("/api/")) {
     response.headers.set("Cache-Control", "no-store");
