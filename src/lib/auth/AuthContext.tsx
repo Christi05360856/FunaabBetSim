@@ -10,6 +10,7 @@ import {
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
@@ -20,9 +21,14 @@ import { auth } from "@/lib/firebase/client";
 interface AuthContextValue {
   user: FirebaseUser | null;
   loading: boolean;
-  register: (email: string, password: string, displayName: string) => Promise<void>;
+  register: (
+    email: string,
+    password: string,
+    displayName: string
+  ) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -39,22 +45,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
-  async function register(email: string, password: string, displayName: string) {
-    const credential = await createUserWithEmailAndPassword(auth, email, password);
+  async function register(
+    email: string,
+    password: string,
+    displayName: string
+  ) {
+    const credential = await createUserWithEmailAndPassword(
+      auth,
+      email,
+      password
+    );
     await updateProfile(credential.user, { displayName });
 
-    // Wallet + profile creation is server-authoritative. The client only
-    // proves who it is via the ID token; the server does the actual writes.
     const idToken = await credential.user.getIdToken();
     const response = await fetch("/api/auth/register", {
       method: "POST",
-      headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ displayName }),
     });
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      throw new Error(body.error ?? "Could not finish setting up your account.");
+      throw new Error(
+        body.error ?? "Could not finish setting up your account."
+      );
     }
   }
 
@@ -66,8 +83,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut(auth);
   }
 
+  async function resetPassword(email: string) {
+    await sendPasswordResetEmail(auth, email.trim());
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, register, login, logout }}>
+    <AuthContext.Provider
+      value={{ user, loading, register, login, logout, resetPassword }}
+    >
       {children}
     </AuthContext.Provider>
   );
