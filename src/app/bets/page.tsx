@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { db } from "@/lib/firebase/client";
 import type { Bet, BetLeg, Match, Team } from "@/types/domain";
@@ -164,9 +164,10 @@ export default function MyBetsPage() {
     ids: string[];
   } | null>(null);
 
+  // Bets only as live listener. Matches/teams: one-shot getDoc for IDs we need
+  // (full collection onSnapshot was burning thousands of reads per session).
   useEffect(() => {
     if (!user) return;
-
     const unsubBets = onSnapshot(
       query(collection(db, "bets"), where("uid", "==", user.uid)),
       (snap) => {
@@ -177,29 +178,65 @@ export default function MyBetsPage() {
         );
       }
     );
-
-    const unsubMatches = onSnapshot(collection(db, "matches"), (snap) => {
-      const map: Record<string, Match> = {};
-      snap.docs.forEach((d) => {
-        map[d.id] = d.data() as Match;
-      });
-      setMatches(map);
-    });
-
-    const unsubTeams = onSnapshot(collection(db, "teams"), (snap) => {
-      const map: Record<string, Team> = {};
-      snap.docs.forEach((d) => {
-        map[d.id] = d.data() as Team;
-      });
-      setTeams(map);
-    });
-
-    return () => {
-      unsubBets();
-      unsubMatches();
-      unsubTeams();
-    };
+    return () => unsubBets();
   }, [user]);
+
+  useEffect(() => {
+    if (bets.length === 0) return;
+    let cancelled = false;
+
+    async function hydrateNames() {
+      const matchIds = new Set<string>();
+      for (const bet of bets) {
+        for (const leg of betLegs(bet)) {
+          if (leg.matchId) matchIds.add(leg.matchId);
+        }
+      }
+      if (matchIds.size === 0) return;
+
+      const matchMap: Record<string, Match> = {};
+      const teamIds = new Set<string>();
+
+      await Promise.all(
+        [...matchIds].map(async (id) => {
+          try {
+            const snap = await getDoc(doc(db, "matches", id));
+            if (snap.exists()) {
+              const m = { id: snap.id, ...(snap.data() as Match) };
+              matchMap[id] = m;
+              if (m.homeTeamId) teamIds.add(m.homeTeamId);
+              if (m.awayTeamId) teamIds.add(m.awayTeamId);
+            }
+          } catch {
+            /* skip */
+          }
+        })
+      );
+      if (cancelled) return;
+      setMatches((prev) => ({ ...prev, ...matchMap }));
+
+      const teamMap: Record<string, Team> = {};
+      await Promise.all(
+        [...teamIds].map(async (id) => {
+          try {
+            const snap = await getDoc(doc(db, "teams", id));
+            if (snap.exists()) {
+              teamMap[id] = { id: snap.id, ...(snap.data() as Team) };
+            }
+          } catch {
+            /* skip */
+          }
+        })
+      );
+      if (cancelled) return;
+      setTeams((prev) => ({ ...prev, ...teamMap }));
+    }
+
+    void hydrateNames();
+    return () => {
+      cancelled = true;
+    };
+  }, [bets]);
 
 
   // One celebration modal for newly settled wins since last visit
@@ -796,9 +833,10 @@ function TicketDetails({
       </div>
     </div>
   );
-}
+                          }
 
-function ShareSheet({
+
+  function ShareSheet({
   bet,
   matches,
   teams,
@@ -1047,4 +1085,4 @@ function ShareSheet({
       </div>
     </div>
   );
-                }
+        }
