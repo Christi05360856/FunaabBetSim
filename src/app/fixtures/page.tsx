@@ -116,7 +116,7 @@ export default function FixturesPage() {
     }
 
     load();
-    const id = setInterval(load, 60_000);
+    const id = setInterval(load, 180_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") load();
     };
