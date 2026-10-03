@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { verifyRequest } from "@/lib/auth/verifyRequest";
@@ -16,7 +17,7 @@ const bodySchema = z.object({
 });
 
 function makeTxRef(uid: string): string {
-  const rand = Math.random().toString(36).slice(2, 10).toUpperCase();
+  const rand = randomBytes(6).toString("hex").toUpperCase();
   return `FB-${uid.slice(0, 6)}-${Date.now()}-${rand}`;
 }
 
