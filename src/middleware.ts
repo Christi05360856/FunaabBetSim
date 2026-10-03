@@ -6,8 +6,8 @@ import { NextResponse, type NextRequest } from "next/server";
  */
 const CSP = [
   "default-src 'self'",
-  // Next.js needs unsafe-inline/eval in production for some chunks; tighten later with nonces if needed.
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.gstatic.com https://www.gstatic.com https://checkout.flutterwave.com https://*.flutterwave.com",
+  // unsafe-eval removed (M-05). Keep unsafe-inline for Next until nonce-based CSP.
+  "script-src 'self' 'unsafe-inline' https://*.googleapis.com https://*.gstatic.com https://www.gstatic.com https://checkout.flutterwave.com https://*.flutterwave.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com data:",
   "img-src 'self' data: blob: https:",
