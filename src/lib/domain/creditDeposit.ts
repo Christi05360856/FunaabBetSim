@@ -28,6 +28,7 @@ export async function creditVerifiedDeposit(input: {
   points: number;
   promoPoints?: number;
   reason?: string;
+  uid?: string;
 }> {
   if (String(input.currency).toUpperCase() !== "NGN") {
     return { credited: false, points: 0, reason: "currency_not_ngn" };
@@ -48,6 +49,7 @@ export async function creditVerifiedDeposit(input: {
         credited: false,
         points: deposit.points,
         reason: "already_credited",
+        uid: deposit.uid,
       };
     }
     if (deposit.status !== "initiated" && deposit.status !== "pending") {
@@ -185,6 +187,7 @@ export async function creditVerifiedDeposit(input: {
       points,
       promoPoints,
       reason: promoReason,
+      uid: deposit.uid,
     };
   });
 }
