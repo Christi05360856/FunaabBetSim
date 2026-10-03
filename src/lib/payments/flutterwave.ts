@@ -180,3 +180,38 @@ export async function flutterwaveTransfer(
     reference: body.data.reference ?? input.reference,
   };
 }
+
+
+export type FlwTransferStatusData = {
+  id: number;
+  account_number?: string;
+  bank_code?: string;
+  amount?: number;
+  currency?: string;
+  reference?: string;
+  status?: string;
+  complete_message?: string;
+  is_approved?: number;
+};
+
+/** GET /v3/transfers/:id — for reconciliation (M-09). */
+export async function flutterwaveGetTransfer(
+  transferId: string | number
+): Promise<FlwTransferStatusData> {
+  const res = await fetch(`${FLW_BASE}/transfers/${transferId}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${secretKey()}` },
+    cache: "no-store",
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    status?: string;
+    message?: string;
+    data?: FlwTransferStatusData;
+  };
+  if (!res.ok || body.status !== "success" || !body.data) {
+    throw new Error(
+      body.message ?? `Flutterwave transfer lookup failed (${res.status})`
+    );
+  }
+  return body.data;
+  }
