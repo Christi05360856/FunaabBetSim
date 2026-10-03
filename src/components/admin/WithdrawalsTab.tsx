@@ -14,6 +14,8 @@ type WItem = {
   status: string;
   adminNote: string | null;
   createdAt: number;
+  flwTransferId?: string | null;
+  providerStatus?: string | null;
 };
 
 const BANK_NAMES: Record<string, string> = {
@@ -252,4 +254,3 @@ export default function WithdrawalsTab() {
       )}
     </div>
   );
-                        }
