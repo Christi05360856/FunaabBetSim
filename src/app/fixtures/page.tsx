@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Match, Team, Competition, Market } from "@/types/domain";
-import { isBettingOpen } from "@/lib/domain/matchClock";
+import { deriveClockState, isBettingOpen } from "@/lib/domain/matchClock";
 import { groupFixturesForBrowsing } from "@/lib/domain/fixtureDisplay";
 import { OU_LINES } from "@/lib/domain/oddsModel";
 import { LiveClockBadge } from "@/components/LiveClock";
@@ -246,7 +246,8 @@ export default function FixturesPage() {
     const isLive =
       match.status === "live" ||
       match.status === "halftime" ||
-      match.status === "second_half";
+      match.status === "second_half" ||
+      deriveClockState(match).isLive;
     // Show HOT on every match that is open for betting or live
     const isHot = canBet || isLive;
 
