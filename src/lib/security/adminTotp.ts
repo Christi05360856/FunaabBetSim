@@ -3,9 +3,9 @@ import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 
 /**
  * Admin TOTP (Google Authenticator compatible).
- * Env: ADMIN_TOTP_SECRET = base32 secret (set after setup).
- * If secret is missing, requireAdminTotp() allows the request (email-only rollout).
- * Once secret is set, cash actions need a valid 6-digit code.
+ * Env: ADMIN_TOTP_SECRET = base32 secret.
+ * Production: secret REQUIRED (fail closed). Dev: optional unless set.
+ * Explicit bypass only when NODE_ENV !== production AND ADMIN_TOTP_BYPASS=true.
  */
 
 const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -85,10 +85,26 @@ export function totpConfigured(): boolean {
   return Boolean(process.env.ADMIN_TOTP_SECRET?.trim());
 }
 
-/** Returns null if OK, or an error message. */
+/**
+ * Returns null if OK, or an error message.
+ * Production always requires ADMIN_TOTP_SECRET + valid code.
+ */
 export function requireAdminTotp(code: unknown): string | null {
+  const isProd = process.env.NODE_ENV === "production";
   const secret = process.env.ADMIN_TOTP_SECRET?.trim();
-  if (!secret) return null; // not enforced until you set the env
+  const bypass =
+    !isProd && process.env.ADMIN_TOTP_BYPASS === "true";
+
+  if (bypass) return null;
+
+  if (!secret) {
+    if (isProd) {
+      return "Admin authenticator is not configured. Contact the platform owner.";
+    }
+    // Non-production without secret: allow (local dev convenience)
+    return null;
+  }
+
   if (!verifyTotp(secret, String(code ?? ""))) {
     return "Invalid or missing admin authenticator code";
   }
