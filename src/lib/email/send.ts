@@ -7,6 +7,11 @@ export type SendMailInput = {
   text?: string;
 };
 
+/**
+ * Resend free tier (onboarding@resend.dev) only delivers to the Resend
+ * account email. Set EMAIL_OVERRIDE_TO=that@email for testing so deposit /
+ * withdrawal receipts actually arrive. Remove after you verify a domain.
+ */
 export async function sendMail(
   input: SendMailInput
 ): Promise<{ ok: boolean; id?: string; error?: string }> {
@@ -15,12 +20,28 @@ export async function sendMail(
     process.env.EMAIL_FROM?.trim() ||
     "FUNAAB BetSim <onboarding@resend.dev>";
 
+  const override = process.env.EMAIL_OVERRIDE_TO?.trim().toLowerCase();
+  const intended = String(input.to || "")
+    .trim()
+    .toLowerCase();
+  const to = override && override.includes("@") ? override : intended;
+
   if (!key) {
     console.warn("[email] RESEND_API_KEY not set — skip send");
     return { ok: false, error: "email_not_configured" };
   }
-  if (!input.to || !input.to.includes("@")) {
+  if (!to || !to.includes("@")) {
     return { ok: false, error: "invalid_to" };
+  }
+
+  // Note in body when we redirected for testing
+  let html = input.html;
+  let text = input.text;
+  if (override && intended && override !== intended) {
+    const note = `<p style="font-size:12px;color:#a1a1aa">[test] Intended recipient: ${intended}</p>`;
+    html = (html || "") + note;
+    text = (text || "") + ` [test intended: ${intended}]`;
+    console.info("[email] EMAIL_OVERRIDE_TO active", { intended, to });
   }
 
   try {
@@ -32,10 +53,10 @@ export async function sendMail(
       },
       body: JSON.stringify({
         from,
-        to: [input.to],
+        to: [to],
         subject: input.subject,
-        html: input.html,
-        text: input.text,
+        html,
+        text,
       }),
     });
     const body = (await res.json().catch(() => ({}))) as {
