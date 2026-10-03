@@ -39,36 +39,51 @@ export async function POST(request: NextRequest) {
   }
 
   const wRef = adminDb.collection("withdrawals").doc(withdrawalId);
-  const wSnap = await wRef.get();
-  if (!wSnap.exists) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  const withdrawal = wSnap.data() as Withdrawal;
-  if (
-    withdrawal.status !== "pending_review" &&
-    withdrawal.status !== "approved" &&
-    withdrawal.status !== "payment_failed"
-  ) {
-    return NextResponse.json(
-      { error: `Cannot approve status ${withdrawal.status}` },
-      { status: 400 }
-    );
+
+  // H-03: atomically claim → processing before any provider call
+  let withdrawal: Withdrawal;
+  try {
+    withdrawal = await adminDb.runTransaction(async (tx) => {
+      const snap = await tx.get(wRef);
+      if (!snap.exists) throw new Error("Not found");
+      const w = snap.data() as Withdrawal;
+      if (w.status === "completed" || w.status === "processing") {
+        throw new Error(`Already ${w.status}`);
+      }
+      if (w.status === "rejected") {
+        throw new Error("Already rejected");
+      }
+      if (
+        w.status !== "pending_review" &&
+        w.status !== "approved" &&
+        w.status !== "payment_failed"
+      ) {
+        throw new Error(`Cannot approve status ${w.status}`);
+      }
+      const now = Date.now();
+      tx.update(wRef, {
+        status: "processing",
+        updatedAt: now,
+        adminNote: note,
+        providerReference: `WD-${w.id}`,
+      });
+      return { ...w, status: "processing" as const };
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Claim failed";
+    const status = msg === "Not found" ? 404 : 400;
+    return NextResponse.json({ error: msg }, { status });
   }
 
-  let flwTransferId: string | null = withdrawal.flwTransferId;
+  let flwTransferId: string | null = withdrawal.flwTransferId ?? null;
 
   if (mode === "flutterwave") {
     try {
-      await wRef.update({
-        status: "processing",
-        updatedAt: Date.now(),
-        adminNote: note,
-      });
       const transfer = await flutterwaveTransfer({
         account_bank: withdrawal.bankCode,
         account_number: withdrawal.accountNumber,
         amount: withdrawal.amount,
-        narration: `FUNAAB BetSim withdrawal ${withdrawal.id.slice(0, 8)}`,
+        narration: `FUNAAB BetSim withdrawal ${String(withdrawal.id).slice(0, 8)}`,
         reference: `WD-${withdrawal.id}`,
         beneficiary_name: withdrawal.accountName,
       });
@@ -181,4 +196,4 @@ export async function POST(request: NextRequest) {
     mode,
     flwTransferId,
   });
-}
+    }
