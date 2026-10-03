@@ -423,10 +423,27 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        if (allWon) {
+        // H-05: WIN + VOID (no pending/loss) → won at product of non-void leg odds
+        const anyWon = legStatuses.some((s) => s === "won");
+        const anyVoidLeg = legStatuses.some((s) => s === "void");
+        const winWithVoids =
+          !anyLost &&
+          !anyPending &&
+          anyWon &&
+          anyVoidLeg &&
+          legStatuses.every((s) => s === "won" || s === "void");
+
+        if (allWon || winWithVoids) {
           if (bet.status === "open") {
+            let payout = bet.potentialPayout;
+            if (winWithVoids && !allWon) {
+              const mult = legs.reduce((acc, leg, i) => {
+                if (legStatuses[i] === "void") return acc;
+                return acc * (Number(leg.odds) || 1);
+              }, 1);
+              payout = Math.round(bet.stake * mult * 100) / 100;
+            }
             if (wallet) {
-              const payout = bet.potentialPayout;
               const before = normalizeWallet(wallet);
               const split = {
                 fromPurchased: bet.stakePurchased ?? bet.stake,
@@ -479,7 +496,7 @@ export async function POST(request: NextRequest) {
               matchIds: legs.map((l) => l.matchId),
               status: "won",
               settledAt: now,
-              payout: bet.potentialPayout,
+              payout,
             });
             betsSettled++;
           } else {
@@ -513,4 +530,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
                      }
-              
+
+        
