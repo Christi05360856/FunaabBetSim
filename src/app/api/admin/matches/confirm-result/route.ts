@@ -122,16 +122,15 @@ export async function POST(request: NextRequest) {
   const preMatch = preSnap.data() as Match;
   const nowMs = Date.now();
   const kickoff = Number(preMatch.kickoffAt) || 0;
-  const earlyStatuses = new Set(["scheduled", "open", "closed", "published"]);
-  const isEarly =
-    (kickoff > 0 && nowMs < kickoff) ||
-    earlyStatuses.has(String(preMatch.status));
+  // H-06: "early" = settling BEFORE kickoff only.
+  // Status "open" after kickoff is normal (admin settles when ready) — no force needed.
+  const isEarly = kickoff > 0 && nowMs < kickoff;
 
   if (isEarly && !forceEarlyResult) {
     return NextResponse.json(
       {
         error:
-          "Match has not reached a normal full-time window. Tick “Force early result” and provide a reason to continue.",
+          "Kickoff is still in the future. Tick “Force early result” and enter a reason to settle now.",
         code: "early_result_requires_force",
         kickoffAt: kickoff,
         status: preMatch.status,
@@ -601,6 +600,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
                      }
+
 
 
                                                 
