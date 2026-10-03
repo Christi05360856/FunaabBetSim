@@ -28,11 +28,27 @@ export const placeBetSchema = z.object({
   stake: z.number().int().positive(),
 });
 export type PlaceBetInput = z.infer<typeof placeBetSchema>;
-export const confirmResultSchema = z.object({
-  matchId: z.string().min(1),
-  homeScore: z.number().int().min(0).max(99),
-  awayScore: z.number().int().min(0).max(99),
-});
+export const confirmResultSchema = z
+  .object({
+    matchId: z.string().min(1),
+    homeScore: z.number().int().min(0).max(99),
+    awayScore: z.number().int().min(0).max(99),
+    /** Required when settling before kickoff / while still scheduled */
+    forceEarlyResult: z.boolean().optional(),
+    earlyReason: z.string().trim().max(300).optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.forceEarlyResult) {
+      const r = (val.earlyReason ?? "").trim();
+      if (r.length < 5) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Early result needs a reason (min 5 characters)",
+          path: ["earlyReason"],
+        });
+      }
+    }
+  });
 
 export const betLegSchema = z.object({
   matchId: z.string().min(1),
