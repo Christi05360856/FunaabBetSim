@@ -1,15 +1,16 @@
+import { randomInt } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
 import { securityLog } from "@/lib/security/securityLog";
 import { adminDb } from "@/lib/firebase/admin";
 import type { BetLeg, BookingCode, Match } from "@/types/domain";
 
-/** Phase 4: longer code space (8 chars ≈ 32^8, avoids easy enumeration). */
+/** Booking codes: FB- + 5 chars (crypto RNG). */
 function generateCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
   for (let i = 0; i < 5; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+    code += chars.charAt(randomInt(chars.length));
   }
   return "FB-" + code;
 }
