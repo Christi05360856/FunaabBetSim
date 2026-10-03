@@ -8,8 +8,7 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
-const DISMISS_KEY = "fb_install_dismissed_v2";
-const SHOWN_KEY = "fb_install_shown_v2";
+const DISMISS_KEY = "fb_install_dismissed_v3";
 
 function isStandalone(): boolean {
   if (typeof window === "undefined") return true;
@@ -19,45 +18,24 @@ function isStandalone(): boolean {
   );
 }
 
-/**
- * User-app install banner. Does not use the admin manifest.
- * Chrome only fires beforeinstallprompt when criteria pass AND no overlapping install.
- */
+/** Simple install banner — install or dismiss. No internal/admin wording. */
 export default function InstallPrompt() {
   const { user } = useAuth();
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(
     null
   );
   const [visible, setVisible] = useState(false);
-  const [iosHint, setIosHint] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (isStandalone()) return;
-    // Don't show on admin routes — AdminLayout handles that install
     if (window.location.pathname.startsWith("/admin")) return;
-
-    // Allow force-show: /?install=1
-    try {
-      if (new URLSearchParams(window.location.search).get("install") === "1") {
-        localStorage.removeItem(DISMISS_KEY);
-        localStorage.removeItem(SHOWN_KEY);
-      }
-    } catch {
-      /* */
-    }
 
     function onBip(e: Event) {
       e.preventDefault();
       setDeferred(e as BeforeInstallPromptEvent);
     }
     window.addEventListener("beforeinstallprompt", onBip);
-
-    const isIos =
-      /iphone|ipad|ipod/i.test(navigator.userAgent) &&
-      !(window as unknown as { MSStream?: unknown }).MSStream;
-    if (isIos) setIosHint(true);
-
     return () => window.removeEventListener("beforeinstallprompt", onBip);
   }, []);
 
@@ -65,29 +43,15 @@ export default function InstallPrompt() {
     if (typeof window === "undefined") return;
     if (isStandalone()) return;
     if (window.location.pathname.startsWith("/admin")) return;
-    if (!user && !deferred && !iosHint) return;
-
+    if (!user || !deferred) return;
     try {
       if (localStorage.getItem(DISMISS_KEY)) return;
     } catch {
       return;
     }
-
-    // Show if we have native prompt OR user is logged in (manual tip)
-    const canShow = Boolean(deferred || iosHint || user);
-    if (!canShow) return;
-
-    try {
-      if (!localStorage.getItem(SHOWN_KEY)) {
-        localStorage.setItem(SHOWN_KEY, "1");
-      }
-    } catch {
-      /* */
-    }
-
-    const t = window.setTimeout(() => setVisible(true), 1200);
+    const t = window.setTimeout(() => setVisible(true), 1000);
     return () => window.clearTimeout(t);
-  }, [user, deferred, iosHint]);
+  }, [user, deferred]);
 
   const dismiss = useCallback(() => {
     setVisible(false);
@@ -99,10 +63,7 @@ export default function InstallPrompt() {
   }, []);
 
   const install = useCallback(async () => {
-    if (!deferred) {
-      dismiss();
-      return;
-    }
+    if (!deferred) return;
     try {
       await deferred.prompt();
       await deferred.userChoice;
@@ -116,9 +77,9 @@ export default function InstallPrompt() {
     } catch {
       /* */
     }
-  }, [deferred, dismiss]);
+  }, [deferred]);
 
-  if (!visible || isStandalone()) return null;
+  if (!visible || !deferred || isStandalone()) return null;
 
   return (
     <div
@@ -133,22 +94,16 @@ export default function InstallPrompt() {
         <div className="min-w-0 flex-1">
           <p className="font-display text-sm font-bold">Install FUNAAB BetSim</p>
           <p className="mt-0.5 text-xs text-ink-muted">
-            {iosHint && !deferred
-              ? "Tap Share, then “Add to Home Screen”."
-              : deferred
-                ? "Add to your home screen — fullscreen, faster access."
-                : "Chrome menu (⋮) → Install app / Add to Home screen. Use the F icon (not Admin FA)."}
+            Add to your home screen for faster access.
           </p>
           <div className="mt-3 flex gap-2">
-            {deferred && (
-              <button
-                type="button"
-                onClick={() => void install()}
-                className="rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-white"
-              >
-                Install
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => void install()}
+              className="rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-white"
+            >
+              Install
+            </button>
             <button
               type="button"
               onClick={dismiss}
@@ -162,7 +117,7 @@ export default function InstallPrompt() {
           type="button"
           onClick={dismiss}
           className="text-ink-muted"
-          aria-label="Dismiss"
+          aria-label="Close"
         >
           ✕
         </button>
