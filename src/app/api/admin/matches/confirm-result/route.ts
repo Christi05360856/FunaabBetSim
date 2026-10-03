@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { revalidateTag } from "next/cache";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
+import { writeAdminAudit } from "@/lib/security/adminAudit";
 import { adminDb } from "@/lib/firebase/admin";
 import { confirmResultSchema } from "@/lib/validation/schemas";
 import {
@@ -108,9 +109,45 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const { matchId, homeScore, awayScore } = parsed.data;
+  const { matchId, homeScore, awayScore, forceEarlyResult, earlyReason } =
+    parsed.data;
 
   const matchRef = adminDb.collection("matches").doc(matchId);
+
+  // Pre-read for H-06 early gate (outside txn is fine; claim still inside)
+  const preSnap = await matchRef.get();
+  if (!preSnap.exists) {
+    return NextResponse.json({ error: "Match not found" }, { status: 404 });
+  }
+  const preMatch = preSnap.data() as Match;
+  const nowMs = Date.now();
+  const kickoff = Number(preMatch.kickoffAt) || 0;
+  const earlyStatuses = new Set(["scheduled", "open", "closed", "published"]);
+  const isEarly =
+    (kickoff > 0 && nowMs < kickoff) ||
+    earlyStatuses.has(String(preMatch.status));
+
+  if (isEarly && !forceEarlyResult) {
+    return NextResponse.json(
+      {
+        error:
+          "Match has not reached a normal full-time window. Tick “Force early result” and provide a reason to continue.",
+        code: "early_result_requires_force",
+        kickoffAt: kickoff,
+        status: preMatch.status,
+      },
+      { status: 400 }
+    );
+  }
+  if (isEarly && forceEarlyResult) {
+    const reason = String(earlyReason ?? "").trim();
+    if (reason.length < 5) {
+      return NextResponse.json(
+        { error: "Early result needs a reason (min 5 characters)" },
+        { status: 400 }
+      );
+    }
+  }
 
   try {
     const result = await adminDb.runTransaction(async (tx) => {
@@ -523,6 +560,40 @@ export async function POST(request: NextRequest) {
     revalidateTag("fixtures-core");
     revalidateTag("markets");
 
+    if (isEarly && forceEarlyResult) {
+      await writeAdminAudit({
+        adminUid: decoded.uid,
+        adminEmail: decoded.email ?? null,
+        action: "other",
+        targetType: "match",
+        targetId: matchId,
+        meta: {
+          event: "force_early_result",
+          homeScore,
+          awayScore,
+          reason: String(earlyReason ?? "").trim(),
+          priorStatus: preMatch.status,
+          kickoffAt: kickoff,
+          betsSettled: result.betsSettled,
+        },
+      });
+    } else {
+      await writeAdminAudit({
+        adminUid: decoded.uid,
+        adminEmail: decoded.email ?? null,
+        action: "other",
+        targetType: "match",
+        targetId: matchId,
+        meta: {
+          event: "result_confirmed",
+          homeScore,
+          awayScore,
+          betsSettled: result.betsSettled,
+          alreadySettled: result.alreadySettled,
+        },
+      });
+    }
+
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     const message =
@@ -531,4 +602,5 @@ export async function POST(request: NextRequest) {
   }
                      }
 
-        
+
+                                                
