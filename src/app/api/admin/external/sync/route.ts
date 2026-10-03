@@ -362,21 +362,46 @@ async function upsertMatch(m: FdMatch, competitionId: string, now: number) {
       createdAt: now,
     });
   } else {
-    // Do not overwrite admin open/locked/live with scheduled on re-sync
     const prev = existing.data() as Match;
-    const keepAdmin =
-      prev.status === "open" ||
-      prev.status === "locked" ||
-      prev.status === "live" ||
-      prev.status === "halftime" ||
-      prev.status === "second_half" ||
-      prev.status === "settled";
-    if (keepAdmin) {
-      const { status: _s, ...rest } = base;
+    // Never touch settled / voided
+    if (prev.status === "settled" || prev.status === "voided") {
+      const { status: _s, homeScore: _h, awayScore: _a, ...rest } = base as Record<
+        string,
+        unknown
+      >;
       await ref.update(rest);
-    } else {
-      await ref.update(base);
+      return;
     }
+
+    const providerStatus = String(base.status ?? "");
+    const inPlayProvider =
+      providerStatus === "live" ||
+      providerStatus === "halftime" ||
+      providerStatus === "second_half";
+    const finishedProvider =
+      providerStatus === "finished" || providerStatus === "settled";
+
+    // Promote open/locked → live/halftime/finished from football-data.
+    // Do not regress live → scheduled/open.
+    let nextStatus = prev.status;
+    if (finishedProvider && prev.status !== "settled") {
+      nextStatus = "finished";
+    } else if (inPlayProvider) {
+      nextStatus = providerStatus as Match["status"];
+    } else if (
+      prev.status === "scheduled" ||
+      prev.status === "postponed"
+    ) {
+      nextStatus = (base.status as Match["status"]) ?? prev.status;
+    }
+    // Keep open/locked while still upcoming; only change when provider says live/FT
+
+    const { status: _s, ...rest } = base;
+    await ref.update({
+      ...rest,
+      status: nextStatus,
+      updatedAt: now,
+    });
   }
 }
 
@@ -424,4 +449,5 @@ async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
                   }
 
 
-        
+
+          
