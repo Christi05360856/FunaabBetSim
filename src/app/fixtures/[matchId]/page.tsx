@@ -132,7 +132,8 @@ export default function MatchDetailPage({
   const isLive =
     match.status === "live" ||
     match.status === "halftime" ||
-    match.status === "second_half";
+    match.status === "second_half" ||
+    clock.isLive;
   const displayScore =
     match.currentHomeScore != null && match.currentAwayScore != null
       ? match.currentHomeScore + " – " + match.currentAwayScore
