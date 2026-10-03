@@ -75,7 +75,7 @@ export default function HomePage() {
       {/* Hero */}
       <div className="flex flex-col items-center gap-2 py-8 text-center">
         <h1 className="font-display text-3xl font-bold text-brand">FUNAAB BetSim</h1>
-        <p className="text-sm text-ink-muted">Simulated sports betting. No real money.</p>
+        <p className="text-sm text-ink-muted">Real points · Play responsibly · 18+</p>
         <div className="mt-4 flex gap-3">
           <Link
             href="/fixtures"
