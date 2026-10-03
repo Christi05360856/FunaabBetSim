@@ -46,6 +46,15 @@ export async function POST(request: NextRequest) {
       if (w.status === "completed" || w.status === "rejected") {
         throw new Error(`Already ${w.status}`);
       }
+      // H-04: cannot reject while provider transfer may be in flight
+      if (w.status === "processing") {
+        throw new Error(
+          "Withdrawal is processing a payout. Wait for completion or payment_failed before rejecting."
+        );
+      }
+      if (w.status !== "pending_review" && w.status !== "requested" && w.status !== "approved") {
+        throw new Error(`Cannot reject status ${w.status}`);
+      }
 
       const walletRef = adminDb.collection("wallets").doc(w.uid);
       const walletSnap = await tx.get(walletRef);
