@@ -59,7 +59,7 @@ export default function WithdrawalsTab() {
 
   async function act(
     id: string,
-    action: "approve-manual" | "approve-flw" | "reject"
+    action: "approve-manual" | "approve-flw" | "reject" | "reconcile"
   ) {
     const user = auth.currentUser;
     if (!user) return;
@@ -74,7 +74,22 @@ export default function WithdrawalsTab() {
     setMsg(null);
     try {
       const token = await user.getIdToken();
-      if (action === "reject") {
+      if (action === "reconcile") {
+        const res = await fetch("/api/admin/withdrawals/reconcile", {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + token,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            withdrawalId: id,
+            totpCode: totpCode || undefined,
+          }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error ?? "Reconcile failed");
+        setMsg(body.message ?? body.providerStatus ?? "Reconciled");
+      } else if (action === "reject") {
         const res = await fetch("/api/admin/withdrawals/reject", {
           method: "POST",
           headers: {
@@ -214,6 +229,20 @@ export default function WithdrawalsTab() {
                         </Button>
                       </div>
                     )}
+                    {(w.status === "processing" ||
+                      w.status === "payment_failed") &&
+                      w.flwTransferId && (
+                      <div className="mt-1">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={busy === w.id}
+                          onClick={() => void act(w.id, "reconcile")}
+                        >
+                          Check FLW
+                        </Button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -223,4 +252,4 @@ export default function WithdrawalsTab() {
       )}
     </div>
   );
-}
+                        }
