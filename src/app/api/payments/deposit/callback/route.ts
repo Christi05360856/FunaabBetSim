@@ -4,6 +4,8 @@ import {
   flutterwaveVerifyTransaction,
 } from "@/lib/payments/flutterwave";
 import { creditVerifiedDeposit } from "@/lib/domain/creditDeposit";
+import { resolveUserEmail, sendMail } from "@/lib/email/send";
+import { depositEmailHtml } from "@/lib/email/templates";
 
 /**
  * Browser redirect after checkout.
@@ -77,14 +79,29 @@ export async function GET(request: NextRequest) {
       currency: "NGN",
     });
 
-    if (result.credited) {
-      return dash(
-        `deposit=success&points=${result.points}&ref=${encodeURIComponent(txRef)}`
-      );
-    }
-
-    // already_credited still counts as success for the user
-    if (result.reason === "already_credited") {
+    if (result.credited || result.reason === "already_credited") {
+      // Email on browser callback (webhook may never fire in test)
+      if (result.credited && result.uid) {
+        try {
+          const email = await resolveUserEmail(result.uid);
+          if (email) {
+            const tpl = depositEmailHtml({
+              points: result.points,
+              amountNgn,
+              promoPoints: result.promoPoints,
+              txRef: String(txRef),
+            });
+            void sendMail({
+              to: email,
+              subject: tpl.subject,
+              html: tpl.html,
+              text: tpl.text,
+            });
+          }
+        } catch (e) {
+          console.error("[email] deposit callback", e);
+        }
+      }
       return dash(
         `deposit=success&points=${result.points}&ref=${encodeURIComponent(txRef)}`
       );
