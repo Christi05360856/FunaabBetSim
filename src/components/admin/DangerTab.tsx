@@ -85,6 +85,7 @@ export default function DangerTab() {
   const [open, setOpen] = useState(false);
   const [scope, setScope] = useState<Scope | null>(null);
   const [typed, setTyped] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +93,7 @@ export default function DangerTab() {
   function openScope(s: Scope) {
     setScope(s);
     setTyped("");
+    setTotpCode("");
     setResult(null);
     setError(null);
     setOpen(true);
@@ -102,6 +104,7 @@ export default function DangerTab() {
     setOpen(false);
     setScope(null);
     setTyped("");
+    setTotpCode("");
     setError(null);
   }
 
@@ -109,6 +112,10 @@ export default function DangerTab() {
     if (!user || !scope) return;
     const opt = OPTIONS.find((o) => o.scope === scope);
     if (opt?.phrase && typed.trim() !== PHRASE) return;
+    if (totpCode.trim().length < 6) {
+      setError("Enter the 6-digit code from your admin authenticator app");
+      return;
+    }
     setBusy(true);
     setError(null);
     setResult(null);
@@ -120,14 +127,20 @@ export default function DangerTab() {
           Authorization: "Bearer " + token,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ scope }),
+        body: JSON.stringify({
+          scope,
+          totpCode: totpCode.trim(),
+          confirmPhrase: needsPhrase ? typed.trim() : undefined,
+        }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? "Reset failed (" + res.status + ")");
+      if (!res.ok)
+        throw new Error(body.error ?? "Reset failed (" + res.status + ")");
       setResult(body.message ?? "Done");
       setOpen(false);
       setScope(null);
       setTyped("");
+      setTotpCode("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Reset failed");
     } finally {
@@ -143,7 +156,8 @@ export default function DangerTab() {
       <h2 className="text-xl font-bold">Danger zone</h2>
       <p className="text-sm text-adm-muted">
         Choose a scoped reset. Prefer Phase F for real-money launch so you do
-        not rebuild leagues from scratch.
+        not rebuild leagues from scratch. Every action needs your admin
+        authenticator code.
       </p>
 
       {result && (
@@ -192,14 +206,29 @@ export default function DangerTab() {
               placeholder={PHRASE}
               autoCapitalize="characters"
               autoComplete="off"
-              className="mb-5"
+              className="mb-4"
             />
           </>
         ) : (
-          <p className="mb-5 text-sm text-adm-ink">
+          <p className="mb-4 text-sm text-adm-ink">
             This cannot be undone for the selected scope.
           </p>
         )}
+
+        <p className="mb-2 text-sm text-adm-muted">
+          Admin authenticator code (6 digits)
+        </p>
+        <Input
+          value={totpCode}
+          onChange={(e) =>
+            setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+          }
+          placeholder="000000"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          className="mb-5 font-mono tracking-widest"
+        />
+
         {error && <p className="mb-3 text-sm text-adm-bad">{error}</p>}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={close} disabled={busy}>
@@ -208,7 +237,11 @@ export default function DangerTab() {
           <Button
             variant="danger"
             onClick={handleReset}
-            disabled={busy || (needsPhrase && typed.trim() !== PHRASE)}
+            disabled={
+              busy ||
+              totpCode.trim().length < 6 ||
+              (needsPhrase && typed.trim() !== PHRASE)
+            }
           >
             {busy ? "Working…" : "Confirm"}
           </Button>
