@@ -733,11 +733,7 @@ export default function FixturesTab({
             />
           </label>
         </div>
-        {confirm &&
-          ((Number(confirm.match.kickoffAt) || 0) > Date.now() ||
-            ["scheduled", "open", "closed", "published"].includes(
-              String(confirm.match.status)
-            )) && (
+        {confirm && (Number(confirm.match.kickoffAt) || 0) > Date.now() && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
               <label className="flex items-start gap-2">
                 <input
