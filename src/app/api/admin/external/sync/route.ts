@@ -23,7 +23,7 @@ import {
   matchHasAnyMarket,
   writeMarketsFrom1x2,
 } from "@/lib/domain/ensureExternalMarkets";
-import type { Competition, Match, Team } from "@/types/domain";
+import type { Competition, Match, MatchStatus, Team } from "@/types/domain";
 
 /** Vercel serverless limit (Pro); Hobby may still cap lower. Sync one league at a time if needed. */
 export const maxDuration = 60;
@@ -383,16 +383,16 @@ async function upsertMatch(m: FdMatch, competitionId: string, now: number) {
 
     // Promote open/locked → live/halftime/finished from football-data.
     // Do not regress live → scheduled/open.
-    let nextStatus = prev.status;
+    let nextStatus: MatchStatus = prev.status;
     if (finishedProvider) {
       nextStatus = "finished";
     } else if (inPlayProvider) {
-      nextStatus = providerStatus as Match["status"];
+      nextStatus = providerStatus as MatchStatus;
     } else if (
       prev.status === "scheduled" ||
       prev.status === "postponed"
     ) {
-      nextStatus = (base.status as Match["status"]) ?? prev.status;
+      nextStatus = (base.status as MatchStatus | undefined) ?? prev.status;
     }
     // Keep open/locked while still upcoming; only change when provider says live/FT
 
@@ -450,4 +450,5 @@ async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
 
 
 
-      
+
+          
