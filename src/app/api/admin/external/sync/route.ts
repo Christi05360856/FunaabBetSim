@@ -384,7 +384,7 @@ async function upsertMatch(m: FdMatch, competitionId: string, now: number) {
     // Promote open/locked → live/halftime/finished from football-data.
     // Do not regress live → scheduled/open.
     let nextStatus = prev.status;
-    if (finishedProvider && prev.status !== "settled") {
+    if (finishedProvider) {
       nextStatus = "finished";
     } else if (inPlayProvider) {
       nextStatus = providerStatus as Match["status"];
@@ -450,4 +450,4 @@ async function maybeSettleExternal(m: FdMatch, now: number): Promise<boolean> {
 
 
 
-          
+      
