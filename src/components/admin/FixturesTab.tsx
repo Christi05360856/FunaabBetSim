@@ -451,6 +451,8 @@ export default function FixturesTab({
   const [search, setSearch] = useState("");
   const [confirm, setConfirm] = useState<{ type: ConfirmType; match: Match } | null>(null);
   const [scores, setScores] = useState({ home: "", away: "" });
+  const [forceEarly, setForceEarly] = useState(false);
+  const [earlyReason, setEarlyReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [marketOpenIds, setMarketOpenIds] = useState<Set<string>>(new Set());
   const [liveOpenIds, setLiveOpenIds] = useState<Set<string>>(new Set());
@@ -509,6 +511,8 @@ export default function FixturesTab({
   function closeModal() {
     setConfirm(null);
     setScores({ home: "", away: "" });
+    setForceEarly(false);
+    setEarlyReason("");
   }
 
   async function handleConfirm() {
@@ -518,6 +522,10 @@ export default function FixturesTab({
     if (confirm.type === "settle") {
       body.homeScore = Number(scores.home);
       body.awayScore = Number(scores.away);
+      if (forceEarly) {
+        body.forceEarlyResult = true;
+        body.earlyReason = earlyReason.trim();
+      }
     }
     const result = await onAction(ENDPOINTS[confirm.type], body, SUCCESS[confirm.type]);
     setBusy(false);
@@ -725,11 +733,51 @@ export default function FixturesTab({
             />
           </label>
         </div>
+        {confirm &&
+          ((Number(confirm.match.kickoffAt) || 0) > Date.now() ||
+            ["scheduled", "open", "closed", "published"].includes(
+              String(confirm.match.status)
+            )) && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={forceEarly}
+                  onChange={(e) => setForceEarly(e.target.checked)}
+                />
+                <span>
+                  <span className="font-semibold">Force early result</span>
+                  <span className="block text-xs text-adm-faint">
+                    Match may not be finished yet. Requires a reason (audited).
+                  </span>
+                </span>
+              </label>
+              {forceEarly && (
+                <textarea
+                  className="mt-2 w-full rounded-lg border border-adm-border bg-adm-bg px-2 py-1.5 text-sm"
+                  rows={2}
+                  placeholder="Reason for early settlement…"
+                  value={earlyReason}
+                  onChange={(e) => setEarlyReason(e.target.value)}
+                  maxLength={300}
+                />
+              )}
+            </div>
+          )}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={closeModal}>
             Cancel
           </Button>
-          <Button onClick={handleConfirm} disabled={busy || !isValidScore(scores.home) || !isValidScore(scores.away)}>
+          <Button
+            onClick={handleConfirm}
+            disabled={
+              busy ||
+              !isValidScore(scores.home) ||
+              !isValidScore(scores.away) ||
+              (forceEarly && earlyReason.trim().length < 5)
+            }
+          >
             {busy ? "Settling…" : "Settle"}
           </Button>
         </div>
@@ -747,4 +795,4 @@ export default function FixturesTab({
       />
     </div>
   );
-}
+                      }
