@@ -49,27 +49,6 @@ export async function POST(request: NextRequest) {
     .trim()
     .slice(0, 128);
 
-  if (idempotencyKey) {
-    const idRef = adminDb
-      .collection("bet_idempotency")
-      .doc(uid + "_" + idempotencyKey);
-    const idSnap = await idRef.get();
-    if (idSnap.exists) {
-      const prev = idSnap.data() as {
-        betId?: string;
-        balance?: number;
-        potentialPayout?: number;
-      };
-      return NextResponse.json({
-        ok: true,
-        betId: prev.betId,
-        balance: prev.balance,
-        potentialPayout: prev.potentialPayout,
-        replayed: true,
-      });
-    }
-  }
-
   const parsed = placeBetBodySchema.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json(
@@ -112,6 +91,27 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await adminDb.runTransaction(async (tx) => {
+      // Idempotency INSIDE the transaction (H-01) — concurrent same key → one bet
+      if (idempotencyKey) {
+        const idRef = adminDb
+          .collection("bet_idempotency")
+          .doc(uid + "_" + idempotencyKey);
+        const idSnap = await tx.get(idRef);
+        if (idSnap.exists) {
+          const prev = idSnap.data() as {
+            betId?: string;
+            balance?: number;
+            potentialPayout?: number;
+          };
+          return {
+            betId: prev.betId ?? "",
+            balance: prev.balance ?? 0,
+            potentialPayout: prev.potentialPayout ?? 0,
+            replayed: true as const,
+          };
+        }
+      }
+
       const walletSnap = await tx.get(walletRef);
       if (!walletSnap.exists) throw new Error("Wallet not found");
       const wallet = normalizeWallet(walletSnap.data() as Wallet);
@@ -269,28 +269,26 @@ export async function POST(request: NextRequest) {
       tx.set(transactionRef, transaction);
       tx.set(ledgerRef, ledger);
 
+      if (idempotencyKey) {
+        const idRef = adminDb
+          .collection("bet_idempotency")
+          .doc(uid + "_" + idempotencyKey);
+        tx.set(idRef, {
+          uid,
+          betId: betRef.id,
+          balance: nextWallet.balance,
+          potentialPayout,
+          createdAt: now,
+        });
+      }
+
       return {
         betId: betRef.id,
         balance: nextWallet.balance,
         potentialPayout,
+        replayed: false as const,
       };
     });
-
-    if (idempotencyKey) {
-      await adminDb
-        .collection("bet_idempotency")
-        .doc(uid + "_" + idempotencyKey)
-        .set(
-          {
-            uid,
-            betId: result.betId,
-            balance: result.balance,
-            potentialPayout: result.potentialPayout,
-            createdAt: Date.now(),
-          },
-          { merge: true }
-        );
-    }
 
     void securityLog({
       type: "BET_PLACED",
@@ -306,4 +304,5 @@ export async function POST(request: NextRequest) {
   }
       }
 
-      
+
+        
