@@ -4,6 +4,7 @@
  * test" pattern as matchClock.ts.
  */
 import type { Match, MatchStatus } from "@/types/domain";
+import { deriveClockState } from "@/lib/domain/matchClock";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -16,8 +17,13 @@ const IN_PLAY_STATUSES: MatchStatus[] = ["live", "halftime", "second_half"];
 function isFinal(m: Pick<Match, "status">): boolean {
   return FINAL_STATUSES.includes(m.status);
 }
-function isInPlay(m: Pick<Match, "status">): boolean {
-  return IN_PLAY_STATUSES.includes(m.status);
+function isInPlay(m: Pick<Match, "status" | "kickoffAt">, now: number = Date.now()): boolean {
+  if (IN_PLAY_STATUSES.includes(m.status)) return true;
+  // External matches may stay "open" until sync; still show in Live from clock
+  if (m.status === "settled" || m.status === "voided" || m.status === "postponed") {
+    return false;
+  }
+  return deriveClockState(m, now).isLive;
 }
 
 function startOfDay(ts: number): number {
@@ -50,10 +56,10 @@ export function groupFixturesForBrowsing(matches: Match[], now: number = Date.no
   upcoming: FixtureSection[];
   recentResults: Match[];
 } {
-  const live = matches.filter((m) => isInPlay(m)).sort((a, b) => a.kickoffAt - b.kickoffAt);
+  const live = matches.filter((m) => isInPlay(m, now)).sort((a, b) => a.kickoffAt - b.kickoffAt);
 
   const upcomingMatches = matches
-    .filter((m) => !isInPlay(m) && !isFinal(m))
+    .filter((m) => !isInPlay(m, now) && !isFinal(m))
     .sort((a, b) => a.kickoffAt - b.kickoffAt);
 
   const byBucket = new Map<string, Match[]>();
