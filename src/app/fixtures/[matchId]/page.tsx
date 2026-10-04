@@ -1,14 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { collection, doc, onSnapshot, query, where } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDocs,
+  limit,
+  onSnapshot,
+  query,
+  where,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import type { Match, Team, Competition, Market } from "@/types/domain";
+import type { Bet, Match, Team, Competition, Market } from "@/types/domain";
 import { deriveClockState, isBettingOpen } from "@/lib/domain/matchClock";
 import { CORRECT_SCORES } from "@/lib/domain/oddsModel";
 import { useBetSlip } from "@/lib/context/BetSlipContext";
 import { resolveSelection } from "@/lib/domain/selectionLabel";
+import { useAuth } from "@/lib/auth/AuthContext";
 
 const CS_HOME_WIN = CORRECT_SCORES.slice(0, 10);
 const CS_DRAW = CORRECT_SCORES.slice(10, 15);
@@ -27,7 +37,9 @@ export default function MatchDetailPage({
   const [away, setAway] = useState<Team | null>(null);
   const [competition, setCompetition] = useState<Competition | null>(null);
   const [markets, setMarkets] = useState<Market[]>([]);
+  const [openBetCount, setOpenBetCount] = useState(0);
   const slip = useBetSlip();
+  const { user } = useAuth();
 
   function isSelectionPicked(marketId: string, selectionId: string): boolean {
     return slip.items.some(
@@ -99,6 +111,43 @@ export default function MatchDetailPage({
     return () => unsub();
   }, [loadedMatchId]);
 
+
+  // P1: count open tickets that include this match (one read batch, no listener)
+  const loadOpenBetCount = useCallback(async () => {
+    if (!user) {
+      setOpenBetCount(0);
+      return;
+    }
+    try {
+      const snap = await getDocs(
+        query(collection(db, "bets"), where("uid", "==", user.uid), limit(60))
+      );
+      let n = 0;
+      snap.forEach((d) => {
+        const b = d.data() as Bet;
+        if (b.status !== "open") return;
+        if (b.matchId === matchId) {
+          n += 1;
+          return;
+        }
+        if (Array.isArray(b.matchIds) && b.matchIds.includes(matchId)) {
+          n += 1;
+          return;
+        }
+        if (Array.isArray(b.legs) && b.legs.some((l) => l.matchId === matchId)) {
+          n += 1;
+        }
+      });
+      setOpenBetCount(n);
+    } catch {
+      setOpenBetCount(0);
+    }
+  }, [user, matchId]);
+
+  useEffect(() => {
+    void loadOpenBetCount();
+  }, [loadOpenBetCount]);
+
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -158,58 +207,154 @@ export default function MatchDetailPage({
         .sort((a, b) => a - b)
     : [];
 
+  const homeGoals =
+    match.currentHomeScore != null
+      ? match.currentHomeScore
+      : match.homeScore != null
+        ? match.homeScore
+        : null;
+  const awayGoals =
+    match.currentAwayScore != null
+      ? match.currentAwayScore
+      : match.awayScore != null
+        ? match.awayScore
+        : null;
+
+  const periodTag =
+    clock.phase === "first_half"
+      ? "1H"
+      : clock.phase === "halftime"
+        ? "HT"
+        : clock.phase === "second_half"
+          ? "2H"
+          : clock.phase === "final" || clock.phase === "full_time"
+            ? "FT"
+            : null;
+
+  const clockLine =
+    isLive && periodTag
+      ? `${clock.display} ${periodTag}`
+      : clock.phase === "halftime"
+        ? "HT"
+        : clock.phase === "final"
+          ? clock.display
+          : clock.display;
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col pb-28">
-      <div className="bg-brand px-4 pb-5 pt-4 text-white">
-        <div className="flex items-center gap-3">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col bg-bg pb-28">
+      {/* —— Match header —— */}
+      <header className="bg-brand text-white">
+        <div className="flex items-center gap-2 px-3 pb-2 pt-3">
           <button
+            type="button"
             onClick={() => router.back()}
-            className="text-white"
+            className="flex h-9 w-9 items-center justify-center rounded-full active:bg-white/10"
             aria-label="Back"
           >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                d="M15 18l-6-6 6-6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+              <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          <p className="flex-1 text-center text-xs font-medium uppercase tracking-wide text-white/70">
-            {competition?.name ?? "…"}
-          </p>
-          <div className="w-[22px]" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[11px] font-medium tracking-wide text-white/75">
+              Football · {competition?.name ?? "League"}
+            </p>
+          </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-center gap-4">
-          <p className="flex-1 text-right text-base font-semibold leading-tight">
-            {home?.name ?? "Home"}
-          </p>
-          <div className="shrink-0 text-center">
-            {displayScore ? (
-              <p className="font-display text-2xl font-bold">{displayScore}</p>
-            ) : (
-              <p className="text-sm font-bold">{clock.display}</p>
-            )}
-            {isLive && (
-              <p className="mt-0.5 flex items-center justify-center gap-1 text-[10px] font-medium text-white/80">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />{" "}
-                Live
-              </p>
-            )}
-          </div>
-          <p className="flex-1 text-left text-base font-semibold leading-tight">
-            {away?.name ?? "Away"}
-          </p>
+        {/* Status + clock */}
+        <div className="flex items-center gap-2 px-4 pb-2">
+          {isLive && (
+            <span className="inline-flex items-center gap-1 rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
+              Live
+            </span>
+          )}
+          <span className="font-mono text-sm font-semibold tabular-nums text-white/95">
+            {clockLine}
+          </span>
         </div>
-      </div>
+
+        {/* Team rows + score chips */}
+        <div className="space-y-2 px-4 pb-3">
+          <div className="flex items-center gap-3">
+            <p className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-snug">
+              {home?.name ?? "Home"}
+            </p>
+            <span
+              className={
+                "flex h-8 min-w-[2rem] items-center justify-center rounded-md px-2 font-display text-lg font-bold tabular-nums " +
+                (homeGoals != null ? "bg-white text-brand" : "bg-white/15 text-white/50")
+              }
+            >
+              {homeGoals != null ? homeGoals : "–"}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <p className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-snug">
+              {away?.name ?? "Away"}
+            </p>
+            <span
+              className={
+                "flex h-8 min-w-[2rem] items-center justify-center rounded-md px-2 font-display text-lg font-bold tabular-nums " +
+                (awayGoals != null ? "bg-white text-brand" : "bg-white/15 text-white/50")
+              }
+            >
+              {awayGoals != null ? awayGoals : "–"}
+            </span>
+          </div>
+        </div>
+
+        {/* Open bets on this match */}
+        <div className="flex border-t border-white/15">
+          <Link
+            href={openBetCount > 0 ? "/bets" : "/bets"}
+            className="flex flex-1 items-center justify-between px-4 py-2.5 text-[12px] active:bg-white/10"
+          >
+            <span className="text-white/80">Open bets · this match</span>
+            <span className="flex items-center gap-1 font-semibold tabular-nums">
+              {openBetCount}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+          </Link>
+        </div>
+      </header>
+
+      {/* —— Live strip (P2): clock + score only, no fake pitch —— */}
+      {(isLive || clock.phase === "halftime" || clock.phase === "final" || displayScore) && (
+        <div className="mx-4 mt-3 rounded-xl border border-ink-muted/10 bg-surface px-3 py-2.5 shadow-card">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {isLive ? (
+                <span className="h-2 w-2 animate-pulse rounded-full bg-loss" />
+              ) : (
+                <span className="h-2 w-2 rounded-full bg-ink-muted/40" />
+              )}
+              <span className="text-xs font-semibold text-ink">
+                {periodTag === "1H"
+                  ? "First half"
+                  : periodTag === "2H"
+                    ? "Second half"
+                    : periodTag === "HT"
+                      ? "Half-time"
+                      : periodTag === "FT"
+                        ? "Full time"
+                        : "Match"}
+              </span>
+              <span className="font-mono text-xs tabular-nums text-ink-muted">
+                {clock.display}
+              </span>
+            </div>
+            <p className="font-display text-base font-bold tabular-nums text-ink">
+              {homeGoals != null && awayGoals != null
+                ? `${homeGoals} – ${awayGoals}`
+                : "vs"}
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-4 px-4 pt-4">
         <MarketSection
