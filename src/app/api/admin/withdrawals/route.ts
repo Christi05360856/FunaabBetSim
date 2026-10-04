@@ -13,20 +13,16 @@ export async function GET(request: NextRequest) {
   const status =
     request.nextUrl.searchParams.get("status") || "pending_review";
 
-  let q = adminDb
+  // Single orderBy avoids composite-index failures; filter status in memory.
+  const snap = await adminDb
     .collection("withdrawals")
     .orderBy("createdAt", "desc")
-    .limit(50);
+    .limit(100)
+    .get();
 
+  let items = snap.docs.map((d) => d.data() as Withdrawal);
   if (status !== "all") {
-    q = adminDb
-      .collection("withdrawals")
-      .where("status", "==", status)
-      .orderBy("createdAt", "desc")
-      .limit(50);
+    items = items.filter((w) => w.status === status);
   }
-
-  const snap = await q.get();
-  const items = snap.docs.map((d) => d.data() as Withdrawal);
   return NextResponse.json({ ok: true, items });
 }
