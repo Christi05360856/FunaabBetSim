@@ -43,6 +43,11 @@ export default function SettingsPage() {
           <Row label="Email" value={user.email ?? "—"} />
         </Section>
 
+        <Section title="Security">
+          <Row label="Change password" href="/account/settings/password" />
+          <Row label="Withdrawal PIN" href="/account/settings/pin" />
+        </Section>
+
         <Section title="Appearance">
           {(
             [
