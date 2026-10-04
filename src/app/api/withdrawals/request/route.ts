@@ -21,6 +21,7 @@ import {
   requireStablePayoutDestination,
   normalizeAccountName,
 } from "@/lib/security/sessionGate";
+import { isValidPinFormat, verifyPin } from "@/lib/security/withdrawPin";
 
 function startOfTodayMs(): number {
   const d = new Date();
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest) {
   const bankCode = String(body.bankCode ?? "").trim();
   const accountNumber = String(body.accountNumber ?? "").replace(/\s/g, "");
   const accountName = String(body.accountName ?? "").trim();
+  const pin = String(body.pin ?? "").trim();
 
   if (!Number.isFinite(amount) || amount < MIN_WITHDRAWAL) {
     return NextResponse.json(
@@ -145,6 +147,61 @@ export async function POST(request: NextRequest) {
   }
   // Always persist the verified KYC name (not a free-typed variant)
   const lockedAccountName = String(kyc.accountName ?? "").trim();
+
+  // Withdrawal PIN required once set (and must be set for cash-out)
+  const pinSnap = await adminDb.collection("user_security").doc(uid).get();
+  const pinDoc = (pinSnap.data() ?? {}) as {
+    pinHash?: string;
+    pinSalt?: string;
+    pinFailCount?: number;
+    pinLockedUntil?: number;
+  };
+  if (!pinDoc.pinHash || !pinDoc.pinSalt) {
+    return NextResponse.json(
+      {
+        error: "Set a 4-digit withdrawal PIN under Account → Settings before withdrawing.",
+        code: "pin_required",
+      },
+      { status: 403 }
+    );
+  }
+  const pinLockedUntil = Number(pinDoc.pinLockedUntil ?? 0);
+  if (pinLockedUntil > Date.now()) {
+    const mins = Math.ceil((pinLockedUntil - Date.now()) / 60000);
+    return NextResponse.json(
+      {
+        error: `Withdrawal PIN locked. Try again in about ${mins} minute(s).`,
+        code: "pin_locked",
+      },
+      { status: 429 }
+    );
+  }
+  if (!isValidPinFormat(pin) || !verifyPin(pin, pinDoc.pinSalt, pinDoc.pinHash)) {
+    const fails = Number(pinDoc.pinFailCount ?? 0) + 1;
+    const patch: Record<string, unknown> = {
+      pinFailCount: fails,
+      updatedAt: Date.now(),
+    };
+    if (fails >= 5) {
+      patch.pinLockedUntil = Date.now() + 15 * 60 * 1000;
+      patch.pinFailCount = 0;
+    }
+    await adminDb.collection("user_security").doc(uid).set(patch, { merge: true });
+    void securityLog({ type: "PIN_FAIL", uid, ip });
+    return NextResponse.json(
+      { error: "Incorrect withdrawal PIN", code: "pin_invalid" },
+      { status: 403 }
+    );
+  }
+  // reset fail counter on success
+  if (Number(pinDoc.pinFailCount ?? 0) > 0) {
+    await adminDb.collection("user_security").doc(uid).set(
+      { pinFailCount: 0, pinLockedUntil: 0, updatedAt: Date.now() },
+      { merge: true }
+    );
+  }
+
+
 
   try {
     const result = await adminDb.runTransaction(async (tx) => {
