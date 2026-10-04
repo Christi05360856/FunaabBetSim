@@ -58,6 +58,8 @@ export default function WithdrawPage() {
   const [bankCode, setBankCode] = useState("058");
   const [accountNumber, setAccountNumber] = useState("");
   const [accountName, setAccountName] = useState("");
+  const [pin, setPin] = useState("");
+  const [hasPin, setHasPin] = useState<boolean | null>(null);
   const [kyc, setKyc] = useState<KycInfo | null>(null);
   const [kycLoading, setKycLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -84,11 +86,14 @@ export default function WithdrawPage() {
     void (async () => {
       try {
         const token = await user.getIdToken();
-        const [wRes, kRes] = await Promise.all([
+        const [wRes, kRes, pRes] = await Promise.all([
           fetch("/api/withdrawals", {
             headers: { Authorization: "Bearer " + token },
           }),
           fetch("/api/kyc", {
+            headers: { Authorization: "Bearer " + token },
+          }),
+          fetch("/api/security/pin", {
             headers: { Authorization: "Bearer " + token },
           }),
         ]);
@@ -116,6 +121,8 @@ export default function WithdrawPage() {
             }
           }
         }
+        const pBody = await pRes.json().catch(() => ({}));
+        if (pRes.ok) setHasPin(Boolean(pBody.hasPin));
       } catch {
         /* ignore */
       } finally {
@@ -147,6 +154,7 @@ export default function WithdrawPage() {
           bankCode,
           accountNumber,
           accountName,
+          pin,
         }),
       });
       const body = await res.json();
@@ -277,6 +285,32 @@ export default function WithdrawPage() {
             />
           </label>
 
+
+          {!hasPin && kycVerified && (
+            <div className="rounded-xl bg-loss/10 px-3 py-2 text-sm text-loss">
+              Set a withdrawal PIN first.{" "}
+              <Link href="/account/settings/pin" className="font-semibold underline">
+                Set PIN
+              </Link>
+            </div>
+          )}
+
+          {hasPin && (
+            <label className="block text-xs text-ink-muted">
+              Withdrawal PIN
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={pin}
+                onChange={(e) =>
+                  setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
+                }
+                className="mt-1 w-full rounded-xl border border-ink-muted/20 bg-bg px-3 py-2.5 text-center font-mono text-lg tracking-[0.4em]"
+              />
+            </label>
+          )}
+
           {error && (
             <p className="text-sm text-loss" role="alert">
               {error}
@@ -290,7 +324,7 @@ export default function WithdrawPage() {
 
           <button
             type="button"
-            disabled={busy || free < MIN_WITHDRAWAL || !kycVerified}
+            disabled={busy || free < MIN_WITHDRAWAL || !kycVerified || !hasPin || pin.length !== 4}
             onClick={() => void submit()}
             className="w-full rounded-xl bg-brand py-3 text-sm font-semibold text-white disabled:opacity-50"
           >
@@ -340,4 +374,4 @@ export default function WithdrawPage() {
       )}
     </main>
   );
-}
+          }
