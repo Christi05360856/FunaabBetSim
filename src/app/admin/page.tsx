@@ -17,6 +17,8 @@ import WithdrawalsTab from "@/components/admin/WithdrawalsTab";
 import PlatformTab from "@/components/admin/PlatformTab";
 import TicketsTab from "@/components/admin/TicketsTab";
 import ComplianceTab from "@/components/admin/ComplianceTab";
+import PromosTab from "@/components/admin/PromosTab";
+import SponsorsTab from "@/components/admin/SponsorsTab";
 
 type AdminStatus = "checking" | "admin" | "not-admin";
 type PostResult = { ok: boolean; message: string };
@@ -170,19 +172,15 @@ function AdminApp() {
           />
         )}
         {tab === "withdrawals" && <WithdrawalsTab />}
+        {tab === "promos" && <PromosTab />}
+        {tab === "sponsors" && <SponsorsTab />}
         {tab === "tickets" && <TicketsTab />}
         {tab === "compliance" && <ComplianceTab />}
         {tab === "platform" && <PlatformTab />}
-        {tab === "danger" && (
-          <DangerTab />
-        )}
+        {tab === "danger" && <DangerTab />}
       </AdminLayout>
 
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </>
   );
-                                                                              }
-
-
-
-
+          }
