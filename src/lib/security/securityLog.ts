@@ -12,7 +12,10 @@ export type SecurityEventType =
   | "AUTH_REGISTER"
   | "IDOR_ATTEMPT"
   | "BOOK_CODE"
-  | "VERIFY_TICKET";
+  | "VERIFY_TICKET"
+  | "PIN_SET"
+  | "PIN_CHANGED"
+  | "PIN_FAIL";
 
 /**
  * Append-only security / audit log (Admin SDK only).
