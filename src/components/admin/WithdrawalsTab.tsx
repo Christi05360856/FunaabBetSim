@@ -47,12 +47,22 @@ export default function WithdrawalsTab() {
     const user = auth.currentUser;
     if (!user) return;
     const token = await user.getIdToken();
-    const res = await fetch(
-      `/api/admin/withdrawals?status=${encodeURIComponent(filter)}`,
-      { headers: { Authorization: "Bearer " + token } }
-    );
+    // Always load "all" then filter client-side — avoids Firestore composite
+    // index requirement on status + createdAt (empty lists when index missing).
+    const res = await fetch(`/api/admin/withdrawals?status=all`, {
+      headers: { Authorization: "Bearer " + token },
+    });
     const body = await res.json();
-    if (res.ok) setItems(body.items ?? []);
+    if (!res.ok) {
+      setItems([]);
+      setMsg(body.error ?? "Failed to load withdrawals");
+      return;
+    }
+    let list = (body.items ?? []) as WItem[];
+    if (filter !== "all") {
+      list = list.filter((w) => w.status === filter);
+    }
+    setItems(list);
   }, [filter]);
 
   useEffect(() => {
@@ -254,4 +264,4 @@ export default function WithdrawalsTab() {
       )}
     </div>
   );
-}
+                        }
