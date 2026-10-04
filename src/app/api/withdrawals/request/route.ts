@@ -108,20 +108,43 @@ export async function POST(request: NextRequest) {
       { status: 403 }
     );
   }
-  // Payout bank should match verified KYC bank (prevents sudden account swap)
-  if (
-    String(kyc.bankCode) !== bankCode ||
-    String(kyc.accountNumber) !== accountNumber
-  ) {
+  // Payout destination is locked to verified KYC (bank + number + name).
+  const kycBank = String(kyc.bankCode ?? "").trim();
+  const kycAcct = String(kyc.accountNumber ?? "").replace(/\s/g, "");
+  const kycNameNorm = normalizeAccountName(String(kyc.accountName ?? ""));
+  if (!kycBank || !kycAcct || kycNameNorm.length < 3) {
     return NextResponse.json(
       {
         error:
-          "Withdrawal bank must match your verified KYC details. Update KYC via support if your bank changed.",
+          "Your KYC bank details are incomplete. Update Verify identity or contact support.",
+        code: "kyc_incomplete",
+      },
+      { status: 403 }
+    );
+  }
+  if (kycBank !== bankCode || kycAcct !== accountNumber) {
+    return NextResponse.json(
+      {
+        error:
+          "Withdrawal bank must match your verified KYC details. Contact support if your bank changed.",
         code: "kyc_bank_mismatch",
       },
       { status: 403 }
     );
   }
+  // Name must match verified KYC (stops typing a different beneficiary on same NUBAN)
+  if (normalizedName !== kycNameNorm) {
+    return NextResponse.json(
+      {
+        error:
+          "Account name must match your verified KYC name exactly. You cannot change the beneficiary after verification.",
+        code: "kyc_name_mismatch",
+      },
+      { status: 403 }
+    );
+  }
+  // Always persist the verified KYC name (not a free-typed variant)
+  const lockedAccountName = String(kyc.accountName ?? "").trim();
 
   try {
     const result = await adminDb.runTransaction(async (tx) => {
@@ -185,7 +208,7 @@ export async function POST(request: NextRequest) {
         amount,
         bankCode,
         accountNumber,
-        accountName,
+        accountName: lockedAccountName,
         status: "pending_review",
         adminNote: null,
         flwTransferId: null,
@@ -236,6 +259,4 @@ export async function POST(request: NextRequest) {
       : 500;
     return NextResponse.json({ error: msg }, { status });
   }
-      }
-
-    
+}
