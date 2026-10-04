@@ -170,9 +170,6 @@ export default function WithdrawPage() {
     );
   }
 
-  const bankLabel =
-    BANKS.find((b) => b.code === bankCode)?.name ?? bankCode;
-
   return (
     <main className="mx-auto max-w-lg space-y-4 px-4 py-6 pb-28">
       <div className="flex items-center justify-between">
@@ -223,14 +220,6 @@ export default function WithdrawPage() {
               <Link href="/account/kyc" className="font-semibold underline">
                 Verify identity
               </Link>
-            </div>
-          )}
-
-          {locked && (
-            <div className="rounded-xl bg-brand/10 px-3 py-2 text-xs text-ink-muted">
-              Payout locked to verified account:{" "}
-              <span className="font-semibold text-ink">{accountName}</span> ·{" "}
-              {bankLabel} · {accountNumber}
             </div>
           )}
 
@@ -351,4 +340,4 @@ export default function WithdrawPage() {
       )}
     </main>
   );
-          }
+}
