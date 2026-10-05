@@ -250,7 +250,7 @@ export default function MatchDetailPage({
         <div className="flex items-center gap-1 px-2 pb-1 pt-2.5">
           <button
             type="button"
-            onClick={() => router.back()}
+            onClick={() => router.replace("/fixtures")}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full active:bg-black/15"
             aria-label="Back"
           >
@@ -667,4 +667,4 @@ function SelectionButton({
       </span>
     </button>
   );
-}
+        }
