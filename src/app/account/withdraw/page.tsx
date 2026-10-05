@@ -181,7 +181,7 @@ export default function WithdrawPage() {
   return (
     <main className="mx-auto max-w-lg space-y-4 px-4 py-6 pb-28">
       <div className="flex items-center justify-between">
-        <Link href="/account" className="text-sm text-ink-muted">
+        <Link href="/dashboard" className="text-sm text-ink-muted">
           ← Account
         </Link>
         <button
@@ -374,4 +374,4 @@ export default function WithdrawPage() {
       )}
     </main>
   );
-          }
+        }
