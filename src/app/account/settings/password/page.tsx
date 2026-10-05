@@ -85,7 +85,7 @@ export default function ChangePasswordPage() {
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-ink-muted/10 bg-brand px-4 py-3 text-white">
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={() => router.replace("/account/settings")}
           className="text-lg"
           aria-label="Back"
         >
