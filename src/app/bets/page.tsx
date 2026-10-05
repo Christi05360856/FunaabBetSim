@@ -13,6 +13,7 @@ import {
   resolveSelection,
 } from "@/lib/domain/selectionLabel";
 import { useSheetHistory } from "@/lib/hooks/useSheetHistory";
+import { shareOfficialTicket } from "@/components/bets/TicketShareCard";
 
 function betLegs(bet: Bet): BetLeg[] {
   if (bet.legs && bet.legs.length > 0) return bet.legs;
@@ -776,7 +777,7 @@ function TicketDetails({
             void (async () => {
               setShareBusy(true);
               try {
-                await shareTicketImage(bet, matches, teams);
+                await shareOfficialTicket(bet, matches, teams);
               } finally {
                 setShareBusy(false);
               }
