@@ -55,9 +55,12 @@ export async function POST(request: NextRequest) {
       if (!matchSnap.exists) throw new Error("Match not found");
       const match = matchSnap.data() as Match;
 
-      if (match.status === "settled" || match.status === "voided") {
+      // Settled matches cannot be voided. Already-voided matches may still
+      // need open ACCAs reconciled (e.g. first void ran before multi-leg fix).
+      if (match.status === "settled") {
         return { alreadyFinal: true, betsHandled: 0 };
       }
+      const alreadyVoided = match.status === "voided";
 
       const marketsSnap = await tx.get(
         adminDb.collection("markets").where("matchId", "==", matchId)
@@ -99,9 +102,11 @@ export async function POST(request: NextRequest) {
 
       const now = Date.now();
 
-      tx.update(matchRef, { status: "voided", updatedAt: now });
-      for (const m of marketsSnap.docs) {
-        tx.update(m.ref, { status: "disabled", updatedAt: now });
+      if (!alreadyVoided) {
+        tx.update(matchRef, { status: "voided", updatedAt: now });
+        for (const m of marketsSnap.docs) {
+          tx.update(m.ref, { status: "disabled", updatedAt: now });
+        }
       }
 
       let betsHandled = 0;
@@ -332,7 +337,7 @@ export async function POST(request: NextRequest) {
         betsHandled++;
       }
 
-      return { alreadyFinal: false, betsHandled };
+      return { alreadyFinal: alreadyVoided, betsHandled, reconciled: alreadyVoided };
     });
 
     revalidateTag("fixtures-core");
@@ -344,4 +349,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
               }
-                
+
+            
