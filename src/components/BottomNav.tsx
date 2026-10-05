@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 const ITEMS = [
   { href: "/", label: "Home", icon: HomeIcon },
@@ -12,7 +12,18 @@ const ITEMS = [
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const router = useRouter();
   if (pathname?.startsWith("/admin")) return null;
+
+  function goTab(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
+    e.preventDefault();
+    const onTab =
+      href === "/"
+        ? pathname === "/"
+        : pathname === href || (pathname?.startsWith(href + "/") ?? false);
+    if (onTab) return;
+    router.replace(href);
+  }
 
   return (
     <nav
@@ -21,11 +32,15 @@ export default function BottomNav() {
     >
       <div className="mx-auto flex max-w-md items-center justify-around px-2 py-1.5">
         {ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = href === "/" ? pathname === "/" : (pathname?.startsWith(href) ?? false);
+          const active =
+            href === "/"
+              ? pathname === "/"
+              : (pathname?.startsWith(href) ?? false);
           return (
             <Link
               key={href}
               href={href}
+              onClick={(e) => goTab(e, href)}
               className={`flex min-w-[4rem] flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 text-[11px] font-medium transition-colors ${
                 active ? "bg-brand/10 text-brand" : "text-ink-muted"
               }`}
