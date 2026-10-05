@@ -244,60 +244,81 @@ export default function MatchDetailPage({
     <main className="mx-auto flex min-h-screen max-w-md flex-col bg-bg pb-28">
       {/* —— Match header —— */}
       <header className="bg-brand text-white">
-        <div className="flex items-center gap-2 px-3 pb-2 pt-3">
+        {/* Top bar: back · league · chat */}
+        <div className="flex items-center gap-1 px-2 pb-1 pt-2.5">
           <button
             type="button"
             onClick={() => router.back()}
-            className="flex h-9 w-9 items-center justify-center rounded-full active:bg-white/10"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full active:bg-black/15"
             aria-label="Back"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
               <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[11px] font-medium tracking-wide text-white/75">
-              Football · {competition?.name ?? "League"}
-            </p>
+          <p className="min-w-0 flex-1 truncate text-[11px] font-medium text-white/80">
+            Football · {competition?.name ?? "League"}
+          </p>
+          {/* Chat entry — wired in P3; icon only */}
+          <button
+            type="button"
+            id="match-chat-entry"
+            aria-label="Match chat"
+            className="mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/35 bg-black/20 active:bg-black/35"
+            onClick={() => {
+              const el = document.getElementById("match-chat-panel");
+              if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+              <path
+                d="M21 12a8.5 8.5 0 01-8.5 8.5c-1.4 0-2.7-.3-3.9-.9L3 21l1.5-4.4A8.4 8.4 0 013.5 12 8.5 8.5 0 0112 3.5 8.5 8.5 0 0121 12z"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+
+        {/* Kick-off / live clock pill */}
+        <div className="px-3 pb-2">
+          <div className="inline-flex items-center gap-2 rounded-lg bg-black/25 px-2.5 py-1">
+            {isLive && (
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
+            )}
+            <span className="font-mono text-[12px] font-semibold tracking-wide tabular-nums text-white">
+              {clockLine}
+            </span>
           </div>
         </div>
 
-        {/* Status + clock */}
-        <div className="flex items-center gap-2 px-4 pb-2">
-          {isLive && (
-            <span className="inline-flex items-center gap-1 rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
-              Live
-            </span>
-          )}
-          <span className="font-mono text-sm font-semibold tabular-nums text-white/95">
-            {clockLine}
-          </span>
-        </div>
-
-        {/* Team rows + score chips */}
-        <div className="space-y-2 px-4 pb-3">
-          <div className="flex items-center gap-3">
-            <p className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-snug">
+        {/* Team cards on dark rails */}
+        <div className="space-y-1.5 px-3 pb-3">
+          <div className="flex items-center gap-2 rounded-lg bg-black/30 px-3 py-2.5">
+            <p className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-snug text-white">
               {home?.name ?? "Home"}
             </p>
             <span
               className={
-                "flex h-8 min-w-[2rem] items-center justify-center rounded-md px-2 font-display text-lg font-bold tabular-nums " +
-                (homeGoals != null ? "bg-white text-brand" : "bg-white/15 text-white/50")
+                "flex h-8 min-w-[2.25rem] items-center justify-center rounded-md px-2 font-display text-base font-bold tabular-nums " +
+                (homeGoals != null
+                  ? "bg-emerald-400 text-ink"
+                  : "bg-black/40 text-white/45")
               }
             >
               {homeGoals != null ? homeGoals : "–"}
             </span>
           </div>
-          <div className="flex items-center gap-3">
-            <p className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-snug">
+          <div className="flex items-center gap-2 rounded-lg bg-black/30 px-3 py-2.5">
+            <p className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-snug text-white">
               {away?.name ?? "Away"}
             </p>
             <span
               className={
-                "flex h-8 min-w-[2rem] items-center justify-center rounded-md px-2 font-display text-lg font-bold tabular-nums " +
-                (awayGoals != null ? "bg-white text-brand" : "bg-white/15 text-white/50")
+                "flex h-8 min-w-[2.25rem] items-center justify-center rounded-md px-2 font-display text-base font-bold tabular-nums " +
+                (awayGoals != null
+                  ? "bg-emerald-400 text-ink"
+                  : "bg-black/40 text-white/45")
               }
             >
               {awayGoals != null ? awayGoals : "–"}
@@ -305,15 +326,17 @@ export default function MatchDetailPage({
           </div>
         </div>
 
-        {/* Open bets on this match */}
-        <div className="flex border-t border-white/15">
+        {/* Open bets */}
+        <div className="flex border-t border-black/20 bg-black/15">
           <Link
-            href={openBetCount > 0 ? "/bets" : "/bets"}
-            className="flex flex-1 items-center justify-between px-4 py-2.5 text-[12px] active:bg-white/10"
+            href="/bets"
+            className="flex flex-1 items-center justify-between px-4 py-2.5 text-[12px] active:bg-black/20"
           >
-            <span className="text-white/80">Open bets · this match</span>
-            <span className="flex items-center gap-1 font-semibold tabular-nums">
-              {openBetCount}
+            <span className="text-white/75">Open bets · this match</span>
+            <span className="flex items-center gap-1.5 font-semibold tabular-nums text-white">
+              <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px]">
+                {openBetCount}
+              </span>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                 <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
