@@ -22,6 +22,7 @@ import type {
   Wallet,
 } from "@/types/domain";
 import {
+import { MATCH_DURATION_MS } from "@/lib/domain/matchClock";
   applyStakeLoss,
   applyStakeVoid,
   applyStakeWin,
@@ -122,17 +123,18 @@ export async function POST(request: NextRequest) {
   const preMatch = preSnap.data() as Match;
   const nowMs = Date.now();
   const kickoff = Number(preMatch.kickoffAt) || 0;
-  // H-06: "early" = settling BEFORE kickoff only.
-  // Status "open" after kickoff is normal (admin settles when ready) — no force needed.
-  const isEarly = kickoff > 0 && nowMs < kickoff;
+  // H-06: "early" = settling before full-time wall clock (1H+HT+2H after kickoff).
+  const ftAt = kickoff > 0 ? kickoff + MATCH_DURATION_MS : 0;
+  const isEarly = kickoff > 0 && nowMs < ftAt;
 
   if (isEarly && !forceEarlyResult) {
     return NextResponse.json(
       {
         error:
-          "Kickoff is still in the future. Tick “Force early result” and enter a reason to settle now.",
+          "Match has not reached full time yet. Tick “Force early result” and enter a reason to settle now.",
         code: "early_result_requires_force",
         kickoffAt: kickoff,
+        fullTimeAt: ftAt,
         status: preMatch.status,
       },
       { status: 400 }
