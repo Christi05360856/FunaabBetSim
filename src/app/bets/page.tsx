@@ -35,6 +35,33 @@ function totalOdds(bet: Bet): number {
   return legs.reduce((acc, l) => acc * (l.odds || 1), 1);
 }
 
+/** Actual return after settlement (void-adjusted). Falls back to potential while open. */
+function settledReturn(bet: Bet): number {
+  if (bet.status === "won") {
+    const p = Number(bet.payout);
+    if (Number.isFinite(p) && p > 0) return p;
+  }
+  if (bet.status === "void") return bet.stake;
+  if (bet.status === "lost") return 0;
+  return bet.potentialPayout;
+}
+
+/** Odds shown on ticket: exclude void legs after settle; else use payout/stake. */
+function displayOdds(bet: Bet): number {
+  const legs = betLegs(bet);
+  if (bet.status === "won" || bet.status === "lost" || bet.status === "void") {
+    const p = Number(bet.payout);
+    if (bet.status === "won" && Number.isFinite(p) && p > 0 && bet.stake > 0) {
+      return Math.round((p / bet.stake) * 100) / 100;
+    }
+    const active = legs.filter((l) => l.status !== "void");
+    if (active.length > 0) {
+      return active.reduce((acc, l) => acc * (l.odds || 1), 1);
+    }
+  }
+  return totalOdds(bet);
+}
+
 function publicTicketCode(bet: Bet): string {
   const anyBet = bet as Bet & { ticketCode?: string };
   return (anyBet.ticketCode || bet.id).toUpperCase();
@@ -492,9 +519,9 @@ export default function MyBetsPage() {
                       "font-semibold tabular-nums " +
                       (bet.status === "won" ? "text-emerald-600" : "")
                     }
-                    title={formatMoneyFull(bet.potentialPayout)}
+                    title={formatMoneyFull(settledReturn(bet))}
                   >
-                    {formatMoney(bet.potentialPayout)}
+                    {formatMoney(settledReturn(bet))}
                   </p>
                 </div>
               </button>
@@ -593,6 +620,124 @@ function Row({
   );
 }
 
+
+async function shareTicketImage(
+  bet: Bet,
+  matches: Record<string, Match>,
+  teams: Record<string, Team>
+): Promise<void> {
+  const legs = betLegs(bet);
+  const odds = displayOdds(bet);
+  const ret = settledReturn(bet);
+  const code = publicTicketCode(bet);
+  const w = 720;
+  const rowH = 72;
+  const headerH = 200;
+  const h = headerH + legs.length * rowH + 120;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  // background
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(0, 0, w, h);
+  // brand bar
+  ctx.fillStyle = "#059669";
+  ctx.fillRect(0, 0, w, 88);
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 28px system-ui, sans-serif";
+  ctx.fillText("FUNAAB BetSim", 28, 40);
+  ctx.font = "16px system-ui, sans-serif";
+  ctx.fillText(code, 28, 68);
+
+  const statusColor =
+    bet.status === "won"
+      ? "#34d399"
+      : bet.status === "lost"
+        ? "#f87171"
+        : bet.status === "void"
+          ? "#94a3b8"
+          : "#fbbf24";
+  ctx.fillStyle = statusColor;
+  ctx.font = "bold 20px system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(bet.status.toUpperCase(), w - 28, 55);
+  ctx.textAlign = "left";
+
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "16px system-ui, sans-serif";
+  ctx.fillText(
+    (legs.length > 1 ? "Multiple · " + legs.length + " legs" : "Single") +
+      "  ·  Stake " +
+      formatMoneyFull(bet.stake),
+    28,
+    120
+  );
+  ctx.fillText("Odds " + odds.toFixed(2), 28, 148);
+  ctx.fillStyle = "#34d399";
+  ctx.font = "bold 22px system-ui, sans-serif";
+  ctx.fillText(
+    (bet.status === "won" ? "Return " : "Potential ") + formatMoneyFull(ret),
+    28,
+    180
+  );
+
+  let y = headerH;
+  for (const leg of legs) {
+    const m = matches[leg.matchId];
+    const home = m ? teams[m.homeTeamId]?.name ?? "Home" : "Home";
+    const away = m ? teams[m.awayTeamId]?.name ?? "Away" : "Away";
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(20, y, w - 40, rowH - 10);
+    ctx.fillStyle = "#f8fafc";
+    ctx.font = "bold 16px system-ui, sans-serif";
+    ctx.fillText(home + " vs " + away, 36, y + 24);
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "14px system-ui, sans-serif";
+    const pick = leg.selectionLabel || leg.selectionId;
+    const st = leg.status ? " · " + leg.status.toUpperCase() : "";
+    ctx.fillText(pick + " @ " + (leg.odds || 0).toFixed(2) + st, 36, y + 48);
+    y += rowH;
+  }
+
+  ctx.fillStyle = "#64748b";
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.fillText("funaab-betsim.vercel.app · Play responsibly 18+", 28, h - 28);
+
+  const blob: Blob | null = await new Promise((resolve) =>
+    canvas.toBlob((b) => resolve(b), "image/png")
+  );
+  if (!blob) return;
+
+  const file = new File([blob], code + ".png", { type: "image/png" });
+  const nav = navigator as Navigator & {
+    share?: (data: ShareData) => Promise<void>;
+    canShare?: (data: ShareData) => boolean;
+  };
+
+  try {
+    if (nav.share && nav.canShare?.({ files: [file] })) {
+      await nav.share({
+        files: [file],
+        title: "Bet " + code,
+        text: "FUNAAB BetSim ticket " + code,
+      });
+      return;
+    }
+  } catch {
+    /* user cancelled or share failed — fall through to download */
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = code + ".png";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function TicketDetails({
   bet,
   matches,
@@ -605,9 +750,11 @@ function TicketDetails({
   onClose: () => void;
 }) {
   const legs = betLegs(bet);
-  const odds = totalOdds(bet);
+  const odds = displayOdds(bet);
+  const ret = settledReturn(bet);
   const isAcca = legs.length > 1;
   const { requestClose } = useSheetHistory(true, onClose);
+  const [shareBusy, setShareBusy] = useState(false);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col overflow-x-hidden bg-bg">
@@ -621,6 +768,23 @@ function TicketDetails({
           ←
         </button>
         <h2 className="flex-1 text-base font-bold">Ticket Details</h2>
+        <button
+          type="button"
+          disabled={shareBusy}
+          onClick={() => {
+            void (async () => {
+              setShareBusy(true);
+              try {
+                await shareTicketImage(bet, matches, teams);
+              } finally {
+                setShareBusy(false);
+              }
+            })();
+          }}
+          className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold"
+        >
+          {shareBusy ? "…" : "Share"}
+        </button>
       </header>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-28 pt-3">
@@ -656,8 +820,8 @@ function TicketDetails({
           <div className="mt-3 space-y-2 text-sm">
             <Row
               label={bet.status === "won" ? "Total return" : "Potential return"}
-              value={formatMoney(bet.potentialPayout)}
-              full={formatMoneyFull(bet.potentialPayout)}
+              value={formatMoney(ret)}
+              full={formatMoneyFull(ret)}
               strong
               green
             />
@@ -816,12 +980,12 @@ function TicketDetails({
             </p>
             <p
               className="mt-1 break-all text-xl font-bold tabular-nums text-emerald-700"
-              title={formatMoneyFull(bet.potentialPayout)}
+              title={formatMoneyFull(ret)}
             >
-              +{formatMoney(bet.potentialPayout)}
+              +{formatMoney(ret)}
             </p>
             <p className="mt-1 break-all text-[10px] text-ink-muted">
-              {formatMoneyFull(bet.potentialPayout)}
+              {formatMoneyFull(ret)}
             </p>
           </div>
         )}
@@ -833,10 +997,8 @@ function TicketDetails({
       </div>
     </div>
   );
-                          }
-
-
-  function ShareSheet({
+    }
+function ShareSheet({
   bet,
   matches,
   teams,
@@ -981,9 +1143,9 @@ function TicketDetails({
             </span>
             <span
               className="block truncate text-emerald-400"
-              title={formatMoneyFull(bet.potentialPayout)}
+              title={formatMoneyFull(settledReturn(bet))}
             >
-              {formatMoney(bet.potentialPayout)}
+              {formatMoney(settledReturn(bet))}
             </span>
           </div>
         </div>
@@ -1085,4 +1247,5 @@ function TicketDetails({
       </div>
     </div>
   );
-        }
+          }
+              
