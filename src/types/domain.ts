@@ -168,6 +168,7 @@ export interface BetLeg {
   marketId: string;
   selectionId: string;
   selectionLabel: string;
+  marketType?: string;
   odds: number;
 }
 
@@ -383,6 +384,7 @@ export interface BetLeg {
   marketId: string;
   selectionId: string;
   selectionLabel: string;
+  marketType?: string;
   odds: number;
   /** Set during settlement; pending until that fixture is settled. */
   status?: BetLegStatus;
@@ -411,4 +413,4 @@ export interface Bet {
   settledAt: number | null;
   payout?: number;
   hidden?: boolean;
-  }
+}
