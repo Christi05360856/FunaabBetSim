@@ -410,7 +410,8 @@ export default function MyBetsPage() {
           const isAcca = legs.length > 1;
           const { market, pick } = resolveSelection(
             first?.selectionId ?? bet.selectionId,
-            first?.selectionLabel ?? bet.selectionLabel
+            first?.selectionLabel ?? bet.selectionLabel,
+            (first as { marketType?: string } | undefined)?.marketType
           );
 
           return (
@@ -846,7 +847,8 @@ function TicketDetails({
             const score = matchFinalScore(match);
             const { market, pick } = resolveSelection(
               leg.selectionId,
-              leg.selectionLabel
+              leg.selectionLabel,
+              (leg as { marketType?: string }).marketType
             );
             const lr = legResult(leg, match);
             const won = lr === "won";
@@ -1060,7 +1062,11 @@ function ShareSheet({
         const m = matches[leg.matchId];
         const h = m ? teams[m.homeTeamId]?.name ?? "Home" : "Home";
         const a = m ? teams[m.awayTeamId]?.name ?? "Away" : "Away";
-        const sel = resolveSelection(leg.selectionId, leg.selectionLabel);
+        const sel = resolveSelection(
+          leg.selectionId,
+          leg.selectionLabel,
+          (leg as { marketType?: string }).marketType
+        );
         return {
           matchId: leg.matchId,
           marketId: leg.marketId,
@@ -1162,7 +1168,8 @@ function ShareSheet({
               const a = m ? teams[m.awayTeamId]?.name ?? "Away" : "Away";
               const sel = resolveSelection(
                 leg.selectionId,
-                leg.selectionLabel
+                leg.selectionLabel,
+                (leg as { marketType?: string }).marketType
               );
               return (
                 <li
