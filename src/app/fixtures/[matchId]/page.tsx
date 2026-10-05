@@ -39,6 +39,7 @@ export default function MatchDetailPage({
   const [competition, setCompetition] = useState<Competition | null>(null);
   const [markets, setMarkets] = useState<Market[]>([]);
   const [openBetCount, setOpenBetCount] = useState(0);
+  const [chatOpen, setChatOpen] = useState(false);
   const slip = useBetSlip();
   const { user } = useAuth();
 
@@ -265,10 +266,7 @@ export default function MatchDetailPage({
             id="match-chat-entry"
             aria-label="Match chat"
             className="mr-1 flex h-9 shrink-0 items-center gap-1 rounded-full border border-white/35 bg-black/20 px-2.5 active:bg-black/35"
-            onClick={() => {
-              const el = document.getElementById("match-chat-panel");
-              if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
+            onClick={() => setChatOpen(true)}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
               <path
@@ -384,6 +382,15 @@ export default function MatchDetailPage({
         matchId={matchId}
         homeName={home?.name ?? "Home"}
         awayName={away?.name ?? "Away"}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        preMatch={
+          !isLive &&
+          clock.phase === "upcoming" &&
+          match.status !== "finished" &&
+          match.status !== "result_confirmed" &&
+          match.status !== "settled"
+        }
       />
 
       <div className="flex flex-col gap-4 px-4 pt-4">
