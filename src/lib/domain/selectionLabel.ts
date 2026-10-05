@@ -4,18 +4,28 @@
 
 export function formatSelectionLabel(
   selectionId: string | undefined,
-  selectionLabel?: string | null
+  selectionLabel?: string | null,
+  marketType?: string | null
 ): string {
-  const { market, pick } = resolveSelection(selectionId, selectionLabel);
+  const { market, pick } = resolveSelection(selectionId, selectionLabel, marketType);
   return market + " · " + pick;
 }
 
 export function resolveSelection(
   selectionId: string | undefined,
-  selectionLabel?: string | null
+  selectionLabel?: string | null,
+  marketType?: string | null
 ): { market: string; pick: string } {
   const id = (selectionId ?? "").toLowerCase().trim();
   const label = (selectionLabel ?? "").trim();
+  const mt = (marketType ?? "").toLowerCase().trim();
+
+  if (mt === "draw_no_bet" || mt === "dnb") {
+    if (id === "home" || id === "1" || id === "dnb_home")
+      return { market: "Draw no bet", pick: "Home" };
+    if (id === "away" || id === "2" || id === "dnb_away")
+      return { market: "Draw no bet", pick: "Away" };
+  }
 
   if (id === "home" || id === "1") return { market: "1X2", pick: "Home" };
   if (id === "draw" || id === "x") return { market: "1X2", pick: "Draw" };
