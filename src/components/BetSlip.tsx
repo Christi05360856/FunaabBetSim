@@ -221,7 +221,13 @@ export function BetSlip() {
         "/api/bets/book?code=" + encodeURIComponent(code)
       );
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Code not found");
+      if (!res.ok) {
+        throw new Error(
+          body.error ??
+            body.message ??
+            "Code not found or selections finished"
+        );
+      }
       const legs = (body.booking?.legs ?? []) as {
         matchId: string;
         marketId: string;
@@ -325,17 +331,29 @@ export function BetSlip() {
                   value={loadCodeInput}
                   onChange={(e) => setLoadCodeInput(e.target.value)}
                   placeholder="FB-XXXXXXXX"
-                  className="min-w-0 flex-1 rounded-xl border border-ink-muted/15 px-3 py-2 text-sm"
+                  className="min-w-0 flex-1 rounded-xl border border-ink-muted/15 px-3 py-2 text-sm text-ink"
                 />
                 <button
                   type="button"
-                  disabled={loadingCode}
+                  disabled={loadingCode || !loadCodeInput.trim()}
                   onClick={() => void loadBookingCode()}
-                  className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white"
+                  className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >
-                  Load
+                  {loadingCode ? "…" : "Load"}
                 </button>
               </div>
+              {feedback && (
+                <p
+                  className={
+                    "mx-auto mt-3 max-w-xs rounded-xl px-3 py-2 text-xs font-medium " +
+                    (feedback.toLowerCase().includes("loaded")
+                      ? "bg-emerald-50 text-emerald-800"
+                      : "bg-rose-50 text-rose-700")
+                  }
+                >
+                  {feedback}
+                </p>
+              )}
             </div>
           ) : (
             <ul className="space-y-1.5">
@@ -728,4 +746,4 @@ function TicketIcon() {
       <path d="M20 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v2a2 2 0 010 4v2a2 2 0 002 2h12a2 2 0 002-2v-2a2 2 0 010-4zM8 13H6v-2h2v2zm0-4H6V7h2v2zm4 4h-2v-2h2v2zm0-4h-2V7h2v2zm4 4h-2v-2h2v2zm0-4h-2V7h2v2z" />
     </svg>
   );
-                }
+                    }
