@@ -3,19 +3,84 @@ import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { adminDb } from "@/lib/firebase/admin";
-import { resolveClinchedOverUnderWinners, resolveClinchedBTS } from "@/lib/domain/settlement";
-import type { Bet, Match, MatchStatus, Market, Transaction, Wallet } from "@/types/domain";
+import {
+  resolveClinchedOverUnderWinners,
+  resolveClinchedBTS,
+} from "@/lib/domain/settlement";
+import {
+  applyStakeLoss,
+  applyStakeVoid,
+  applyStakeWin,
+  buildLedgerEntry,
+  normalizeWallet,
+} from "@/lib/domain/ledgerEngine";
+import type {
+  Bet,
+  BetLeg,
+  BetLegStatus,
+  Match,
+  MatchStatus,
+  Market,
+  Wallet,
+} from "@/types/domain";
 
 const bodySchema = z.object({
   matchId: z.string().min(1),
   homeScore: z.number().int().min(0).max(99),
   awayScore: z.number().int().min(0).max(99),
-  /** Optional phase change while updating the interim score. */
   status: z.enum(["live", "halftime", "second_half"]).optional(),
 });
 
 const IN_PLAY: MatchStatus[] = ["live", "halftime", "second_half"];
 const CAN_GO_LIVE: MatchStatus[] = ["open", "locked"];
+
+function betLegs(bet: Bet): BetLeg[] {
+  if (bet.legs && bet.legs.length > 0) return bet.legs;
+  return [
+    {
+      matchId: bet.matchId,
+      marketId: bet.marketId,
+      selectionId: bet.selectionId,
+      selectionLabel: bet.selectionLabel || "",
+      odds: bet.oddsAtPlacement || 1,
+      status: bet.status === "won" ? "won" : bet.status === "lost" ? "lost" : "pending",
+    },
+  ];
+}
+
+/**
+ * Clinch outcome for one leg on THIS match from the interim score.
+ * Returns null if this leg is not on this match or not yet decided.
+ */
+function clinchLegOnMatch(
+  leg: BetLeg,
+  matchId: string,
+  market: Market | undefined,
+  clinchedByMarket: Map<string, string[]>
+): BetLegStatus | null {
+  if (leg.matchId !== matchId) return null;
+  if (!market) return null;
+
+  const winningIds = clinchedByMarket.get(leg.marketId);
+  if (!winningIds || winningIds.length === 0) return null;
+
+  if (market.type === "over_under") {
+    // over_X in winners → that selection won; paired under_X is lost
+    if (winningIds.includes(leg.selectionId)) return "won";
+    const under = /^under_(\d+(?:\.\d+)?)$/.exec(leg.selectionId);
+    if (under && winningIds.includes(`over_${under[1]}`)) return "lost";
+    return null;
+  }
+
+  if (market.type === "both_teams_to_score") {
+    // only "yes" can clinch; "no" is lost when yes clinches
+    if (leg.selectionId === "yes" && winningIds.includes("yes")) return "won";
+    if (leg.selectionId === "no" && winningIds.includes("yes")) return "lost";
+    return null;
+  }
+
+  return null;
+}
 
 export async function POST(request: NextRequest) {
   const decoded = await verifyAdminRequest(request);
@@ -36,15 +101,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await adminDb.runTransaction(async (tx) => {
-      // ---- Reads (ALL of them, before any write — Firestore transactions
-      // require every get() to happen first) --------------------------------
       const snap = await tx.get(matchRef);
       if (!snap.exists) throw new Error("Match not found");
       const match = snap.data() as Match;
       const current = match.status;
 
       const alreadyInPlay = IN_PLAY.includes(current);
-      const startingNow = CAN_GO_LIVE.includes(current) && (nextStatus === "live" || nextStatus === undefined);
+      const startingNow =
+        CAN_GO_LIVE.includes(current) &&
+        (nextStatus === "live" || nextStatus === undefined);
       if (!alreadyInPlay && !startingNow) {
         throw new Error(`Cannot update live score — match is "${current}"`);
       }
@@ -56,48 +121,72 @@ export async function POST(request: NextRequest) {
       const btsClinched = resolveClinchedBTS(homeScore, awayScore);
 
       const marketsSnap = await tx.get(
-        adminDb.collection("markets").where("matchId", "==", matchId).where("status", "==", "active")
+        adminDb
+          .collection("markets")
+          .where("matchId", "==", matchId)
+          .where("status", "==", "active")
       );
 
-      const clinchedSelectionIdsByMarket = new Map<string, string[]>();
+      const marketsById = new Map<string, Market>();
+      const clinchedByMarket = new Map<string, string[]>();
+
       for (const marketDoc of marketsSnap.docs) {
-        const market = marketDoc.data() as Market;
+        const market = { ...(marketDoc.data() as Market), id: marketDoc.id };
+        marketsById.set(marketDoc.id, market);
         if (market.type === "over_under") {
-          const winners = resolveClinchedOverUnderWinners(totalGoals, market.selections.map((s) => s.id));
-          if (winners.length > 0) clinchedSelectionIdsByMarket.set(market.id, winners);
+          const winners = resolveClinchedOverUnderWinners(
+            totalGoals,
+            market.selections.map((s) => s.id)
+          );
+          if (winners.length > 0) clinchedByMarket.set(marketDoc.id, winners);
         } else if (market.type === "both_teams_to_score" && btsClinched === "yes") {
-          clinchedSelectionIdsByMarket.set(market.id, ["yes"]);
+          clinchedByMarket.set(marketDoc.id, ["yes"]);
         }
       }
 
-      let relevantBets: Bet[] = [];
-      const walletsByUid = new Map<string, Wallet>();
-      const walletRefsByUid = new Map<string, FirebaseFirestore.DocumentReference>();
+      // Open tickets that include this match (single or acca)
+      const openByMatchId = await tx.get(
+        adminDb
+          .collection("bets")
+          .where("matchId", "==", matchId)
+          .where("status", "==", "open")
+      );
+      const openByMatchIds = await tx.get(
+        adminDb
+          .collection("bets")
+          .where("matchIds", "array-contains", matchId)
+          .where("status", "==", "open")
+      );
 
-      if (clinchedSelectionIdsByMarket.size > 0) {
-        const openBetsSnap = await tx.get(
-          adminDb.collection("bets").where("matchId", "==", matchId).where("status", "==", "open")
-        );
-        relevantBets = openBetsSnap.docs
-          .map((d) => d.data() as Bet)
-          .filter((bet) => clinchedSelectionIdsByMarket.has(bet.marketId));
-
-        if (relevantBets.length > 0) {
-          for (const bet of relevantBets) {
-            if (!walletRefsByUid.has(bet.uid)) {
-              walletRefsByUid.set(bet.uid, adminDb.collection("wallets").doc(bet.uid));
-            }
-          }
-          const walletSnaps = await Promise.all(Array.from(walletRefsByUid.values()).map((ref) => tx.get(ref)));
-          Array.from(walletRefsByUid.keys()).forEach((uid, i) => {
-            walletsByUid.set(uid, walletSnaps[i]!.data() as Wallet);
-          });
-        }
+      const betMap = new Map<string, Bet>();
+      for (const d of openByMatchId.docs) {
+        betMap.set(d.id, { ...(d.data() as Bet), id: d.id });
+      }
+      for (const d of openByMatchIds.docs) {
+        betMap.set(d.id, { ...(d.data() as Bet), id: d.id });
       }
 
-      // ---- Writes (only after every read above has completed) -------------
+      const uids = Array.from(new Set(Array.from(betMap.values()).map((b) => b.uid)));
+      const walletRefs = new Map(
+        uids.map((uid) => [uid, adminDb.collection("wallets").doc(uid)] as const)
+      );
+      const walletSnaps = await Promise.all(
+        Array.from(walletRefs.values()).map((ref) => tx.get(ref))
+      );
+      const walletsByUid = new Map<string, Wallet | undefined>();
+      uids.forEach((uid, i) => {
+        const data = walletSnaps[i]?.data() as Wallet | undefined;
+        walletsByUid.set(uid, data ? normalizeWallet(data) : undefined);
+      });
+
+      // ---- Writes ----
       const now = Date.now();
-      const update: { currentHomeScore: number; currentAwayScore: number; updatedAt: number; status?: MatchStatus } = {
+      const update: {
+        currentHomeScore: number;
+        currentAwayScore: number;
+        updatedAt: number;
+        status?: MatchStatus;
+      } = {
         currentHomeScore: homeScore,
         currentAwayScore: awayScore,
         updatedAt: now,
@@ -110,55 +199,210 @@ export async function POST(request: NextRequest) {
       tx.update(matchRef, update);
 
       let betsClinched = 0;
-      for (const bet of relevantBets) {
-        const winningIds = clinchedSelectionIdsByMarket.get(bet.marketId)!;
-        // over_under's clinched list only ever contains "over_X" ids (see
-        // resolveClinchedOverUnderWinners) — a bet on "under_X" for that
-        // same line is therefore guaranteed lost the instant "over_X" is
-        // clinched, since exactly one of the pair can ever win.
-        const isPairedUnder = /^under_(\d+(?:\.\d+)?)$/.exec(bet.selectionId);
-        const won = winningIds.includes(bet.selectionId);
-        const lostByPairing = isPairedUnder && winningIds.includes(`over_${isPairedUnder[1]}`);
-        const isBtsNo = bet.selectionId === "no" && winningIds.includes("yes");
+      let legsUpdated = 0;
 
-        if (!won && !lostByPairing && !isBtsNo) continue; // not yet decided — leave open
+      for (const bet of betMap.values()) {
+        const legs = betLegs(bet);
+        let touchedThisMatch = false;
+        const nextStatuses: BetLegStatus[] = legs.map((leg) => {
+          const clinched = clinchLegOnMatch(
+            leg,
+            matchId,
+            marketsById.get(leg.marketId),
+            clinchedByMarket
+          );
+          if (clinched) {
+            touchedThisMatch = true;
+            return clinched;
+          }
+          // keep prior leg status if any, else pending
+          if (leg.status === "won" || leg.status === "lost" || leg.status === "void") {
+            return leg.status;
+          }
+          return "pending";
+        });
+
+        if (!touchedThisMatch) continue;
+
+        const updatedLegs: BetLeg[] = legs.map((leg, i) => ({
+          ...leg,
+          status: nextStatuses[i],
+        }));
+
+        const anyLost = nextStatuses.some((s) => s === "lost");
+        const anyPending = nextStatuses.some((s) => s === "pending");
+        const allWon =
+          nextStatuses.length > 0 && nextStatuses.every((s) => s === "won");
+        const allVoid =
+          nextStatuses.length > 0 && nextStatuses.every((s) => s === "void");
+        const anyWon = nextStatuses.some((s) => s === "won");
+        const anyVoid = nextStatuses.some((s) => s === "void");
+        const winWithVoids =
+          !anyLost &&
+          !anyPending &&
+          anyWon &&
+          anyVoid &&
+          nextStatuses.every((s) => s === "won" || s === "void");
 
         const betRef = adminDb.collection("bets").doc(bet.id);
-        tx.update(betRef, { status: won ? "won" : "lost", settledAt: now });
-        betsClinched++;
+        const wallet = walletsByUid.get(bet.uid);
+        const split = {
+          fromPurchased: bet.stakePurchased ?? bet.stake,
+          fromPromo: bet.stakePromo ?? 0,
+        };
 
-        if (won) {
-          const wallet = walletsByUid.get(bet.uid)!;
-          const newBalance = wallet.balance + bet.potentialPayout;
-          tx.update(walletRefsByUid.get(bet.uid)!, {
-            balance: newBalance,
-            resetPendingSince: newBalance > 0 ? null : wallet.resetPendingSince,
-            updatedAt: now,
+        // ---- ACCA / single: LOST as soon as any leg is lost ----
+        if (anyLost && bet.status === "open") {
+          if (wallet) {
+            const before = normalizeWallet(wallet);
+            const next = applyStakeLoss(before, bet.stake, split);
+            tx.update(walletRefs.get(bet.uid)!, {
+              purchased: next.purchased,
+              promo: next.promo,
+              reservedStake: next.reservedStake,
+              reservedWithdrawal: next.reservedWithdrawal,
+              balance: next.balance,
+              resetPendingSince: null,
+              updatedAt: now,
+            });
+            walletsByUid.set(bet.uid, next);
+            const ledgerRef = adminDb.collection("ledger").doc();
+            tx.set(
+              ledgerRef,
+              buildLedgerEntry({
+                id: ledgerRef.id,
+                uid: bet.uid,
+                type: "BET_LOSS_SETTLEMENT",
+                amount: -bet.stake,
+                balanceBefore: before.balance,
+                balanceAfter: next.balance,
+                betId: bet.id,
+                metadata: { ...split, clinched: true },
+                now,
+              })
+            );
+          }
+          tx.update(betRef, {
+            legs: updatedLegs,
+            matchIds: legs.map((l) => l.matchId),
+            status: "lost",
+            settledAt: now,
           });
-          const transactionRef = adminDb.collection("transactions").doc();
-          const transaction: Transaction = {
-            id: transactionRef.id,
-            uid: bet.uid,
-            type: "payout",
-            amount: bet.potentialPayout,
-            balanceAfter: newBalance,
-            betId: bet.id,
-            createdAt: now,
-          };
-          tx.set(transactionRef, transaction);
-          walletsByUid.set(bet.uid, { ...wallet, balance: newBalance });
+          betsClinched++;
+          continue;
         }
+
+        // ---- All legs decided WON (or won+void) → pay once ----
+        if ((allWon || winWithVoids) && bet.status === "open") {
+          let payout = bet.potentialPayout;
+          if (winWithVoids && !allWon) {
+            payout = Math.round(
+              bet.stake *
+                legs.reduce((acc, leg, i) => {
+                  if (nextStatuses[i] === "void") return acc;
+                  return acc * (Number(leg.odds) || 1);
+                }, 1) *
+                100
+            ) / 100;
+          }
+          if (wallet) {
+            const before = normalizeWallet(wallet);
+            const next = applyStakeWin(before, bet.stake, payout, split);
+            tx.update(walletRefs.get(bet.uid)!, {
+              purchased: next.purchased,
+              promo: next.promo,
+              reservedStake: next.reservedStake,
+              reservedWithdrawal: next.reservedWithdrawal,
+              balance: next.balance,
+              resetPendingSince: null,
+              updatedAt: now,
+            });
+            walletsByUid.set(bet.uid, next);
+            const ledgerRef = adminDb.collection("ledger").doc();
+            tx.set(
+              ledgerRef,
+              buildLedgerEntry({
+                id: ledgerRef.id,
+                uid: bet.uid,
+                type: "BET_WIN_SETTLEMENT",
+                amount: payout,
+                balanceBefore: before.balance,
+                balanceAfter: next.balance,
+                betId: bet.id,
+                metadata: { ...split, clinched: true },
+                now,
+              })
+            );
+          }
+          tx.update(betRef, {
+            legs: updatedLegs,
+            matchIds: legs.map((l) => l.matchId),
+            status: "won",
+            settledAt: now,
+            payout,
+          });
+          betsClinched++;
+          continue;
+        }
+
+        if (allVoid && bet.status === "open") {
+          if (wallet) {
+            const before = normalizeWallet(wallet);
+            const next = applyStakeVoid(before, bet.stake);
+            tx.update(walletRefs.get(bet.uid)!, {
+              purchased: next.purchased,
+              promo: next.promo,
+              reservedStake: next.reservedStake,
+              reservedWithdrawal: next.reservedWithdrawal,
+              balance: next.balance,
+              resetPendingSince: null,
+              updatedAt: now,
+            });
+            walletsByUid.set(bet.uid, next);
+            const ledgerRef = adminDb.collection("ledger").doc();
+            tx.set(
+              ledgerRef,
+              buildLedgerEntry({
+                id: ledgerRef.id,
+                uid: bet.uid,
+                type: "BET_VOID_REFUND",
+                amount: bet.stake,
+                balanceBefore: before.balance,
+                balanceAfter: next.balance,
+                betId: bet.id,
+                metadata: { clinched: true },
+                now,
+              })
+            );
+          }
+          tx.update(betRef, {
+            legs: updatedLegs,
+            matchIds: legs.map((l) => l.matchId),
+            status: "void",
+            settledAt: now,
+          });
+          betsClinched++;
+          continue;
+        }
+
+        // ---- Still open: only persist leg statuses (NO payout) ----
+        // Critical for ACCA: one clinched Over 3.5 must not pay the whole ticket.
+        tx.update(betRef, {
+          legs: updatedLegs,
+          matchIds: legs.map((l) => l.matchId),
+        });
+        legsUpdated++;
       }
 
-      return { ok: true, betsClinched };
+      return { ok: true, betsClinched, legsUpdated };
     });
 
-    // Score / status changed -> refresh the public match list.
     revalidateTag("fixtures-core");
-
     return NextResponse.json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Could not update live score";
+    const message =
+      err instanceof Error ? err.message : "Could not update live score";
     return NextResponse.json({ error: message }, { status: 400 });
   }
-}
+            }
+        
