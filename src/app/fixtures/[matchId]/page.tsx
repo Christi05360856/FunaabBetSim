@@ -264,19 +264,20 @@ export default function MatchDetailPage({
             type="button"
             id="match-chat-entry"
             aria-label="Match chat"
-            className="mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/35 bg-black/20 active:bg-black/35"
+            className="mr-1 flex h-9 shrink-0 items-center gap-1 rounded-full border border-white/35 bg-black/20 px-2.5 active:bg-black/35"
             onClick={() => {
               const el = document.getElementById("match-chat-panel");
               if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
               <path
                 d="M21 12a8.5 8.5 0 01-8.5 8.5c-1.4 0-2.7-.3-3.9-.9L3 21l1.5-4.4A8.4 8.4 0 013.5 12 8.5 8.5 0 0112 3.5 8.5 8.5 0 0121 12z"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
             </svg>
+            <span className="text-[11px] font-semibold">Chat</span>
           </button>
         </div>
 
