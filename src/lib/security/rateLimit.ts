@@ -10,7 +10,9 @@ export type RateLimitBucket =
   | "book_code"
   | "verify_ticket"
   | "auth_fail"
-  | "support_ticket";
+  | "support_ticket"
+  | "match_chat"
+  | "match_predict";
 
 type LimitConfig = { max: number; windowMs: number };
 
@@ -23,6 +25,8 @@ const LIMITS: Record<RateLimitBucket, LimitConfig> = {
   verify_ticket: { max: 40, windowMs: 60 * 60 * 1000 },
   auth_fail: { max: 20, windowMs: 15 * 60 * 1000 },
   support_ticket: { max: 8, windowMs: 24 * 60 * 60 * 1000 },
+  match_chat: { max: 20, windowMs: 60 * 60 * 1000 },
+  match_predict: { max: 10, windowMs: 60 * 60 * 1000 },
 };
 
 function humanWait(ms: number): string {
@@ -59,6 +63,12 @@ function messageFor(
   }
   if (bucket === "support_ticket") {
     return `Support request limit reached. Try again in about ${wait}.`;
+  }
+  if (bucket === "match_chat") {
+    return `You're posting too fast in chat. Wait about ${wait}.`;
+  }
+  if (bucket === "match_predict") {
+    return `Too many prediction attempts. Wait about ${wait}.`;
   }
   return `Too many requests. Please try again in about ${wait}.`;
 }
