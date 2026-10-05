@@ -556,7 +556,7 @@ export default function FixturesTab({
   const confirmCopy: Record<Exclude<ConfirmType, "settle">, { title: string; message: string; label: string }> = {
     open: { title: "Open betting", message: `Open betting for ${h} vs ${a}? Users can bet as soon as odds are set.`, label: "Open" },
     close: { title: "Close betting", message: `Close betting for ${h} vs ${a} and return it to Scheduled?`, label: "Close" },
-    void: { title: "Void match", message: `Void ${h} vs ${a}? Every open bet on it is refunded its stake.`, label: "Void" },
+    void: { title: "Void / reconcile", message: `Void ${h} vs ${a} (or re-run if already voided). Open ACCAs: this leg becomes void; won+void pays reduced odds; still-pending legs stay open.`, label: "Confirm" },
     delete: { title: "Delete fixture", message: `Delete ${h} vs ${a}? This only works if nobody has bet on it.`, label: "Delete" },
     reopen: { title: "Reopen match", message: `Reopen ${h} vs ${a}? Scores are cleared. Bets that were already settled are NOT reversed.`, label: "Reopen" },
     revert_live: { title: "Undo live start", message: `Cancel the live start for ${h} vs ${a} and return it to Open? Only works if no bets have been auto-settled from the live score yet.`, label: "Undo" },
@@ -682,6 +682,15 @@ export default function FixturesTab({
                           Reopen
                         </Button>
                       )}
+                      {m.status === "voided" && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setConfirm({ type: "void", match: m })}
+                        >
+                          Reconcile bets
+                        </Button>
+                      )}
                       {!final && (
                         <Button size="sm" variant="danger" onClick={() => setConfirm({ type: "void", match: m })}>
                           Void
@@ -797,4 +806,4 @@ export default function FixturesTab({
       />
     </div>
   );
-                         }
+                            }
