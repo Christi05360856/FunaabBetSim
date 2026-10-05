@@ -19,6 +19,7 @@ import { CORRECT_SCORES } from "@/lib/domain/oddsModel";
 import { useBetSlip } from "@/lib/context/BetSlipContext";
 import { resolveSelection } from "@/lib/domain/selectionLabel";
 import { useAuth } from "@/lib/auth/AuthContext";
+import MatchTalkPanel from "@/components/match/MatchTalkPanel";
 
 const CS_HOME_WIN = CORRECT_SCORES.slice(0, 10);
 const CS_DRAW = CORRECT_SCORES.slice(10, 15);
@@ -259,7 +260,6 @@ export default function MatchDetailPage({
           <p className="min-w-0 flex-1 truncate text-[11px] font-medium text-white/80">
             Football · {competition?.name ?? "League"}
           </p>
-          {/* Chat entry — wired in P3; icon only */}
           <button
             type="button"
             id="match-chat-entry"
@@ -379,6 +379,12 @@ export default function MatchDetailPage({
           </div>
         </div>
       )}
+
+      <MatchTalkPanel
+        matchId={matchId}
+        homeName={home?.name ?? "Home"}
+        awayName={away?.name ?? "Away"}
+      />
 
       <div className="flex flex-col gap-4 px-4 pt-4">
         <MarketSection
