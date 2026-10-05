@@ -6,6 +6,7 @@ import { auth } from "@/lib/firebase/client";
 import { Card, Badge, Button, Input, Select, Modal, ConfirmModal, EmptyState } from "./ui";
 import { CORRECT_SCORES, OU_LINES, deriveMarketsFromMatchWinner } from "@/lib/domain/oddsModel";
 import {
+import { MATCH_DURATION_MS } from "@/lib/domain/matchClock";
   GROUP_LABEL,
   GROUP_ORDER,
   competitionName,
@@ -733,8 +734,9 @@ export default function FixturesTab({
             />
           </label>
         </div>
-        {confirm && (Number(confirm.match.kickoffAt) || 0) > Date.now() && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+        {confirm &&
+          (Number(confirm.match.kickoffAt) || 0) + MATCH_DURATION_MS > Date.now() && (
+            <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
               <label className="flex items-start gap-2">
                 <input
                   type="checkbox"
@@ -745,7 +747,8 @@ export default function FixturesTab({
                 <span>
                   <span className="font-semibold">Force early result</span>
                   <span className="block text-xs text-adm-faint">
-                    Match may not be finished yet. Requires a reason (audited).
+                    Full time has not been reached yet. Tick this and enter a reason
+                    (audited). Required before you can settle.
                   </span>
                 </span>
               </label>
@@ -771,7 +774,9 @@ export default function FixturesTab({
               busy ||
               !isValidScore(scores.home) ||
               !isValidScore(scores.away) ||
-              (forceEarly && earlyReason.trim().length < 5)
+              ((Number(confirm?.match.kickoffAt) || 0) + MATCH_DURATION_MS >
+                Date.now() &&
+                (!forceEarly || earlyReason.trim().length < 5))
             }
           >
             {busy ? "Settling…" : "Settle"}
@@ -791,4 +796,4 @@ export default function FixturesTab({
       />
     </div>
   );
-                      }
+                         }
