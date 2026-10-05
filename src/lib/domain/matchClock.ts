@@ -36,6 +36,9 @@ const HALFTIME_START = FIRST_HALF_SPAN;
 const SECOND_HALF_START = HALFTIME_START + HALFTIME_SPAN;
 const FULL_TIME_START = SECOND_HALF_START + SECOND_HALF_SPAN;
 
+/** Wall-clock span from kickoff until FT (1H + HT + 2H). */
+export const MATCH_DURATION_MS = FULL_TIME_START;
+
 function formatKickoff(kickoffAt: number): string {
   return new Date(kickoffAt).toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit" });
 }
