@@ -116,6 +116,7 @@ async function resolveLegsFromServer(
       marketId,
       selectionId: selection.id,
       selectionLabel: selection.label || selectionId,
+      marketType: market.type,
       odds: liveOdds,
     });
     totalOdds *= liveOdds;
@@ -237,11 +238,15 @@ export async function GET(request: NextRequest) {
   const { legs, totalOdds, errors } = await resolveLegsFromServer(stored);
 
   if (legs.length === 0) {
+    const finished = errors.some((e) =>
+      /finished|settled|voided|closed|live|halftime|second_half/i.test(e)
+    );
     return NextResponse.json(
       {
-        error:
-          errors[0] ??
-          "All selections for this code are invalid or finished",
+        error: finished
+          ? "All selections for this code have finished or are no longer available to bet."
+          : errors[0] ??
+            "All selections for this code are invalid or finished",
         details: errors,
       },
       { status: 410 }
@@ -272,4 +277,5 @@ export async function GET(request: NextRequest) {
       totalOdds,
     },
   });
-       }
+        }
+                                 
