@@ -287,7 +287,7 @@ export default function MatchTalkPanel({
         ) : (
           <>
             {/* Pre-match prediction — Sporty-style circles */}
-            {preMatch && (
+            {preMatch && !myPick && (
               <div
                 className={
                   "border-b px-4 py-4 " +
@@ -510,4 +510,5 @@ export default function MatchTalkPanel({
     </div>
   );
     }
-                       
+
+              
