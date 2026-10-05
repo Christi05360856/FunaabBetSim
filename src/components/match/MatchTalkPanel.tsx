@@ -20,7 +20,7 @@ const POLL_MS = 40_000;
 const WELCOME: ChatMsg = {
   id: "welcome",
   mask: "FUNAAB BetSim",
-  text: "Welcome to match chat. Share tips and booking codes — keep it respectful.",
+  text: "Welcome to chat section. Share tips and booking codes — keep it respectful.",
   createdAt: 0,
 };
 
