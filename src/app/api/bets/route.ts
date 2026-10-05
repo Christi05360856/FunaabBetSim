@@ -168,6 +168,7 @@ export async function POST(request: NextRequest) {
           marketId: leg.marketId,
           selectionId: selection.id,
           selectionLabel: selection.label,
+          marketType: market.type,
           odds: liveOdds,
         });
         marketTypes.push(market.type);
@@ -305,4 +306,5 @@ export async function POST(request: NextRequest) {
       }
 
 
-        
+
+      
