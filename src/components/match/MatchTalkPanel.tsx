@@ -17,14 +17,28 @@ type PickSide = "home" | "draw" | "away";
 const GUIDELINES_KEY = "funaab_chat_guidelines_ok";
 const POLL_MS = 40_000;
 
+const WELCOME: ChatMsg = {
+  id: "welcome",
+  mask: "FUNAAB BetSim",
+  text: "Welcome to match chat. Share tips and booking codes — keep it respectful.",
+  createdAt: 0,
+};
+
 export default function MatchTalkPanel({
   matchId,
   homeName,
   awayName,
+  open,
+  onClose,
+  preMatch,
 }: {
   matchId: string;
   homeName: string;
   awayName: string;
+  open: boolean;
+  onClose: () => void;
+  /** true when kickoff not reached and not live/finished */
+  preMatch: boolean;
 }) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -32,11 +46,13 @@ export default function MatchTalkPanel({
   const [chatErr, setChatErr] = useState<string | null>(null);
   const [chatBusy, setChatBusy] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
-  const [guidelinesOk, setGuidelinesOk] = useState(true);
+
+  const [showGuidelines, setShowGuidelines] = useState(false);
+  const [guidelinesReady, setGuidelinesReady] = useState(false);
 
   const [stats, setStats] = useState<PredictStats>({ home: 0, draw: 0, away: 0 });
   const [myPick, setMyPick] = useState<PickSide | null>(null);
-  const [locked, setLocked] = useState(false);
+  const [voteLocked, setVoteLocked] = useState(false);
   const [predErr, setPredErr] = useState<string | null>(null);
   const [predBusy, setPredBusy] = useState(false);
 
@@ -44,15 +60,19 @@ export default function MatchTalkPanel({
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!open) return;
     try {
-      setGuidelinesOk(localStorage.getItem(GUIDELINES_KEY) === "1");
+      const ok = localStorage.getItem(GUIDELINES_KEY) === "1";
+      setShowGuidelines(!ok);
+      setGuidelinesReady(true);
     } catch {
-      setGuidelinesOk(false);
+      setShowGuidelines(true);
+      setGuidelinesReady(true);
     }
-  }, []);
+  }, [open]);
 
   const loadChat = useCallback(async () => {
-    if (!user) return;
+    if (!user || !open) return;
     setChatLoading(true);
     try {
       const token = await user.getIdToken();
@@ -66,10 +86,10 @@ export default function MatchTalkPanel({
     } finally {
       setChatLoading(false);
     }
-  }, [user, matchId]);
+  }, [user, matchId, open]);
 
   const loadPredict = useCallback(async () => {
-    if (!user) return;
+    if (!user || !open || !preMatch) return;
     try {
       const token = await user.getIdToken();
       const res = await fetch(
@@ -80,16 +100,15 @@ export default function MatchTalkPanel({
       if (res.ok) {
         setStats(body.stats ?? { home: 0, draw: 0, away: 0 });
         setMyPick(body.myPick ?? null);
-        setLocked(Boolean(body.locked));
+        setVoteLocked(Boolean(body.locked));
       }
     } catch {
       /* ignore */
     }
-  }, [user, matchId]);
+  }, [user, matchId, open, preMatch]);
 
-  // Initial load + poll only while tab visible
   useEffect(() => {
-    if (!user) return;
+    if (!open || !user) return;
     void loadChat();
     void loadPredict();
 
@@ -97,16 +116,24 @@ export default function MatchTalkPanel({
       visibleRef.current = document.visibilityState === "visible";
     }
     document.addEventListener("visibilitychange", onVis);
-
     const id = setInterval(() => {
-      if (visibleRef.current) void loadChat();
+      if (visibleRef.current && open) void loadChat();
     }, POLL_MS);
-
     return () => {
       document.removeEventListener("visibilitychange", onVis);
       clearInterval(id);
     };
-  }, [user, loadChat, loadPredict]);
+  }, [open, user, loadChat, loadPredict]);
+
+  // Lock body scroll while open
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
 
   async function send() {
     if (!user || !text.trim()) return;
@@ -137,7 +164,7 @@ export default function MatchTalkPanel({
   }
 
   async function vote(pick: PickSide) {
-    if (!user || locked || myPick || predBusy) return;
+    if (!user || voteLocked || myPick || predBusy || !preMatch) return;
     setPredErr(null);
     setPredBusy(true);
     try {
@@ -170,149 +197,259 @@ export default function MatchTalkPanel({
     } catch {
       /* ignore */
     }
-    setGuidelinesOk(true);
+    setShowGuidelines(false);
   }
+
+  const displayMessages =
+    messages.length === 0 ? [WELCOME] : [WELCOME, ...messages];
 
   const total = stats.home + stats.draw + stats.away;
   const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
 
-  if (!user) {
-    return (
-      <section
-        id="match-chat-panel"
-        className="mx-4 mt-3 rounded-2xl border border-ink-muted/10 bg-surface p-4 shadow-card"
-      >
-        <p className="text-sm font-semibold text-ink">Match talk</p>
-        <p className="mt-1 text-xs text-ink-muted">
-          Sign in to chat and vote on the result.
-        </p>
-        <Link
-          href="/login"
-          className="mt-3 inline-block text-sm font-semibold text-brand"
-        >
-          Sign in →
-        </Link>
-      </section>
-    );
-  }
+  if (!open) return null;
+
+  const shellLive = !preMatch;
 
   return (
-    <section id="match-chat-panel" className="mx-4 mt-3 space-y-3">
-      {/* —— Community 1X2 —— */}
-      <div className="rounded-2xl border border-ink-muted/10 bg-surface p-4 shadow-card">
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-semibold text-ink">Who wins?</p>
-          <p className="text-[11px] text-ink-muted">
-            {locked ? "Voting closed" : "One vote · pre-match"}
-          </p>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {(
-            [
-              { key: "home" as const, label: homeName || "Home" },
-              { key: "draw" as const, label: "Draw" },
-              { key: "away" as const, label: awayName || "Away" },
-            ] as const
-          ).map((opt) => {
-            const selected = myPick === opt.key;
-            const disabled = locked || Boolean(myPick) || predBusy;
-            return (
-              <button
-                key={opt.key}
-                type="button"
-                disabled={disabled && !selected}
-                onClick={() => void vote(opt.key)}
-                className={
-                  "rounded-xl px-2 py-2.5 text-center transition-colors " +
-                  (selected
-                    ? "bg-brand text-white"
-                    : disabled
-                      ? "bg-ink-muted/10 text-ink-muted"
-                      : "bg-brand/10 text-ink active:bg-brand/20")
-                }
-              >
-                <span className="line-clamp-1 text-[11px] font-medium opacity-80">
-                  {opt.label}
-                </span>
-                <span className="mt-0.5 block font-display text-sm font-bold tabular-nums">
-                  {pct(stats[opt.key])}%
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {total > 0 && (
-          <p className="mt-2 text-center text-[10px] text-ink-muted">
-            {total.toLocaleString("en-NG")} vote{total === 1 ? "" : "s"}
-          </p>
-        )}
-        {predErr && (
-          <p className="mt-2 text-xs text-loss" role="alert">
-            {predErr}
-          </p>
-        )}
-      </div>
+    <div className="fixed inset-0 z-[80] flex flex-col">
+      {/* Dim backdrop */}
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/50"
+        aria-label="Close chat"
+        onClick={onClose}
+      />
 
-      {/* —— Chat —— */}
-      <div className="overflow-hidden rounded-2xl border border-ink-muted/10 bg-surface shadow-card">
-        <div className="flex items-center justify-between border-b border-ink-muted/10 px-4 py-2.5">
-          <p className="text-sm font-semibold text-ink">Match chat</p>
+      {/* Sheet */}
+      <div
+        className={
+          "relative z-[81] mt-auto flex max-h-[92vh] min-h-[70vh] w-full flex-col rounded-t-2xl shadow-2xl " +
+          (shellLive ? "bg-[#1a1d23] text-white" : "bg-bg text-ink")
+        }
+      >
+        {/* Header */}
+        <div
+          className={
+            "flex items-center gap-2 border-b px-3 py-3 " +
+            (shellLive ? "border-white/10" : "border-ink-muted/10")
+          }
+        >
           <button
             type="button"
-            onClick={() => void loadChat()}
-            className="text-[11px] font-semibold text-brand"
+            onClick={onClose}
+            className={
+              "flex h-9 w-9 items-center justify-center rounded-full " +
+              (shellLive ? "active:bg-white/10" : "active:bg-ink-muted/10")
+            }
+            aria-label="Close"
           >
-            Refresh
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
+            </svg>
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold">
+              {homeName} vs {awayName}
+            </p>
+            <p
+              className={
+                "text-[11px] " + (shellLive ? "text-white/50" : "text-ink-muted")
+              }
+            >
+              {preMatch ? "Pre-match chat" : "Live chat"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowGuidelines(true)}
+            className={
+              "flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold " +
+              (shellLive ? "text-white/70 active:bg-white/10" : "text-ink-muted active:bg-ink-muted/10")
+            }
+            aria-label="Chat guidelines"
+          >
+            i
           </button>
         </div>
 
-        {!guidelinesOk && (
-          <div className="border-b border-ink-muted/10 bg-ink-muted/5 px-4 py-3 text-xs text-ink">
-            <p className="font-semibold">Chat rules</p>
-            <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-ink-muted">
-              <li>Tips and booking codes welcome — no spam</li>
-              <li>No insults, scams, or personal data</li>
-              <li>Do not share any of your personal information</li>
-            </ul>
-            <button
-              type="button"
-              onClick={acceptGuidelines}
-              className="mt-3 w-full rounded-xl bg-brand py-2 text-sm font-semibold text-white"
+        {!user ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6">
+            <p className="text-center text-sm opacity-80">
+              Sign in to join the conversation.
+            </p>
+            <Link
+              href="/login"
+              className="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white"
             >
-              Got it
-            </button>
+              Sign in
+            </Link>
           </div>
-        )}
-
-        {guidelinesOk && (
+        ) : (
           <>
+            {/* Pre-match prediction — Sporty-style circles */}
+            {preMatch && (
+              <div
+                className={
+                  "border-b px-4 py-4 " +
+                  (shellLive ? "border-white/10" : "border-ink-muted/10")
+                }
+              >
+                <p
+                  className={
+                    "mb-4 text-center text-sm font-medium " +
+                    (shellLive ? "text-white/70" : "text-ink-muted")
+                  }
+                >
+                  User result prediction
+                </p>
+                <div className="relative mx-auto flex max-w-sm items-center justify-between px-2">
+                  {/* connector line */}
+                  <div
+                    className={
+                      "absolute left-8 right-8 top-1/2 h-px -translate-y-1/2 " +
+                      (shellLive ? "bg-white/20" : "bg-ink-muted/25")
+                    }
+                  />
+                  {(
+                    [
+                      { key: "home" as const, label: "Home", sub: homeName },
+                      { key: "draw" as const, label: "Draw", sub: "Draw" },
+                      { key: "away" as const, label: "Away", sub: awayName },
+                    ] as const
+                  ).map((opt) => {
+                    const selected = myPick === opt.key;
+                    const canTap = !voteLocked && !myPick && !predBusy;
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        disabled={!canTap && !selected}
+                        onClick={() => void vote(opt.key)}
+                        className="relative z-[1] flex w-[4.5rem] flex-col items-center gap-1.5"
+                      >
+                        <span
+                          className={
+                            "flex h-14 w-14 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors " +
+                            (selected
+                              ? "border-brand bg-brand text-white"
+                              : shellLive
+                                ? "border-white/30 bg-[#1a1d23] text-white"
+                                : "border-ink-muted/30 bg-bg text-ink")
+                          }
+                        >
+                          {selected ? "✓" : opt.label}
+                        </span>
+                        <span
+                          className={
+                            "line-clamp-1 max-w-full text-[10px] " +
+                            (selected
+                              ? "font-semibold text-brand"
+                              : shellLive
+                                ? "text-white/50"
+                                : "text-ink-muted")
+                          }
+                        >
+                          {opt.key === "draw" ? "Draw" : opt.sub}
+                        </span>
+                        {total > 0 && (
+                          <span
+                            className={
+                              "text-[10px] tabular-nums " +
+                              (shellLive ? "text-white/40" : "text-ink-muted")
+                            }
+                          >
+                            {pct(stats[opt.key])}%
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {myPick && (
+                  <p
+                    className={
+                      "mt-3 text-center text-[11px] " +
+                      (shellLive ? "text-white/50" : "text-ink-muted")
+                    }
+                  >
+                    Your pick is locked
+                    {total > 0 ? ` · ${total} vote${total === 1 ? "" : "s"}` : ""}
+                  </p>
+                )}
+                {predErr && (
+                  <p className="mt-2 text-center text-xs text-loss">{predErr}</p>
+                )}
+              </div>
+            )}
+
+            {/* Messages */}
             <div
               ref={listRef}
-              className="max-h-56 space-y-2.5 overflow-y-auto px-4 py-3"
+              className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3"
             >
               {chatLoading && messages.length === 0 && (
-                <p className="text-center text-xs text-ink-muted">Loading…</p>
-              )}
-              {!chatLoading && messages.length === 0 && (
-                <p className="text-center text-xs text-ink-muted">
-                  No messages yet — start the talk.
+                <p
+                  className={
+                    "text-center text-xs " +
+                    (shellLive ? "text-white/40" : "text-ink-muted")
+                  }
+                >
+                  Loading…
                 </p>
               )}
-              {messages.map((m) => (
-                <div key={m.id} className="text-sm">
-                  <p className="text-[11px] font-semibold text-brand">{m.mask}</p>
-                  <p className="text-ink">{m.text}</p>
+              {displayMessages.map((m) => (
+                <div key={m.id} className="flex gap-2">
+                  <div
+                    className={
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold " +
+                      (m.id === "welcome"
+                        ? "bg-brand text-white"
+                        : shellLive
+                          ? "bg-white/10 text-white/80"
+                          : "bg-ink-muted/15 text-ink-muted")
+                    }
+                  >
+                    {m.id === "welcome" ? "F" : m.mask.slice(0, 1).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={
+                        "text-[11px] font-semibold " +
+                        (m.id === "welcome"
+                          ? "text-brand"
+                          : shellLive
+                            ? "text-white/55"
+                            : "text-ink-muted")
+                      }
+                    >
+                      {m.mask}
+                    </p>
+                    <div
+                      className={
+                        "mt-0.5 inline-block max-w-[95%] rounded-2xl rounded-tl-md px-3 py-2 text-sm leading-snug " +
+                        (shellLive
+                          ? "bg-white/10 text-white"
+                          : "bg-ink-muted/10 text-ink")
+                      }
+                    >
+                      {m.text}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
 
-            <div className="border-t border-ink-muted/10 p-3">
+            {/* Composer */}
+            <div
+              className={
+                "border-t px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] " +
+                (shellLive ? "border-white/10" : "border-ink-muted/10")
+              }
+            >
               {chatErr && (
-                <p className="mb-2 text-xs text-loss" role="alert">
-                  {chatErr}
-                </p>
+                <p className="mb-1 text-xs text-loss">{chatErr}</p>
               )}
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <input
                   type="text"
                   maxLength={160}
@@ -321,22 +458,56 @@ export default function MatchTalkPanel({
                   onKeyDown={(e) => {
                     if (e.key === "Enter") void send();
                   }}
-                  placeholder="Tip, code, or score prediction…"
-                  className="min-w-0 flex-1 rounded-xl border border-ink-muted/15 bg-bg px-3 py-2.5 text-sm"
+                  placeholder="Write a comment…"
+                  className={
+                    "min-w-0 flex-1 rounded-full border px-4 py-2.5 text-sm outline-none " +
+                    (shellLive
+                      ? "border-white/15 bg-white/10 text-white placeholder:text-white/40"
+                      : "border-ink-muted/15 bg-surface text-ink placeholder:text-ink-muted")
+                  }
                 />
                 <button
                   type="button"
                   disabled={chatBusy || !text.trim()}
                   onClick={() => void send()}
-                  className="rounded-xl bg-brand px-4 text-sm font-semibold text-white disabled:opacity-45"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-white disabled:opacity-40"
+                  aria-label="Send"
                 >
-                  Send
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                  </svg>
                 </button>
               </div>
             </div>
           </>
         )}
       </div>
-    </section>
+
+      {/* Guidelines modal */}
+      {guidelinesReady && showGuidelines && (
+        <div className="absolute inset-0 z-[90] flex items-center justify-center bg-black/55 px-6">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 text-center text-ink shadow-xl">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-2xl">
+              ⚠️
+            </div>
+            <p className="text-lg font-bold">Chat guidelines</p>
+            <ul className="mt-3 space-y-2 text-left text-sm text-ink-muted">
+              <li>• Share tips and support others</li>
+              <li>• Keep messages relevant — no spam</li>
+              <li>• No insults or hate speech</li>
+              <li>• Never share passwords or bank details</li>
+            </ul>
+            <button
+              type="button"
+              onClick={acceptGuidelines}
+              className="mt-5 w-full rounded-xl bg-brand py-3 text-sm font-semibold text-white"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
-}
+    }
+                       
