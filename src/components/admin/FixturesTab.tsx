@@ -6,7 +6,6 @@ import { auth } from "@/lib/firebase/client";
 import { Card, Badge, Button, Input, Select, Modal, ConfirmModal, EmptyState } from "./ui";
 import { CORRECT_SCORES, OU_LINES, deriveMarketsFromMatchWinner } from "@/lib/domain/oddsModel";
 import {
-import { MATCH_DURATION_MS } from "@/lib/domain/matchClock";
   GROUP_LABEL,
   GROUP_ORDER,
   competitionName,
@@ -19,6 +18,7 @@ import { MATCH_DURATION_MS } from "@/lib/domain/matchClock";
   teamName,
   useNow,
 } from "./helpers";
+import { MATCH_DURATION_MS } from "@/lib/domain/matchClock";
 
 type PostResult = { ok: boolean; message: string };
 type ConfirmType = "open" | "close" | "settle" | "void" | "delete" | "reopen" | "revert_live";
@@ -33,6 +33,7 @@ const ENDPOINTS: Record<ConfirmType, string> = {
   reopen: "/api/admin/matches/reopen",
   revert_live: "/api/admin/matches/reopen",
 };
+
 
 const SUCCESS: Record<ConfirmType, string> = {
   open: "Betting opened",
