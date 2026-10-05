@@ -294,6 +294,12 @@ export async function POST(request: NextRequest) {
           const m = otherMatches.get(leg.matchId);
           const market = marketsById.get(leg.marketId);
 
+          // Voided / postponed match → this leg is void (does not kill the ACCA)
+          if (m && (m.status === "voided" || m.status === "postponed")) {
+            legStatuses.push("void");
+            continue;
+          }
+
           if (!m || !market) {
             legStatuses.push("pending");
             continue;
@@ -606,4 +612,5 @@ export async function POST(request: NextRequest) {
 
 
 
-          
+
+                                                
