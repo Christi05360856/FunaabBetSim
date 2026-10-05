@@ -10,7 +10,7 @@ import {
   buildLedgerEntry,
   normalizeWallet,
 } from "@/lib/domain/ledgerEngine";
-import type { Bet, BetLeg, BetLegStatus, Match, Wallet } from "@/types/domain";
+import type { Bet, BetLeg, BetLegStatus, Match, Transaction, Wallet } from "@/types/domain";
 
 const bodySchema = z.object({ matchId: z.string().min(1) });
 
@@ -177,6 +177,19 @@ export async function POST(request: NextRequest) {
                 now,
               })
             );
+            const transactionRef = adminDb.collection("transactions").doc();
+            const transaction: Transaction = {
+              id: transactionRef.id,
+              uid: bet.uid,
+              type: "debit_bet",
+              amount: -bet.stake,
+              balanceAfter: next.balance,
+              balanceBefore: before.balance,
+              betId: bet.id,
+              status: "success",
+              createdAt: now,
+            };
+            tx.set(transactionRef, transaction);
           }
           tx.update(betRef, {
             legs: updatedLegs,
@@ -218,6 +231,19 @@ export async function POST(request: NextRequest) {
                 now,
               })
             );
+            const transactionRef = adminDb.collection("transactions").doc();
+            const transaction: Transaction = {
+              id: transactionRef.id,
+              uid: bet.uid,
+              type: "refund",
+              amount: bet.stake,
+              balanceAfter: next.balance,
+              balanceBefore: before.balance,
+              betId: bet.id,
+              status: "success",
+              createdAt: now,
+            };
+            tx.set(transactionRef, transaction);
           }
           tx.update(betRef, {
             legs: updatedLegs,
@@ -273,6 +299,19 @@ export async function POST(request: NextRequest) {
                 now,
               })
             );
+            const transactionRef = adminDb.collection("transactions").doc();
+            const transaction: Transaction = {
+              id: transactionRef.id,
+              uid: bet.uid,
+              type: "payout",
+              amount: payout,
+              balanceAfter: next.balance,
+              balanceBefore: before.balance,
+              betId: bet.id,
+              status: "success",
+              createdAt: now,
+            };
+            tx.set(transactionRef, transaction);
           }
           tx.update(betRef, {
             legs: updatedLegs,
@@ -304,4 +343,5 @@ export async function POST(request: NextRequest) {
     const message = err instanceof Error ? err.message : "Could not void match";
     return NextResponse.json({ error: message }, { status: 400 });
   }
-                  }
+              }
+                
