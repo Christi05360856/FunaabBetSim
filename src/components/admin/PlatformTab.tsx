@@ -45,6 +45,40 @@ function timeAgo(ts?: number) {
   return new Date(ts).toLocaleString();
 }
 
+
+function secStyle(type?: string): { label: string; cls: string; tone: string } {
+  const t = (type || "EVENT").toUpperCase();
+  if (t.includes("PIN_FAIL") || t.includes("FORBIDDEN") || t.includes("RATE"))
+    return { label: t.replace(/_/g, " "), cls: "bg-rose-500/15 text-rose-700 border-rose-500/30", tone: "risk" };
+  if (t.includes("WITHDRAW"))
+    return { label: t.replace(/_/g, " "), cls: "bg-sky-500/15 text-sky-700 border-sky-500/30", tone: "money" };
+  if (t.includes("DEPOSIT"))
+    return { label: t.replace(/_/g, " "), cls: "bg-emerald-500/15 text-emerald-700 border-emerald-500/30", tone: "money" };
+  if (t.includes("BOOK"))
+    return { label: t.replace(/_/g, " "), cls: "bg-violet-500/15 text-violet-700 border-violet-500/30", tone: "ok" };
+  if (t.includes("BET") || t.includes("PLACE"))
+    return { label: t.replace(/_/g, " "), cls: "bg-brand/15 text-brand border-brand/30", tone: "ok" };
+  return { label: t.replace(/_/g, " "), cls: "bg-adm-border/50 text-adm-ink border-adm-border", tone: "ok" };
+}
+
+function secSummary(e: SecEvent): string {
+  const m = e.meta || {};
+  const bits: string[] = [];
+  if (m.amount != null) bits.push(`₦${Number(m.amount).toLocaleString("en-NG")}`);
+  if (m.code != null) bits.push(`code ${m.code}`);
+  if (m.legCount != null) bits.push(`${m.legCount} leg(s)`);
+  if (m.totalOdds != null) bits.push(`odds ${m.totalOdds}`);
+  if (m.matchId != null) bits.push(`match ${String(m.matchId).slice(0, 10)}…`);
+  if (bits.length) return bits.join(" · ");
+  if (m && Object.keys(m).length)
+    return Object.entries(m)
+      .slice(0, 3)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(" · ");
+  return "Security event";
+}
+
+
 export default function PlatformTab() {
   const { user } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
@@ -184,24 +218,46 @@ export default function PlatformTab() {
             No events yet. Place a bet, deposit, or hit a rate limit to see rows here.
           </p>
         ) : (
-          <ul className="divide-y divide-adm-border max-h-96 overflow-y-auto">
-            {events.map((e) => (
-              <li key={e.id} className="px-3 py-2 text-xs">
-                <div className="flex flex-wrap items-center justify-between gap-1">
-                  <span className="font-semibold text-adm-ink">
-                    {e.type || "EVENT"}
-                  </span>
-                  <span className="text-adm-faint">{timeAgo(e.createdAt)}</span>
-                </div>
-                <div className="mt-0.5 text-adm-muted break-all">
-                  {e.uid ? `uid ${String(e.uid).slice(0, 10)}…` : "no uid"}
-                  {e.ip ? ` · ${e.ip}` : ""}
-                  {e.meta && Object.keys(e.meta).length > 0
-                    ? ` · ${JSON.stringify(e.meta).slice(0, 80)}`
-                    : ""}
-                </div>
-              </li>
-            ))}
+          <ul className="max-h-[28rem] space-y-2 overflow-y-auto px-2 pb-3">
+            {events.map((e) => {
+              const style = secStyle(e.type);
+              const summary = secSummary(e);
+              return (
+                <li
+                  key={e.id}
+                  className="rounded-xl border border-adm-border bg-adm-card px-3 py-2.5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span
+                      className={
+                        "inline-flex rounded-md border px-2 py-0.5 text-[10px] font-bold tracking-wide " +
+                        style.cls
+                      }
+                    >
+                      {style.label}
+                    </span>
+                    <span className="text-[11px] font-medium text-adm-faint">
+                      {timeAgo(e.createdAt)}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-xs font-medium text-adm-ink">{summary}</p>
+                  <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-adm-muted">
+                    <span>{e.uid ? "User " + String(e.uid).slice(0, 10) + "…" : "No user"}</span>
+                    {e.ip ? <span>· IP {e.ip}</span> : null}
+                  </div>
+                  {e.meta && Object.keys(e.meta).length > 0 && (
+                    <details className="mt-1.5">
+                      <summary className="cursor-pointer text-[10px] font-semibold text-brand">
+                        Raw payload
+                      </summary>
+                      <pre className="mt-1 max-h-28 overflow-auto rounded-lg bg-adm-bg p-1.5 text-[10px] text-adm-muted whitespace-pre-wrap break-all">
+                        {JSON.stringify(e.meta, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </Card>
@@ -233,4 +289,4 @@ function Stat({
       {sub ? <p className="text-[11px] text-adm-muted">{sub}</p> : null}
     </div>
   );
-                        }
+        }
