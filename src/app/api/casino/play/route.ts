@@ -32,14 +32,22 @@ export async function POST(request: NextRequest) {
   try {
     if (game === "dice") {
       const parsed = validateDiceInput(body);
-      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
       if (!stakeOk(parsed.stake)) {
         return NextResponse.json(
-          { error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}` },
+          {
+            error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}`,
+          },
           { status: 400 }
         );
       }
-      const round = resolveDiceRound(parsed);
+      const round = resolveDiceRound({
+        stake: parsed.stake,
+        target: parsed.target,
+        direction: parsed.direction,
+      });
       const settled = await settleCasinoPlay({
         uid: decoded.uid,
         game: "dice",
@@ -54,13 +62,22 @@ export async function POST(request: NextRequest) {
         },
       });
       if (!settled.ok) {
-        return NextResponse.json({ error: settled.error, code: settled.code }, { status: 400 });
+        return NextResponse.json(
+          { error: settled.error, code: settled.code },
+          { status: 400 }
+        );
       }
       return NextResponse.json({
         ok: true,
         game: "dice",
-        ...parsed,
-        ...round,
+        stake: parsed.stake,
+        target: parsed.target,
+        direction: parsed.direction,
+        roll: round.roll,
+        won: round.won,
+        multiplier: round.multiplier,
+        payout: round.payout,
+        profit: round.profit,
         balanceAfter: settled.balanceAfter,
         playId: settled.playId,
       });
@@ -68,30 +85,49 @@ export async function POST(request: NextRequest) {
 
     if (game === "coin") {
       const parsed = validateCoinInput(body);
-      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
       if (!stakeOk(parsed.stake)) {
         return NextResponse.json(
-          { error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}` },
+          {
+            error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}`,
+          },
           { status: 400 }
         );
       }
-      const round = resolveCoinRound(parsed);
+      const round = resolveCoinRound({
+        stake: parsed.stake,
+        pick: parsed.pick,
+      });
       const settled = await settleCasinoPlay({
         uid: decoded.uid,
         game: "coin",
         stake: parsed.stake,
         payout: round.payout,
-        meta: { pick: parsed.pick, flip: round.flip, won: round.won, multiplier: round.multiplier },
+        meta: {
+          pick: parsed.pick,
+          flip: round.flip,
+          won: round.won,
+          multiplier: round.multiplier,
+        },
       });
       if (!settled.ok) {
-        return NextResponse.json({ error: settled.error, code: settled.code }, { status: 400 });
+        return NextResponse.json(
+          { error: settled.error, code: settled.code },
+          { status: 400 }
+        );
       }
       return NextResponse.json({
         ok: true,
         game: "coin",
         stake: parsed.stake,
         pick: parsed.pick,
-        ...round,
+        flip: round.flip,
+        won: round.won,
+        multiplier: round.multiplier,
+        payout: round.payout,
+        profit: round.profit,
         balanceAfter: settled.balanceAfter,
         playId: settled.playId,
       });
@@ -99,15 +135,25 @@ export async function POST(request: NextRequest) {
 
     if (game === "mines") {
       const parsed = validateMinesInput(body);
-      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
       if (!stakeOk(parsed.stake)) {
         return NextResponse.json(
-          { error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}` },
+          {
+            error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}`,
+          },
           { status: 400 }
         );
       }
-      const round = resolveMinesRound(parsed);
-      if (round.error) return NextResponse.json({ error: round.error }, { status: 400 });
+      const round = resolveMinesRound({
+        stake: parsed.stake,
+        mineCount: parsed.mineCount,
+        picks: parsed.picks,
+      });
+      if (round.error) {
+        return NextResponse.json({ error: round.error }, { status: 400 });
+      }
       const settled = await settleCasinoPlay({
         uid: decoded.uid,
         game: "mines",
@@ -123,7 +169,10 @@ export async function POST(request: NextRequest) {
         },
       });
       if (!settled.ok) {
-        return NextResponse.json({ error: settled.error, code: settled.code }, { status: 400 });
+        return NextResponse.json(
+          { error: settled.error, code: settled.code },
+          { status: 400 }
+        );
       }
       return NextResponse.json({
         ok: true,
@@ -144,14 +193,18 @@ export async function POST(request: NextRequest) {
 
     if (game === "wheel") {
       const parsed = validateWheelInput(body);
-      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
       if (!stakeOk(parsed.stake)) {
         return NextResponse.json(
-          { error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}` },
+          {
+            error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}`,
+          },
           { status: 400 }
         );
       }
-      const round = resolveWheelRound(parsed);
+      const round = resolveWheelRound({ stake: parsed.stake });
       const settled = await settleCasinoPlay({
         uid: decoded.uid,
         game: "wheel",
@@ -164,13 +217,20 @@ export async function POST(request: NextRequest) {
         },
       });
       if (!settled.ok) {
-        return NextResponse.json({ error: settled.error, code: settled.code }, { status: 400 });
+        return NextResponse.json(
+          { error: settled.error, code: settled.code },
+          { status: 400 }
+        );
       }
       return NextResponse.json({
         ok: true,
         game: "wheel",
         stake: parsed.stake,
-        ...round,
+        segment: round.segment,
+        multiplier: round.multiplier,
+        won: round.won,
+        payout: round.payout,
+        profit: round.profit,
         balanceAfter: settled.balanceAfter,
         playId: settled.playId,
       });
@@ -178,14 +238,21 @@ export async function POST(request: NextRequest) {
 
     if (game === "crash") {
       const parsed = validateCrashInput(body);
-      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
       if (!stakeOk(parsed.stake)) {
         return NextResponse.json(
-          { error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}` },
+          {
+            error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}`,
+          },
           { status: 400 }
         );
       }
-      const round = resolveCrashRound(parsed);
+      const round = resolveCrashRound({
+        stake: parsed.stake,
+        cashoutAt: parsed.cashoutAt,
+      });
       const settled = await settleCasinoPlay({
         uid: decoded.uid,
         game: "crash",
@@ -199,13 +266,21 @@ export async function POST(request: NextRequest) {
         },
       });
       if (!settled.ok) {
-        return NextResponse.json({ error: settled.error, code: settled.code }, { status: 400 });
+        return NextResponse.json(
+          { error: settled.error, code: settled.code },
+          { status: 400 }
+        );
       }
       return NextResponse.json({
         ok: true,
         game: "crash",
         stake: parsed.stake,
-        ...round,
+        cashoutAt: round.cashoutAt,
+        crashPoint: round.crashPoint,
+        won: round.won,
+        multiplier: round.multiplier,
+        payout: round.payout,
+        profit: round.profit,
         balanceAfter: settled.balanceAfter,
         playId: settled.playId,
       });
@@ -216,5 +291,4 @@ export async function POST(request: NextRequest) {
     console.error("[casino/play]", e);
     return NextResponse.json({ error: "Play failed" }, { status: 500 });
   }
-        }
-      
+}
