@@ -37,7 +37,7 @@ export default function DicePage() {
   const [err, setErr] = useState<string | null>(null);
   const [last, setLast] = useState<PlayRes | null>(null);
   const [history, setHistory] = useState<number[]>([]);
-  const [spinFace, setSpinFace] = useState(1);
+  const [spinShow, setSpinShow] = useState(50);
 
   const winChance = useMemo(() => {
     const raw = direction === "under" ? target : 100 - target;
@@ -70,12 +70,12 @@ export default function DicePage() {
     void loadBal();
   }, [loadBal]);
 
-  // Cycle dice faces while rolling
+  // Scramble the big number while rolling
   useEffect(() => {
     if (!busy) return;
     const t = setInterval(() => {
-      setSpinFace((f) => (f % 6) + 1);
-    }, 80);
+      setSpinShow(Math.floor(Math.random() * 10000) / 100);
+    }, 50);
     return () => clearInterval(t);
   }, [busy]);
 
@@ -96,9 +96,9 @@ export default function DicePage() {
       });
       const data = (await res.json()) as PlayRes;
       if (!res.ok) throw new Error(data.error || "Play failed");
-      // brief settle pause so the spin is visible
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 450));
       setLast(data);
+      if (typeof data.roll === "number") setSpinShow(data.roll);
       if (typeof data.balanceAfter === "number") setBalance(data.balanceAfter);
       if (typeof data.roll === "number") {
         setHistory((h) => [data.roll!, ...h].slice(0, 8));
@@ -110,45 +110,45 @@ export default function DicePage() {
     }
   }
 
+  const rule =
+    direction === "under"
+      ? `Win if roll is under ${target}`
+      : `Win if roll is over ${target}`;
+
   const resultText =
     last && typeof last.roll === "number"
       ? last.won
-        ? `Roll ${last.roll.toFixed(2)} · +${chips(last.profit ?? 0)} · ${last.multiplier?.toFixed(2)}x`
-        : `Roll ${last.roll.toFixed(2)} · Lost ${chips(stake)}`
+        ? `${last.roll.toFixed(2)} is ${direction} ${target} · +${chips(last.profit ?? 0)} · ${last.multiplier?.toFixed(2)}x`
+        : `${last.roll.toFixed(2)} is not ${direction} ${target} · Lost ${chips(stake)}`
       : null;
-
-  const DICE = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
 
   return (
     <CasinoShell title="Dice" balance={balance}>
       <ResultBanner won={last?.won ?? null} text={resultText} />
 
-      {/* Dice visual */}
-      <div className="mb-4 flex flex-col items-center">
-        <div
-          className={`flex h-24 w-24 items-center justify-center rounded-2xl border border-ink-muted/15 bg-surface text-5xl shadow-sm ${
-            busy ? "animate-pulse" : ""
-          }`}
-          style={
+      {/* Big decimal roll — NOT a 6-sided die */}
+      <div className="mb-3 flex flex-col items-center rounded-2xl border border-ink-muted/15 bg-surface py-6">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-ink-muted">
+          Roll (0.00 – 99.99)
+        </p>
+        <p
+          className={`mt-1 text-5xl font-black tabular-nums tracking-tight ${
             busy
-              ? { transform: `rotate(${spinFace * 60}deg)`, transition: "transform 80ms linear" }
-              : undefined
-          }
-          aria-hidden
+              ? "text-ink-muted"
+              : last?.won === true
+                ? "text-emerald-600"
+                : last?.won === false
+                  ? "text-red-500"
+                  : "text-ink"
+          }`}
         >
           {busy
-            ? DICE[spinFace - 1]
-            : last?.roll != null
-              ? DICE[Math.min(5, Math.floor((last.roll / 100) * 6))]
-              : "🎲"}
-        </div>
-        <p className="mt-2 text-sm font-bold tabular-nums text-ink">
-          {busy
-            ? "Rolling…"
+            ? spinShow.toFixed(2)
             : last?.roll != null
               ? last.roll.toFixed(2)
-              : "0.00 – 99.99"}
+              : "—.—"}
         </p>
+        <p className="mt-2 text-xs font-medium text-ink-muted">{rule}</p>
       </div>
 
       {history.length > 0 && (
@@ -227,7 +227,7 @@ export default function DicePage() {
         <div className="mt-2 flex justify-between text-[11px] text-ink-muted">
           <span>Win chance {winChance.toFixed(0)}%</span>
           <span>
-            {direction === "under" ? `< ${target}` : `> ${target}`}
+            {direction === "under" ? `roll < ${target}` : `roll > ${target}`}
           </span>
         </div>
       </div>
@@ -258,4 +258,4 @@ export default function DicePage() {
       />
     </CasinoShell>
   );
-      }
+              }
