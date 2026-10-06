@@ -47,6 +47,67 @@ const BANKS: Record<string, string> = {
   "100004": "PalmPay",
 };
 
+
+function actionStyle(action: string): { label: string; cls: string } {
+  const a = (action || "").toLowerCase();
+  if (a.includes("force_early") || a.includes("early"))
+    return { label: "FORCE EARLY", cls: "bg-amber-500/15 text-amber-700 border-amber-500/30" };
+  if (a.includes("settle") || a.includes("confirm"))
+    return { label: "SETTLE", cls: "bg-emerald-500/15 text-emerald-700 border-emerald-500/30" };
+  if (a.includes("void"))
+    return { label: "VOID", cls: "bg-slate-500/15 text-slate-600 border-slate-500/30" };
+  if (a.includes("withdraw") || a.includes("payout") || a.includes("paid"))
+    return { label: "WITHDRAWAL", cls: "bg-sky-500/15 text-sky-700 border-sky-500/30" };
+  if (a.includes("kyc") || a.includes("verify"))
+    return { label: "KYC", cls: "bg-violet-500/15 text-violet-700 border-violet-500/30" };
+  if (a.includes("promo"))
+    return { label: "PROMO", cls: "bg-pink-500/15 text-pink-700 border-pink-500/30" };
+  if (a.includes("danger") || a.includes("reset") || a.includes("wipe"))
+    return { label: "DANGER", cls: "bg-rose-500/15 text-rose-700 border-rose-500/30" };
+  if (a.includes("cron"))
+    return { label: "CRON", cls: "bg-indigo-500/15 text-indigo-700 border-indigo-500/30" };
+  return {
+    label: (action || "ACTION").replace(/_/g, " ").toUpperCase().slice(0, 18),
+    cls: "bg-adm-border/40 text-adm-ink border-adm-border",
+  };
+}
+
+function humanAuditSummary(a: AuditRow): string {
+  const m = a.meta || {};
+  const parts: string[] = [];
+  if (m.event != null) parts.push(String(m.event).replace(/_/g, " "));
+  if (m.homeScore != null && m.awayScore != null)
+    parts.push(`Score ${m.homeScore}–${m.awayScore}`);
+  if (m.betsSettled != null) parts.push(`${m.betsSettled} bet(s) settled`);
+  if (m.reason != null && String(m.reason).trim())
+    parts.push(`“${String(m.reason).trim()}”`);
+  if (m.amount != null) parts.push(`₦${Number(m.amount).toLocaleString("en-NG")}`);
+  if (m.priorStatus != null) parts.push(`was ${m.priorStatus}`);
+  if (parts.length) return parts.join(" · ");
+  if (a.targetType || a.targetId)
+    return `${a.targetType || "item"} · ${String(a.targetId).slice(0, 16)}`;
+  return "Admin action recorded";
+}
+
+function formatWhen(ts: number): { rel: string; full: string } {
+  const full = new Date(ts).toLocaleString("en-NG", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const s = Math.floor((Date.now() - ts) / 1000);
+  let rel = full;
+  if (s < 60) rel = `${s}s ago`;
+  else if (s < 3600) rel = `${Math.floor(s / 60)}m ago`;
+  else if (s < 86400) rel = `${Math.floor(s / 3600)}h ago`;
+  else if (s < 86400 * 7) rel = `${Math.floor(s / 86400)}d ago`;
+  return { rel, full };
+}
+
+
 export default function ComplianceTab() {
   const { user } = useAuth();
   const [section, setSection] = useState<"kyc" | "audit">("kyc");
@@ -253,26 +314,60 @@ export default function ComplianceTab() {
           ) : audit.length === 0 ? (
             <p className="text-sm text-adm-faint">No audit entries yet.</p>
           ) : (
-            <ul className="space-y-2">
-              {audit.map((a) => (
-                <li
-                  key={a.id}
-                  className="rounded-xl border border-adm-border bg-adm-surface px-3 py-2 text-xs"
-                >
-                  <p className="font-semibold">
-                    {a.action} · {a.targetType}/{a.targetId}
-                  </p>
-                  <p className="text-adm-faint">
-                    {a.adminEmail || a.adminUid} ·{" "}
-                    {new Date(a.createdAt).toLocaleString()}
-                  </p>
-                  {a.meta && Object.keys(a.meta).length > 0 && (
-                    <p className="mt-0.5 break-all text-adm-faint">
-                      {JSON.stringify(a.meta)}
+            <ul className="space-y-3">
+              {audit.map((a) => {
+                const style = actionStyle(a.action);
+                const when = formatWhen(a.createdAt);
+                const summary = humanAuditSummary(a);
+                const who = a.adminEmail || (a.adminUid ? a.adminUid.slice(0, 12) + "…" : "Admin");
+                const target =
+                  a.targetType || a.targetId
+                    ? `${a.targetType || "target"}${a.targetId ? " · " + String(a.targetId).slice(0, 20) : ""}`
+                    : null;
+                return (
+                  <li
+                    key={a.id}
+                    className="rounded-2xl border border-adm-border bg-adm-surface p-3 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <span
+                        className={
+                          "inline-flex items-center rounded-lg border px-2 py-0.5 text-[10px] font-bold tracking-wide " +
+                          style.cls
+                        }
+                      >
+                        {style.label}
+                      </span>
+                      <div className="text-right">
+                        <p className="text-[11px] font-semibold text-adm-ink">{when.rel}</p>
+                        <p className="text-[10px] text-adm-faint">{when.full}</p>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-sm font-medium leading-snug text-adm-ink">
+                      {summary}
                     </p>
-                  )}
-                </li>
-              ))}
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-adm-faint">
+                      <span className="font-medium text-adm-muted">{who}</span>
+                      {target && (
+                        <>
+                          <span className="text-adm-border">|</span>
+                          <span className="font-mono text-[10px]">{target}</span>
+                        </>
+                      )}
+                    </div>
+                    {a.meta && Object.keys(a.meta).length > 0 && (
+                      <details className="mt-2 group">
+                        <summary className="cursor-pointer select-none text-[11px] font-semibold text-brand">
+                          View technical details
+                        </summary>
+                        <pre className="mt-1 max-h-40 overflow-auto rounded-xl bg-adm-bg p-2 text-[10px] leading-relaxed text-adm-muted break-all whitespace-pre-wrap">
+                          {JSON.stringify(a.meta, null, 2)}
+                        </pre>
+                      </details>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </>
@@ -280,3 +375,4 @@ export default function ComplianceTab() {
     </div>
   );
 }
+  
