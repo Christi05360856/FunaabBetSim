@@ -19,6 +19,7 @@ type PlayRes = {
   won?: boolean;
   multiplier?: number;
   profit?: number;
+  payout?: number;
   balanceAfter?: number;
 };
 
@@ -108,7 +109,7 @@ export default function CrashPage() {
   const resultText =
     last != null && typeof last.crashPoint === "number"
       ? last.won
-        ? `Crashed ${last.crashPoint.toFixed(2)}x · You cashed ${Number(last.cashoutAt).toFixed(2)}x · +${chips(last.profit ?? 0)}`
+        ? `Crashed ${last.crashPoint.toFixed(2)}x · Cashed ${Number(last.cashoutAt).toFixed(2)}x · Payout ${chips(last.payout ?? Math.floor(stake * Number(last.cashoutAt) * 100) / 100)}`
         : `Crashed ${last.crashPoint.toFixed(2)}x before ${Number(last.cashoutAt ?? lockedCashout.current).toFixed(2)}x · Lost ${chips(stake)}`
       : null;
 
