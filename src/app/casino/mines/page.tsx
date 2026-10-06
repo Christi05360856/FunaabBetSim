@@ -23,8 +23,9 @@ type PlayRes = {
   error?: string;
   mineCount?: number;
   picks?: number[];
-  minePositions?: number[];
-  hitMine?: boolean;
+  /** Server field name is `mines` */
+  mines?: number[];
+  hit?: number | null;
   won?: boolean;
   multiplier?: number;
   payout?: number;
@@ -138,7 +139,7 @@ export default function MinesPage() {
     }
   }
 
-  const mineSet = new Set(last?.minePositions ?? []);
+  const mineSet = new Set(last?.mines ?? []);
   const pickSet = new Set(last?.picks ?? selected);
 
   const resultText =
@@ -197,9 +198,9 @@ export default function MinesPage() {
               onClick={() => toggle(i)}
               className={`flex aspect-square items-center justify-center rounded-xl text-lg font-bold transition active:scale-95 disabled:cursor-default ${
                 isMine
-                  ? "bg-red-500 text-white"
+                  ? "bg-red-500 text-white shadow-sm"
                   : isSafe
-                    ? "bg-emerald-500 text-white"
+                    ? "bg-emerald-500 text-white shadow-sm"
                     : isPick && !reveal
                       ? "bg-brand/20 ring-2 ring-brand"
                       : "border border-ink-muted/15 bg-surface"
