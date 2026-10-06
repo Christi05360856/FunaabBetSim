@@ -1,6 +1,8 @@
 import "server-only";
 import { adminDb } from "@/lib/firebase/admin";
 import {
+  CASINO_MAX_STAKE,
+  CASINO_MIN_STAKE,
   CASINO_RELOAD_CHIPS,
   CASINO_RELOAD_COOLDOWN_MS,
   CASINO_START_CHIPS,
@@ -8,21 +10,18 @@ import {
 } from "@/types/casino";
 
 const COL = "casino_wallets";
+const PLAYS = "casino_plays";
 
 function clampChips(n: number): number {
   if (!Number.isFinite(n) || n < 0) return 0;
-  return Math.floor(n);
+  return Math.floor(n * 100) / 100;
 }
 
-/**
- * Ensure demo wallet exists. First visit → 10_000 chips.
- * Never reads/writes sports `wallets` collection.
- */
 export async function ensureCasinoDemoWallet(uid: string): Promise<CasinoDemoWallet> {
   const ref = adminDb.collection(COL).doc(uid);
   const now = Date.now();
 
-  const out = await adminDb.runTransaction(async (tx) => {
+  return adminDb.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (snap.exists) {
       const d = snap.data() as CasinoDemoWallet;
@@ -44,8 +43,6 @@ export async function ensureCasinoDemoWallet(uid: string): Promise<CasinoDemoWal
     tx.set(ref, fresh);
     return fresh;
   });
-
-  return out;
 }
 
 export type ReloadResult =
@@ -58,9 +55,6 @@ export type ReloadResult =
       retryAfterMs?: number;
     };
 
-/**
- * Reload only when balance is exactly 0 and cooldown elapsed.
- */
 export async function reloadCasinoDemoWallet(uid: string): Promise<ReloadResult> {
   const ref = adminDb.collection(COL).doc(uid);
   const now = Date.now();
@@ -145,4 +139,109 @@ export function reloadAvailability(wallet: CasinoDemoWallet, now = Date.now()) {
     reason: "cooldown" as const,
     retryAfterMs: CASINO_RELOAD_COOLDOWN_MS - elapsed,
   };
+}
+
+export type SettlePlayInput = {
+  uid: string;
+  game: string;
+  stake: number;
+  /** Gross return on win (includes stake). 0 on loss. */
+  payout: number;
+  meta: Record<string, unknown>;
+};
+
+export type SettlePlayResult =
+  | {
+      ok: true;
+      playId: string;
+      balanceAfter: number;
+      balanceBefore: number;
+    }
+  | { ok: false; error: string; code: "INSUFFICIENT" | "INVALID_STAKE" | "ERROR" };
+
+/**
+ * Debit stake, credit payout in one transaction. Writes casino_plays audit row.
+ * Never touches sports wallets.
+ */
+export async function settleCasinoPlay(input: SettlePlayInput): Promise<SettlePlayResult> {
+  const stake = clampChips(input.stake);
+  const payout = clampChips(input.payout);
+
+  if (stake < CASINO_MIN_STAKE) {
+    return { ok: false, error: `Minimum stake is ${CASINO_MIN_STAKE}`, code: "INVALID_STAKE" };
+  }
+  if (stake > CASINO_MAX_STAKE) {
+    return { ok: false, error: `Maximum stake is ${CASINO_MAX_STAKE}`, code: "INVALID_STAKE" };
+  }
+
+  const ref = adminDb.collection(COL).doc(input.uid);
+  const playRef = adminDb.collection(PLAYS).doc();
+  const now = Date.now();
+
+  try {
+    return await adminDb.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      let wallet: CasinoDemoWallet;
+      if (!snap.exists) {
+        wallet = {
+          uid: input.uid,
+          balance: CASINO_START_CHIPS,
+          startedAt: now,
+          lastReloadAt: null,
+          updatedAt: now,
+        };
+        tx.set(ref, wallet);
+      } else {
+        const d = snap.data() as CasinoDemoWallet;
+        wallet = {
+          uid: input.uid,
+          balance: clampChips(d.balance ?? 0),
+          startedAt: d.startedAt ?? now,
+          lastReloadAt: d.lastReloadAt ?? null,
+          updatedAt: d.updatedAt ?? now,
+        };
+      }
+
+      if (wallet.balance < stake) {
+        return {
+          ok: false as const,
+          error: "Insufficient demo chips",
+          code: "INSUFFICIENT" as const,
+        };
+      }
+
+      const balanceBefore = wallet.balance;
+      // Remove stake, add payout (payout is 0 on loss)
+      const balanceAfter = clampChips(balanceBefore - stake + payout);
+
+      tx.set(ref, {
+        ...wallet,
+        balance: balanceAfter,
+        updatedAt: now,
+      });
+
+      tx.set(playRef, {
+        id: playRef.id,
+        uid: input.uid,
+        game: input.game,
+        stake,
+        payout,
+        profit: clampChips(payout - stake),
+        balanceBefore,
+        balanceAfter,
+        meta: input.meta,
+        createdAt: now,
+      });
+
+      return {
+        ok: true as const,
+        playId: playRef.id,
+        balanceAfter,
+        balanceBefore,
+      };
+    });
+  } catch (e) {
+    console.error("[settleCasinoPlay]", e);
+    return { ok: false, error: "Play settlement failed", code: "ERROR" };
+  }
 }
