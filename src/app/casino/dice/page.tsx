@@ -37,6 +37,7 @@ export default function DicePage() {
   const [err, setErr] = useState<string | null>(null);
   const [last, setLast] = useState<PlayRes | null>(null);
   const [history, setHistory] = useState<number[]>([]);
+  const [spinFace, setSpinFace] = useState(1);
 
   const winChance = useMemo(() => {
     const raw = direction === "under" ? target : 100 - target;
@@ -46,7 +47,10 @@ export default function DicePage() {
   const multiplier = useMemo(() => {
     const p = winChance / 100;
     if (p <= 0) return 1.01;
-    return Math.max(1.01, Math.floor(((1 / p) * (1 - CASINO_HOUSE_EDGE)) * 10000) / 10000);
+    return Math.max(
+      1.01,
+      Math.floor(((1 / p) * (1 - CASINO_HOUSE_EDGE)) * 10000) / 10000
+    );
   }, [winChance]);
 
   const potential = Math.floor(stake * multiplier * 100) / 100;
@@ -66,6 +70,15 @@ export default function DicePage() {
     void loadBal();
   }, [loadBal]);
 
+  // Cycle dice faces while rolling
+  useEffect(() => {
+    if (!busy) return;
+    const t = setInterval(() => {
+      setSpinFace((f) => (f % 6) + 1);
+    }, 80);
+    return () => clearInterval(t);
+  }, [busy]);
+
   async function play() {
     if (!user || busy) return;
     setBusy(true);
@@ -83,6 +96,8 @@ export default function DicePage() {
       });
       const data = (await res.json()) as PlayRes;
       if (!res.ok) throw new Error(data.error || "Play failed");
+      // brief settle pause so the spin is visible
+      await new Promise((r) => setTimeout(r, 400));
       setLast(data);
       if (typeof data.balanceAfter === "number") setBalance(data.balanceAfter);
       if (typeof data.roll === "number") {
@@ -102,9 +117,39 @@ export default function DicePage() {
         : `Roll ${last.roll.toFixed(2)} · Lost ${chips(stake)}`
       : null;
 
+  const DICE = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
+
   return (
     <CasinoShell title="Dice" balance={balance}>
       <ResultBanner won={last?.won ?? null} text={resultText} />
+
+      {/* Dice visual */}
+      <div className="mb-4 flex flex-col items-center">
+        <div
+          className={`flex h-24 w-24 items-center justify-center rounded-2xl border border-ink-muted/15 bg-surface text-5xl shadow-sm ${
+            busy ? "animate-pulse" : ""
+          }`}
+          style={
+            busy
+              ? { transform: `rotate(${spinFace * 60}deg)`, transition: "transform 80ms linear" }
+              : undefined
+          }
+          aria-hidden
+        >
+          {busy
+            ? DICE[spinFace - 1]
+            : last?.roll != null
+              ? DICE[Math.min(5, Math.floor((last.roll / 100) * 6))]
+              : "🎲"}
+        </div>
+        <p className="mt-2 text-sm font-bold tabular-nums text-ink">
+          {busy
+            ? "Rolling…"
+            : last?.roll != null
+              ? last.roll.toFixed(2)
+              : "0.00 – 99.99"}
+        </p>
+      </div>
 
       {history.length > 0 && (
         <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1">
@@ -119,7 +164,6 @@ export default function DicePage() {
         </div>
       )}
 
-      {/* Direction */}
       <div className="mb-3 grid grid-cols-2 gap-2">
         {(["under", "over"] as const).map((d) => (
           <button
@@ -137,7 +181,6 @@ export default function DicePage() {
         ))}
       </div>
 
-      {/* Target track */}
       <div className="rounded-2xl border border-ink-muted/15 bg-surface p-4">
         <div className="mb-3 flex items-end justify-between">
           <div>
@@ -159,7 +202,9 @@ export default function DicePage() {
         <div className="relative h-3 overflow-hidden rounded-full bg-ink-muted/15">
           <div
             className={`absolute inset-y-0 ${
-              direction === "under" ? "left-0 bg-emerald-500" : "right-0 bg-emerald-500"
+              direction === "under"
+                ? "left-0 bg-emerald-500"
+                : "right-0 bg-emerald-500"
             }`}
             style={{
               width: `${direction === "under" ? target : 100 - target}%`,
@@ -204,11 +249,13 @@ export default function DicePage() {
 
       <PrimaryBtn
         busy={busy}
-        disabled={balance == null || balance < stake || stake < CASINO_MIN_STAKE}
+        disabled={
+          balance == null || balance < stake || stake < CASINO_MIN_STAKE
+        }
         label="Roll"
         busyLabel="Rolling…"
         onClick={() => void play()}
       />
     </CasinoShell>
   );
-}
+      }
