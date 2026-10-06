@@ -1,27 +1,34 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { CASINO_MAX_STAKE, CASINO_MIN_STAKE, type CoinSide } from "@/types/casino";
+import {
+  CasinoShell,
+  PrimaryBtn,
+  ResultBanner,
+  StakeBar,
+  chips,
+} from "@/components/casino/CasinoShell";
 
-function chips(n: number) {
-  return Math.floor(n).toLocaleString("en-NG");
-}
+type PlayRes = {
+  ok?: boolean;
+  error?: string;
+  flip?: CoinSide;
+  won?: boolean;
+  multiplier?: number;
+  profit?: number;
+  balanceAfter?: number;
+};
 
 export default function CoinPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const [balance, setBalance] = useState<number | null>(null);
   const [stake, setStake] = useState(100);
   const [pick, setPick] = useState<CoinSide>("heads");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [last, setLast] = useState<{
-    flip: CoinSide;
-    won: boolean;
-    profit: number;
-    multiplier: number;
-  } | null>(null);
+  const [last, setLast] = useState<PlayRes | null>(null);
 
   const loadBal = useCallback(async () => {
     if (!user) return;
@@ -31,7 +38,7 @@ export default function CoinPage() {
       cache: "no-store",
     });
     const data = await res.json();
-    if (res.ok) setBalance(data.balance);
+    if (res.ok && typeof data.balance === "number") setBalance(data.balance);
   }, [user]);
 
   useEffect(() => {
@@ -42,6 +49,7 @@ export default function CoinPage() {
     if (!user || busy) return;
     setBusy(true);
     setErr(null);
+    setLast(null);
     try {
       const token = await user.getIdToken();
       const res = await fetch("/api/casino/play", {
@@ -52,103 +60,73 @@ export default function CoinPage() {
         },
         body: JSON.stringify({ game: "coin", stake, pick }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed");
-      setBalance(data.balanceAfter);
-      setLast({
-        flip: data.flip,
-        won: data.won,
-        profit: data.profit,
-        multiplier: data.multiplier,
-      });
+      const data = (await res.json()) as PlayRes;
+      if (!res.ok) throw new Error(data.error || "Play failed");
+      setLast(data);
+      if (typeof data.balanceAfter === "number") setBalance(data.balanceAfter);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed");
+      setErr(e instanceof Error ? e.message : "Play failed");
     } finally {
       setBusy(false);
     }
   }
 
-  if (authLoading) return <main className="p-4 text-sm text-ink-muted">Loading…</main>;
-  if (!user)
-    return (
-      <main className="p-4 text-center text-sm">
-        <Link href="/login" className="text-brand font-semibold">
-          Sign in
-        </Link>
-      </main>
-    );
+  const resultText =
+    last?.flip != null
+      ? last.won
+        ? `${last.flip.toUpperCase()} · +${chips(last.profit ?? 0)}`
+        : `${last.flip.toUpperCase()} · Lost ${chips(stake)}`
+      : null;
 
   return (
-    <main className="mx-auto max-w-md px-4 pb-28 pt-3">
-      <div className="mb-3 flex items-center justify-between">
-        <Link href="/casino" className="text-sm font-medium text-brand">
-          ← Casino
-        </Link>
-        <p className="text-sm tabular-nums">
-          <span className="text-ink-muted">Demo </span>
-          <span className="font-bold">{balance == null ? "…" : chips(balance)}</span>
-        </p>
-      </div>
-      <h1 className="text-xl font-bold text-ink">Coin Flip</h1>
+    <CasinoShell title="Coin Flip" balance={balance}>
+      <ResultBanner won={last?.won ?? null} text={resultText} />
 
-      <div
-        className={`mt-4 rounded-2xl border px-4 py-8 text-center ${
-          last == null
-            ? "border-ink-muted/15 bg-surface"
-            : last.won
-              ? "border-emerald-500/30 bg-emerald-500/10"
-              : "border-red-500/25 bg-red-500/10"
-        }`}
-      >
-        <p className="text-4xl font-bold capitalize text-ink">{last ? last.flip : "—"}</p>
-        {last && (
-          <p
-            className={`mt-2 text-sm font-semibold ${
-              last.won ? "text-emerald-700 dark:text-emerald-400" : "text-red-600"
-            }`}
-          >
-            {last.won ? `Won +${chips(last.profit)} · ${last.multiplier}x` : `Lost ${chips(Math.abs(last.profit))}`}
-          </p>
-        )}
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        {(["heads", "tails"] as const).map((s) => (
+      {/* Big pick */}
+      <div className="mb-4 grid grid-cols-2 gap-3">
+        {([
+          { id: "heads" as const, label: "Heads", emoji: "👑" },
+          { id: "tails" as const, label: "Tails", emoji: "🐚" },
+        ]).map((s) => (
           <button
-            key={s}
+            key={s.id}
             type="button"
-            onClick={() => setPick(s)}
-            className={`rounded-xl py-3 text-sm font-semibold capitalize ${
-              pick === s ? "bg-brand text-white" : "border border-ink-muted/15 bg-surface text-ink"
+            onClick={() => setPick(s.id)}
+            className={`flex flex-col items-center justify-center rounded-2xl border-2 py-8 transition active:scale-[0.98] ${
+              pick === s.id
+                ? "border-brand bg-brand/10 shadow-sm"
+                : "border-ink-muted/15 bg-surface"
             }`}
           >
-            {s}
+            <span className="text-4xl" aria-hidden>
+              {s.emoji}
+            </span>
+            <span className="mt-2 text-base font-extrabold">{s.label}</span>
+            <span className="mt-1 text-[11px] text-ink-muted">~1.98x</span>
           </button>
         ))}
       </div>
 
-      <div className="mt-4 rounded-2xl border border-ink-muted/15 bg-surface p-3">
-        <label className="text-xs font-semibold text-ink-muted">Stake</label>
-        <input
-          type="number"
-          min={CASINO_MIN_STAKE}
-          max={CASINO_MAX_STAKE}
-          value={stake}
-          onChange={(e) => setStake(Math.floor(Number(e.target.value) || 0))}
-          className="mt-1 w-full rounded-xl border border-ink-muted/20 bg-transparent px-3 py-2 text-lg font-bold tabular-nums outline-none focus:border-brand"
-        />
-      </div>
+      <StakeBar
+        stake={stake}
+        setStake={setStake}
+        balance={balance}
+        min={CASINO_MIN_STAKE}
+        max={CASINO_MAX_STAKE}
+        potentialLabel={`Win ~${chips(Math.floor(stake * 1.98))}`}
+      />
 
-      {err && <p className="mt-2 text-center text-xs text-red-600">{err}</p>}
+      {err && (
+        <p className="mt-3 text-center text-xs font-medium text-red-600">{err}</p>
+      )}
 
-      <button
-        type="button"
-        disabled={busy || balance == null || balance < stake || stake < CASINO_MIN_STAKE}
+      <PrimaryBtn
+        busy={busy}
+        disabled={balance == null || balance < stake || stake < CASINO_MIN_STAKE}
+        label={`Flip · ${pick}`}
+        busyLabel="Flipping…"
         onClick={() => void play()}
-        className="mt-4 w-full rounded-2xl bg-brand py-3.5 text-base font-bold text-white disabled:opacity-50"
-      >
-        {busy ? "Flipping…" : "Play for free"}
-      </button>
-    </main>
+      />
+    </CasinoShell>
   );
 }
