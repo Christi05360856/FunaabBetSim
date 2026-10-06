@@ -8,11 +8,14 @@ import {
 } from "@/types/casino";
 
 function shuffleIndices(n: number): number[] {
-  const arr = Array.from({ length: n }, (_, i) => i);
+  const arr: number[] = Array.from({ length: n }, (_, i) => i);
   for (let i = n - 1; i > 0; i--) {
     const buf = randomBytes(4);
     const j = buf.readUInt32BE(0) % (i + 1);
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+    const a = arr[i] as number;
+    const b = arr[j] as number;
+    arr[i] = b;
+    arr[j] = a;
   }
   return arr;
 }
