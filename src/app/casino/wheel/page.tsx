@@ -1,26 +1,54 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useAuth } from "@/lib/auth/AuthContext";
-import { CASINO_MAX_STAKE, CASINO_MIN_STAKE, WHEEL_SEGMENTS } from "@/types/casino";
+import {
+  CASINO_MAX_STAKE,
+  CASINO_MIN_STAKE,
+  WHEEL_SEGMENTS,
+} from "@/types/casino";
+import {
+  CasinoShell,
+  PrimaryBtn,
+  ResultBanner,
+  StakeBar,
+  chips,
+} from "@/components/casino/CasinoShell";
 
-function chips(n: number) {
-  return Math.floor(n).toLocaleString("en-NG");
-}
+const COLORS = [
+  "#64748b",
+  "#f59e0b",
+  "#10b981",
+  "#3b82f6",
+  "#8b5cf6",
+  "#ef4444",
+  "#ec4899",
+  "#64748b",
+  "#14b8a6",
+  "#6366f1",
+  "#f97316",
+  "#eab308",
+];
+
+type PlayRes = {
+  ok?: boolean;
+  error?: string;
+  segment?: number;
+  multiplier?: number;
+  won?: boolean;
+  profit?: number;
+  balanceAfter?: number;
+};
 
 export default function WheelPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const [balance, setBalance] = useState<number | null>(null);
   const [stake, setStake] = useState(100);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [last, setLast] = useState<{
-    segment: number;
-    multiplier: number;
-    won: boolean;
-    profit: number;
-  } | null>(null);
+  const [last, setLast] = useState<PlayRes | null>(null);
+  const [history, setHistory] = useState<number[]>([]);
+  const [spinDeg, setSpinDeg] = useState(0);
 
   const loadBal = useCallback(async () => {
     if (!user) return;
@@ -30,7 +58,7 @@ export default function WheelPage() {
       cache: "no-store",
     });
     const data = await res.json();
-    if (res.ok) setBalance(data.balance);
+    if (res.ok && typeof data.balance === "number") setBalance(data.balance);
   }, [user]);
 
   useEffect(() => {
@@ -41,6 +69,7 @@ export default function WheelPage() {
     if (!user || busy) return;
     setBusy(true);
     setErr(null);
+    setLast(null);
     try {
       const token = await user.getIdToken();
       const res = await fetch("/api/casino/play", {
@@ -51,105 +80,112 @@ export default function WheelPage() {
         },
         body: JSON.stringify({ game: "wheel", stake }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed");
-      setBalance(data.balanceAfter);
-      setLast({
-        segment: data.segment,
-        multiplier: data.multiplier,
-        won: data.won,
-        profit: data.profit,
-      });
+      const data = (await res.json()) as PlayRes;
+      if (!res.ok) throw new Error(data.error || "Play failed");
+      setLast(data);
+      if (typeof data.balanceAfter === "number") setBalance(data.balanceAfter);
+      if (typeof data.multiplier === "number") {
+        setHistory((h) => [data.multiplier!, ...h].slice(0, 8));
+      }
+      if (typeof data.segment === "number") {
+        const n = WHEEL_SEGMENTS.length;
+        const segAngle = 360 / n;
+        // Land pointer at top of chosen segment + extra spins
+        const target =
+          spinDeg + 360 * 4 + (360 - data.segment * segAngle - segAngle / 2);
+        setSpinDeg(target);
+      }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed");
+      setErr(e instanceof Error ? e.message : "Play failed");
     } finally {
       setBusy(false);
     }
   }
 
-  if (authLoading) return <main className="p-4 text-sm text-ink-muted">Loading…</main>;
-  if (!user)
-    return (
-      <main className="p-4 text-center">
-        <Link href="/login" className="font-semibold text-brand">
-          Sign in
-        </Link>
-      </main>
-    );
+  const n = WHEEL_SEGMENTS.length;
+  const gradient = WHEEL_SEGMENTS.map((_, i) => {
+    const start = (i / n) * 360;
+    const end = ((i + 1) / n) * 360;
+    return `${COLORS[i % COLORS.length]} ${start}deg ${end}deg`;
+  }).join(", ");
+
+  const resultText =
+    last != null && typeof last.multiplier === "number"
+      ? last.won
+        ? `${last.multiplier.toFixed(2)}x · +${chips(last.profit ?? 0)}`
+        : `${last.multiplier.toFixed(2)}x · Lost ${chips(stake)}`
+      : null;
 
   return (
-    <main className="mx-auto max-w-md px-4 pb-28 pt-3">
-      <div className="mb-3 flex items-center justify-between">
-        <Link href="/casino" className="text-sm font-medium text-brand">
-          ← Casino
-        </Link>
-        <p className="text-sm tabular-nums">
-          <span className="text-ink-muted">Demo </span>
-          <span className="font-bold">{balance == null ? "…" : chips(balance)}</span>
-        </p>
-      </div>
-      <h1 className="text-xl font-bold text-ink">Wheel</h1>
+    <CasinoShell title="Wheel" balance={balance}>
+      <ResultBanner won={last?.won ?? null} text={resultText} />
 
-      <div
-        className={`mt-4 rounded-2xl border px-4 py-8 text-center ${
-          last == null
-            ? "border-ink-muted/15 bg-surface"
-            : last.won
-              ? "border-emerald-500/30 bg-emerald-500/10"
-              : "border-red-500/25 bg-red-500/10"
-        }`}
-      >
-        <p className="text-4xl font-bold tabular-nums text-ink">
-          {last ? `${last.multiplier}x` : "—"}
-        </p>
-        {last && (
-          <p
-            className={`mt-2 text-sm font-semibold ${
-              last.won ? "text-emerald-700 dark:text-emerald-400" : "text-red-600"
-            }`}
-          >
-            {last.won ? `Won +${chips(last.profit)}` : `Lost ${chips(Math.abs(last.profit))}`}
-          </p>
-        )}
+      {history.length > 0 && (
+        <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1">
+          {history.map((m, i) => (
+            <span
+              key={`${m}-${i}`}
+              className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-bold tabular-nums ${
+                m > 0
+                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                  : "bg-ink-muted/10 text-ink-muted"
+              }`}
+            >
+              {m.toFixed(2)}x
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Wheel visual */}
+      <div className="relative mx-auto mb-4 h-56 w-56">
+        <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 text-brand">
+          ▼
+        </div>
+        <div
+          className="h-full w-full rounded-full border-4 border-ink-muted/20 shadow-inner transition-transform duration-1000 ease-out"
+          style={{
+            background: `conic-gradient(${gradient})`,
+            transform: `rotate(${spinDeg}deg)`,
+          }}
+        />
+        <div className="absolute inset-[28%] flex items-center justify-center rounded-full bg-surface shadow">
+          <span className="text-xs font-bold text-ink-muted">SPIN</span>
+        </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {WHEEL_SEGMENTS.map((m, i) => (
+      {/* Legend */}
+      <div className="mb-3 flex flex-wrap justify-center gap-1.5">
+        {[...new Set(WHEEL_SEGMENTS)].sort((a, b) => a - b).map((m) => (
           <span
-            key={i}
-            className={`rounded-md px-2 py-1 text-[11px] font-semibold tabular-nums ${
-              last?.segment === i
-                ? "bg-brand text-white"
-                : "bg-ink-muted/10 text-ink-muted"
-            }`}
+            key={m}
+            className="rounded-md bg-ink-muted/10 px-2 py-0.5 text-[10px] font-bold tabular-nums"
           >
-            {m}x
+            {m.toFixed(2)}x
           </span>
         ))}
       </div>
 
-      <div className="mt-4 rounded-2xl border border-ink-muted/15 bg-surface p-3">
-        <label className="text-xs font-semibold text-ink-muted">Stake</label>
-        <input
-          type="number"
-          min={CASINO_MIN_STAKE}
-          max={CASINO_MAX_STAKE}
-          value={stake}
-          onChange={(e) => setStake(Math.floor(Number(e.target.value) || 0))}
-          className="mt-1 w-full rounded-xl border border-ink-muted/20 bg-transparent px-3 py-2 text-lg font-bold tabular-nums outline-none focus:border-brand"
-        />
-      </div>
+      <StakeBar
+        stake={stake}
+        setStake={setStake}
+        balance={balance}
+        min={CASINO_MIN_STAKE}
+        max={CASINO_MAX_STAKE}
+      />
 
-      {err && <p className="mt-2 text-center text-xs text-red-600">{err}</p>}
+      {err && (
+        <p className="mt-3 text-center text-xs font-medium text-red-600">{err}</p>
+      )}
 
-      <button
-        type="button"
-        disabled={busy || balance == null || balance < stake || stake < CASINO_MIN_STAKE}
+      <PrimaryBtn
+        busy={busy}
+        disabled={balance == null || balance < stake || stake < CASINO_MIN_STAKE}
+        label="Spin"
+        busyLabel="Spinning…"
         onClick={() => void play()}
-        className="mt-4 w-full rounded-2xl bg-brand py-3.5 text-base font-bold text-white disabled:opacity-50"
-      >
-        {busy ? "Spinning…" : "Play for free"}
-      </button>
-    </main>
+      />
+    </CasinoShell>
   );
-}
+      }
+        
