@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 const ITEMS = [
   { href: "/", label: "Home", icon: HomeIcon },
   { href: "/fixtures", label: "Fixtures", icon: FixturesIcon },
+  { href: "/casino", label: "Casino", icon: CasinoIcon },
   { href: "/bets", label: "My Bets", icon: BetsIcon },
   { href: "/dashboard", label: "Account", icon: AccountIcon },
 ] as const;
@@ -30,7 +31,7 @@ export default function BottomNav() {
       className="fixed inset-x-0 bottom-0 z-30 border-t border-ink-muted/15 bg-surface/95 backdrop-blur"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
-      <div className="mx-auto flex max-w-md items-center justify-around px-2 py-1.5">
+      <div className="mx-auto flex max-w-md items-center justify-around px-1 py-1.5">
         {ITEMS.map(({ href, label, icon: Icon }) => {
           const active =
             href === "/"
@@ -41,12 +42,12 @@ export default function BottomNav() {
               key={href}
               href={href}
               onClick={(e) => goTab(e, href)}
-              className={`flex min-w-[4rem] flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 text-[11px] font-medium transition-colors ${
+              className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-1.5 py-1.5 text-[10px] font-medium transition-colors sm:text-[11px] ${
                 active ? "bg-brand/10 text-brand" : "text-ink-muted"
               }`}
             >
               <Icon active={active} />
-              {label}
+              <span className="truncate">{label}</span>
             </Link>
           );
         })}
@@ -69,6 +70,19 @@ function FixturesIcon({ active }: { active: boolean }) {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2}>
       <rect x="3" y="5" width="18" height="16" rx="2" />
       <path d="M3 10h18M8 3v4M16 3v4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CasinoIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2}>
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <circle cx="8.5" cy="8.5" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="8.5" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="8.5" cy="15.5" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="15.5" r="1.25" fill="currentColor" stroke="none" />
     </svg>
   );
 }
