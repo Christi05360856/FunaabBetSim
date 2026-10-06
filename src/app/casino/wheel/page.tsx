@@ -37,6 +37,7 @@ type PlayRes = {
   multiplier?: number;
   won?: boolean;
   profit?: number;
+  payout?: number;
   balanceAfter?: number;
 };
 
@@ -132,9 +133,9 @@ export default function WheelPage() {
 
   const resultText =
     last != null && typeof last.multiplier === "number"
-      ? last.won
-        ? `${last.multiplier.toFixed(2)}x · +${chips(last.profit ?? 0)}`
-        : `${last.multiplier.toFixed(2)}x · Lost ${chips(stake)}`
+      ? last.multiplier > 0
+        ? `${last.multiplier.toFixed(2)}x · Payout ${chips(last.payout ?? Math.floor(stake * last.multiplier * 100) / 100)}`
+        : `0x · Lost ${chips(stake)}`
       : null;
 
   return (
@@ -224,4 +225,4 @@ export default function WheelPage() {
       />
     </CasinoShell>
   );
-}
+              }
