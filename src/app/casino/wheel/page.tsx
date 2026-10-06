@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth/AuthContext";
 import {
   CASINO_MAX_STAKE,
@@ -48,7 +48,9 @@ export default function WheelPage() {
   const [err, setErr] = useState<string | null>(null);
   const [last, setLast] = useState<PlayRes | null>(null);
   const [history, setHistory] = useState<number[]>([]);
+  /** Absolute CSS rotation degrees (accumulates). */
   const [spinDeg, setSpinDeg] = useState(0);
+  const spinDegRef = useRef(0);
 
   const n = WHEEL_SEGMENTS.length;
   const segAngle = 360 / n;
@@ -68,6 +70,22 @@ export default function WheelPage() {
     void loadBal();
   }, [loadBal]);
 
+  /**
+   * CSS conic-gradient: 0° = top, increases clockwise.
+   * Segment i spans [i*seg, (i+1)*seg).
+   * Pointer is fixed at top (0°).
+   * After rotate(R) clockwise, segment center mid must land at 0°:
+   *   (mid + R) % 360 === 0  →  R % 360 === (360 - mid) % 360
+   */
+  function rotationForSegment(segment: number, current: number): number {
+    const mid = segment * segAngle + segAngle / 2;
+    const currentMod = ((current % 360) + 360) % 360;
+    const desiredMod = (360 - mid) % 360;
+    let delta = desiredMod - currentMod;
+    if (delta <= 20) delta += 360; // always a visible spin
+    return current + delta + 360 * 4;
+  }
+
   async function play() {
     if (!user || busy) return;
     setBusy(true);
@@ -85,19 +103,19 @@ export default function WheelPage() {
       });
       const data = (await res.json()) as PlayRes;
       if (!res.ok) throw new Error(data.error || "Play failed");
+
+      if (typeof data.segment === "number") {
+        const next = rotationForSegment(data.segment, spinDegRef.current);
+        spinDegRef.current = next;
+        setSpinDeg(next);
+        // Wait for CSS transition before showing result banner
+        await new Promise((r) => setTimeout(r, 1300));
+      }
+
       setLast(data);
       if (typeof data.balanceAfter === "number") setBalance(data.balanceAfter);
       if (typeof data.multiplier === "number") {
         setHistory((h) => [data.multiplier!, ...h].slice(0, 8));
-      }
-      if (typeof data.segment === "number") {
-        // Pointer is at top (0°). Segment i center is at i*seg + seg/2 from start.
-        // Rotate so that center lands under pointer.
-        const target =
-          spinDeg +
-          360 * 5 +
-          (360 - (data.segment * segAngle + segAngle / 2));
-        setSpinDeg(target);
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Play failed");
@@ -140,35 +158,42 @@ export default function WheelPage() {
         </div>
       )}
 
-      {/* Wheel with on-segment labels */}
       <div className="relative mx-auto mb-5 h-64 w-64">
-        <div className="absolute left-1/2 top-0 z-20 -translate-x-1/2 text-lg leading-none text-brand drop-shadow">
-          ▼
+        {/* Strong pointer */}
+        <div className="absolute left-1/2 top-[-6px] z-30 -translate-x-1/2">
+          <div className="flex flex-col items-center">
+            <div className="h-0 w-0 border-l-[12px] border-r-[12px] border-t-[18px] border-l-transparent border-r-transparent border-t-brand drop-shadow-md" />
+            <div className="h-2 w-2 -mt-0.5 rounded-full bg-brand" />
+          </div>
         </div>
+
         <div
-          className="absolute inset-0 rounded-full border-4 border-ink-muted/20 shadow-inner transition-transform duration-[1.2s] ease-out"
+          className="absolute inset-0 rounded-full border-4 border-ink-muted/20 shadow-inner"
           style={{
             background: `conic-gradient(${gradient})`,
             transform: `rotate(${spinDeg}deg)`,
+            transition: busy ? "transform 1.2s cubic-bezier(0.12, 0.8, 0.2, 1)" : "none",
           }}
         >
-          {/* Labels sit in the middle of each segment, rotate with the wheel */}
           {WHEEL_SEGMENTS.map((mult, i) => {
             const mid = i * segAngle + segAngle / 2;
-            // Place label ~62% from center toward edge
+            const label =
+              mult === 0 ? "0" : Number.isInteger(mult) ? `${mult}x` : `${mult}x`;
             return (
               <span
                 key={i}
-                className="absolute left-1/2 top-1/2 origin-center text-[10px] font-extrabold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]"
+                className="pointer-events-none absolute left-1/2 top-1/2 -ml-4 flex h-5 w-8 items-center justify-center text-[11px] font-black text-white"
                 style={{
-                  transform: `rotate(${mid}deg) translateY(-78px) rotate(${-mid}deg)`,
+                  transform: `rotate(${mid}deg) translateY(-82px) rotate(${-mid}deg)`,
+                  textShadow: "0 1px 2px rgba(0,0,0,0.85)",
                 }}
               >
-                {mult === 0 ? "0" : mult % 1 === 0 ? `${mult}x` : `${mult}x`}
+                {label}
               </span>
             );
           })}
         </div>
+
         <div className="absolute inset-[30%] z-10 flex items-center justify-center rounded-full bg-surface shadow-md">
           <span className="text-xs font-bold tracking-wide text-ink-muted">
             SPIN
