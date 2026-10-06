@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useAuth } from "@/lib/auth/AuthContext";
 import {
   CASINO_HOUSE_EDGE,
@@ -9,59 +8,58 @@ import {
   CASINO_MIN_STAKE,
   type DiceDirection,
 } from "@/types/casino";
+import {
+  CasinoShell,
+  PrimaryBtn,
+  ResultBanner,
+  StakeBar,
+  chips,
+} from "@/components/casino/CasinoShell";
 
-function chips(n: number) {
-  return Math.floor(n).toLocaleString("en-NG");
-}
-
-function multFor(target: number, direction: DiceDirection): number {
-  const chance = direction === "under" ? target : 100 - target;
-  if (chance <= 0 || chance >= 100) return 1.01;
-  const fair = 100 / chance;
-  const m = fair * (1 - CASINO_HOUSE_EDGE);
-  return Math.max(1.01, Math.floor(m * 10000) / 10000);
-}
-
-type LastPlay = {
-  roll: number;
-  won: boolean;
-  payout: number;
-  profit: number;
-  multiplier: number;
-  target: number;
-  direction: DiceDirection;
+type PlayRes = {
+  ok?: boolean;
+  error?: string;
+  roll?: number;
+  won?: boolean;
+  multiplier?: number;
+  payout?: number;
+  profit?: number;
+  balanceAfter?: number;
 };
 
 export default function DicePage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const [balance, setBalance] = useState<number | null>(null);
   const [stake, setStake] = useState(100);
   const [target, setTarget] = useState(50);
   const [direction, setDirection] = useState<DiceDirection>("under");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [last, setLast] = useState<LastPlay | null>(null);
+  const [last, setLast] = useState<PlayRes | null>(null);
+  const [history, setHistory] = useState<number[]>([]);
 
-  const multiplier = useMemo(
-    () => multFor(target, direction),
-    [target, direction]
-  );
-  const winChance = direction === "under" ? target : 100 - target;
+  const winChance = useMemo(() => {
+    const raw = direction === "under" ? target : 100 - target;
+    return Math.max(1, Math.min(98, raw));
+  }, [target, direction]);
+
+  const multiplier = useMemo(() => {
+    const p = winChance / 100;
+    if (p <= 0) return 1.01;
+    return Math.max(1.01, Math.floor(((1 / p) * (1 - CASINO_HOUSE_EDGE)) * 10000) / 10000);
+  }, [winChance]);
+
   const potential = Math.floor(stake * multiplier * 100) / 100;
 
   const loadBal = useCallback(async () => {
     if (!user) return;
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch("/api/casino/balance", {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const data = await res.json();
-      if (res.ok && typeof data.balance === "number") setBalance(data.balance);
-    } catch {
-      /* ignore */
-    }
+    const token = await user.getIdToken();
+    const res = await fetch("/api/casino/balance", {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    const data = await res.json();
+    if (res.ok && typeof data.balance === "number") setBalance(data.balance);
   }, [user]);
 
   useEffect(() => {
@@ -72,6 +70,7 @@ export default function DicePage() {
     if (!user || busy) return;
     setBusy(true);
     setErr(null);
+    setLast(null);
     try {
       const token = await user.getIdToken();
       const res = await fetch("/api/casino/play", {
@@ -80,25 +79,15 @@ export default function DicePage() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          game: "dice",
-          stake,
-          target,
-          direction,
-        }),
+        body: JSON.stringify({ game: "dice", stake, target, direction }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as PlayRes;
       if (!res.ok) throw new Error(data.error || "Play failed");
-      setBalance(data.balanceAfter);
-      setLast({
-        roll: data.roll,
-        won: data.won,
-        payout: data.payout,
-        profit: data.profit,
-        multiplier: data.multiplier,
-        target: data.target,
-        direction: data.direction,
-      });
+      setLast(data);
+      if (typeof data.balanceAfter === "number") setBalance(data.balanceAfter);
+      if (typeof data.roll === "number") {
+        setHistory((h) => [data.roll!, ...h].slice(0, 8));
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Play failed");
     } finally {
@@ -106,112 +95,80 @@ export default function DicePage() {
     }
   }
 
-  function setHalf() {
-    setStake((s) => Math.max(CASINO_MIN_STAKE, Math.floor(s / 2)));
-  }
-  function setDouble() {
-    setStake((s) => {
-      const next = s * 2;
-      const cap = balance != null ? Math.min(CASINO_MAX_STAKE, balance) : CASINO_MAX_STAKE;
-      return Math.min(cap, next);
-    });
-  }
-  function setMax() {
-    if (balance == null) return;
-    setStake(Math.min(CASINO_MAX_STAKE, Math.max(CASINO_MIN_STAKE, Math.floor(balance))));
-  }
-
-  if (authLoading) {
-    return (
-      <main className="mx-auto max-w-md px-4 py-8 text-sm text-ink-muted">Loading…</main>
-    );
-  }
-
-  if (!user) {
-    return (
-      <main className="mx-auto max-w-md px-4 py-8 text-center">
-        <p className="text-sm text-ink-muted">Sign in to play.</p>
-        <Link href="/login" className="mt-3 inline-block text-sm font-semibold text-brand">
-          Sign in
-        </Link>
-      </main>
-    );
-  }
+  const resultText =
+    last && typeof last.roll === "number"
+      ? last.won
+        ? `Roll ${last.roll.toFixed(2)} · +${chips(last.profit ?? 0)} · ${last.multiplier?.toFixed(2)}x`
+        : `Roll ${last.roll.toFixed(2)} · Lost ${chips(stake)}`
+      : null;
 
   return (
-    <main className="mx-auto max-w-md px-4 pb-28 pt-3">
-      <div className="mb-3 flex items-center justify-between">
-        <Link href="/casino" className="text-sm font-medium text-brand">
-          ← Casino
-        </Link>
-        <p className="text-sm tabular-nums text-ink">
-          <span className="text-ink-muted">Demo </span>
-          <span className="font-bold">{balance == null ? "…" : chips(balance)}</span>
-        </p>
-      </div>
+    <CasinoShell title="Dice" balance={balance}>
+      <ResultBanner won={last?.won ?? null} text={resultText} />
 
-      <h1 className="text-xl font-bold text-ink">Dice</h1>
-
-      {/* Result */}
-      <div
-        className={`mt-4 rounded-2xl border px-4 py-6 text-center ${
-          last == null
-            ? "border-ink-muted/15 bg-surface"
-            : last.won
-              ? "border-emerald-500/30 bg-emerald-500/10"
-              : "border-red-500/25 bg-red-500/10"
-        }`}
-      >
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-          Roll
-        </p>
-        <p className="mt-1 text-4xl font-bold tabular-nums text-ink">
-          {last ? last.roll.toFixed(2) : "—"}
-        </p>
-        {last && (
-          <p
-            className={`mt-2 text-sm font-semibold ${
-              last.won ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
-            }`}
-          >
-            {last.won
-              ? `Won +${chips(last.profit)} · ${last.multiplier.toFixed(2)}x`
-              : `Lost ${chips(Math.abs(last.profit))}`}
-          </p>
-        )}
-      </div>
+      {history.length > 0 && (
+        <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1">
+          {history.map((r, i) => (
+            <span
+              key={`${r}-${i}`}
+              className="shrink-0 rounded-lg bg-ink-muted/10 px-2 py-1 text-[11px] font-bold tabular-nums text-ink"
+            >
+              {r.toFixed(2)}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Direction */}
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => setDirection("under")}
-          className={`rounded-xl py-2.5 text-sm font-semibold ${
-            direction === "under"
-              ? "bg-brand text-white"
-              : "bg-surface text-ink border border-ink-muted/15"
-          }`}
-        >
-          Roll under
-        </button>
-        <button
-          type="button"
-          onClick={() => setDirection("over")}
-          className={`rounded-xl py-2.5 text-sm font-semibold ${
-            direction === "over"
-              ? "bg-brand text-white"
-              : "bg-surface text-ink border border-ink-muted/15"
-          }`}
-        >
-          Roll over
-        </button>
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        {(["under", "over"] as const).map((d) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() => setDirection(d)}
+            className={`rounded-xl py-2.5 text-sm font-bold capitalize ${
+              direction === d
+                ? "bg-brand text-white"
+                : "border border-ink-muted/15 bg-surface text-ink"
+            }`}
+          >
+            Roll {d}
+          </button>
+        ))}
       </div>
 
-      {/* Target */}
-      <div className="mt-4 rounded-2xl border border-ink-muted/15 bg-surface p-3">
-        <div className="flex items-center justify-between text-xs text-ink-muted">
-          <span>Target</span>
-          <span className="font-semibold tabular-nums text-ink">{target.toFixed(0)}</span>
+      {/* Target track */}
+      <div className="rounded-2xl border border-ink-muted/15 bg-surface p-4">
+        <div className="mb-3 flex items-end justify-between">
+          <div>
+            <p className="text-[10px] font-semibold uppercase text-ink-muted">
+              Target
+            </p>
+            <p className="text-3xl font-extrabold tabular-nums">{target}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] font-semibold uppercase text-ink-muted">
+              Pays
+            </p>
+            <p className="text-xl font-extrabold tabular-nums text-brand">
+              {multiplier.toFixed(2)}x
+            </p>
+          </div>
+        </div>
+
+        <div className="relative h-3 overflow-hidden rounded-full bg-ink-muted/15">
+          <div
+            className={`absolute inset-y-0 ${
+              direction === "under" ? "left-0 bg-emerald-500" : "right-0 bg-emerald-500"
+            }`}
+            style={{
+              width: `${direction === "under" ? target : 100 - target}%`,
+            }}
+          />
+          <div
+            className="absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-brand shadow"
+            style={{ left: `${target}%` }}
+          />
         </div>
         <input
           type="range"
@@ -220,69 +177,38 @@ export default function DicePage() {
           step={1}
           value={target}
           onChange={(e) => setTarget(Number(e.target.value))}
-          className="mt-2 w-full accent-emerald-600"
+          className="mt-3 w-full accent-emerald-600"
         />
         <div className="mt-2 flex justify-between text-[11px] text-ink-muted">
           <span>Win chance {winChance.toFixed(0)}%</span>
-          <span>{multiplier.toFixed(2)}x</span>
+          <span>
+            {direction === "under" ? `< ${target}` : `> ${target}`}
+          </span>
         </div>
       </div>
 
-      {/* Stake */}
-      <div className="mt-4 rounded-2xl border border-ink-muted/15 bg-surface p-3">
-        <label className="text-xs font-semibold text-ink-muted">Stake</label>
-        <input
-          type="number"
+      <div className="mt-3">
+        <StakeBar
+          stake={stake}
+          setStake={setStake}
+          balance={balance}
           min={CASINO_MIN_STAKE}
           max={CASINO_MAX_STAKE}
-          value={stake}
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            if (!Number.isFinite(v)) return;
-            setStake(Math.min(CASINO_MAX_STAKE, Math.max(0, Math.floor(v))));
-          }}
-          className="mt-1 w-full rounded-xl border border-ink-muted/20 bg-transparent px-3 py-2 text-lg font-bold tabular-nums text-ink outline-none focus:border-brand"
+          potentialLabel={`Win ${chips(potential)}`}
         />
-        <div className="mt-2 flex gap-2">
-          {[
-            { label: "½", fn: setHalf },
-            { label: "2×", fn: setDouble },
-            { label: "Max", fn: setMax },
-          ].map((b) => (
-            <button
-              key={b.label}
-              type="button"
-              onClick={b.fn}
-              className="flex-1 rounded-lg bg-ink-muted/10 py-1.5 text-xs font-semibold text-ink"
-            >
-              {b.label}
-            </button>
-          ))}
-        </div>
-        <p className="mt-2 text-[11px] text-ink-muted">
-          Pays {chips(potential)} on win · min {CASINO_MIN_STAKE}
-        </p>
       </div>
 
       {err && (
-        <p className="mt-3 text-center text-xs font-medium text-red-600 dark:text-red-400">
-          {err}
-        </p>
+        <p className="mt-3 text-center text-xs font-medium text-red-600">{err}</p>
       )}
 
-      <button
-        type="button"
-        disabled={
-          busy ||
-          balance == null ||
-          balance < stake ||
-          stake < CASINO_MIN_STAKE
-        }
+      <PrimaryBtn
+        busy={busy}
+        disabled={balance == null || balance < stake || stake < CASINO_MIN_STAKE}
+        label="Roll"
+        busyLabel="Rolling…"
         onClick={() => void play()}
-        className="mt-4 w-full rounded-2xl bg-brand py-3.5 text-base font-bold text-white disabled:opacity-50"
-      >
-        {busy ? "Rolling…" : "Play for free"}
-      </button>
-    </main>
+      />
+    </CasinoShell>
   );
 }
