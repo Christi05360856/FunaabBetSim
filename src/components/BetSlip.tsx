@@ -89,8 +89,7 @@ export function BetSlip() {
     setCodeCopied(false);
   }, [items.length, totalOdds]);
 
-if (pathname?.startsWith("/admin") return null;
-if (pathname?.startsWith("/casino") return null;
+if (pathname?.startsWith("/admin") || pathname?.startsWith("/casino")) return null;
 
   const stakeNum = Number(stake) || 0;
   const purchased = Math.max(0, wallet?.purchased ?? 0);
