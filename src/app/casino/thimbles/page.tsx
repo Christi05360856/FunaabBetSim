@@ -28,61 +28,45 @@ type PlayRes = {
 
 type Phase = "ready" | "show" | "shuffle" | "pick" | "reveal";
 
-/** CSS barrel — reference structure only, our colours */
-function Barrel({
-  open,
-  selected,
-  shaking,
-  showGem,
+/** Rounded cup / thimble (not a flat box). */
+function CupShell({
+  lifted,
+  highlight,
+  dim,
 }: {
-  open: boolean;
-  selected: boolean;
-  shaking: boolean;
-  showGem: boolean;
+  lifted: boolean;
+  highlight: boolean;
+  dim?: boolean;
 }) {
   return (
     <div
-      className={`relative flex h-28 w-full flex-col items-center justify-end ${
-        shaking ? "animate-pulse" : ""
-      }`}
+      className={`relative mx-auto h-[100px] w-[72px] transition-transform duration-500 ease-out ${
+        lifted ? "-translate-y-12 -rotate-[22deg]" : ""
+      } ${dim ? "opacity-70" : ""}`}
+      style={{ transformOrigin: "70% 100%" }}
     >
-      {/* Gem under barrel when open */}
-      {showGem && (
-        <span
-          className="absolute bottom-2 z-0 text-2xl drop-shadow-md"
-          aria-hidden
-        >
-          💎
-        </span>
-      )}
+      {/* rim */}
       <div
-        className={`relative z-10 flex w-[88%] flex-col transition-transform duration-500 ease-out ${
-          open ? "-translate-y-14 -rotate-[18deg]" : "translate-y-0 rotate-0"
+        className={`absolute left-1/2 top-0 z-20 h-4 w-[72px] -translate-x-1/2 rounded-full border-2 ${
+          highlight
+            ? "border-brand bg-emerald-600"
+            : "border-amber-950 bg-amber-800"
         }`}
-        style={{ transformOrigin: "80% 100%" }}
+      />
+      {/* outer body — trapezoid feel via rounded bottom */}
+      <div
+        className={`absolute left-1/2 top-2 z-10 h-[88px] w-[68px] -translate-x-1/2 rounded-b-[36px] rounded-t-[8px] border-2 border-t-0 shadow-md ${
+          highlight
+            ? "border-brand bg-gradient-to-b from-amber-500 via-amber-700 to-amber-950"
+            : "border-amber-950 bg-gradient-to-b from-amber-500 via-amber-700 to-amber-950"
+        }`}
       >
-        {/* Lid ring */}
-        <div
-          className={`mx-auto h-3 w-[92%] rounded-full border-2 ${
-            selected
-              ? "border-brand bg-brand/40"
-              : "border-amber-800/80 bg-amber-700/90"
-          }`}
-        />
-        {/* Body */}
-        <div
-          className={`-mt-1 flex h-20 flex-col justify-between rounded-b-xl rounded-t-sm border-2 px-1 py-2 ${
-            selected
-              ? "border-brand bg-gradient-to-b from-amber-600 to-amber-800"
-              : "border-amber-900/70 bg-gradient-to-b from-amber-600 to-amber-900"
-          }`}
-        >
-          <div className="mx-auto h-1 w-[85%] rounded-full bg-amber-950/40" />
-          <div className="mx-auto h-1.5 w-full rounded-full bg-slate-400/80" />
-          <div className="mx-auto h-1 w-[85%] rounded-full bg-amber-950/40" />
-          <div className="mx-auto h-1.5 w-full rounded-full bg-slate-400/80" />
-          <div className="mx-auto h-1 w-[85%] rounded-full bg-amber-950/40" />
-        </div>
+        {/* wood bands */}
+        <div className="absolute left-[8%] top-[28%] h-[3px] w-[84%] rounded-full bg-amber-950/50" />
+        <div className="absolute left-[6%] top-[52%] h-[4px] w-[88%] rounded-full bg-slate-400/70" />
+        <div className="absolute left-[8%] top-[72%] h-[3px] w-[84%] rounded-full bg-amber-950/50" />
+        {/* shine */}
+        <div className="absolute left-[12%] top-[18%] h-[40%] w-[10px] rounded-full bg-white/15" />
       </div>
     </div>
   );
@@ -97,11 +81,13 @@ export default function ThimblesPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [last, setLast] = useState<PlayRes | null>(null);
-  /** Visual only — where we flash the gem before shuffle */
   const [previewBall, setPreviewBall] = useState(0);
-  /** Slot order for shuffle animation (permutation of 0,1,2) */
-  const [order, setOrder] = useState([0, 1, 2]);
-  const [openCups, setOpenCups] = useState<number[]>([]);
+  /**
+   * positionOf[cupId] = slot index 0|1|2 (left, mid, right).
+   * Cups move between slots with CSS left %.
+   */
+  const [positionOf, setPositionOf] = useState<number[]>([0, 1, 2]);
+  const [lifted, setLifted] = useState<number[]>([]);
 
   const loadBal = useCallback(async () => {
     if (!user) return;
@@ -123,43 +109,60 @@ export default function ThimblesPage() {
     setPick(null);
     setLast(null);
     setErr(null);
-    setOpenCups([]);
-    setOrder([0, 1, 2]);
+    setLifted([]);
+    setPositionOf([0, 1, 2]);
   }
 
-  /** Start: show gem → close → shuffle → pick */
+  function swapPositions(a: number, b: number) {
+    setPositionOf((prev) => {
+      const next = [...prev];
+      // swap slot of cup that is in slot a with cup in slot b
+      const cupA = next.indexOf(a);
+      const cupB = next.indexOf(b);
+      if (cupA < 0 || cupB < 0) return prev;
+      next[cupA] = b;
+      next[cupB] = a;
+      return next;
+    });
+  }
+
   async function startRound() {
     if (busy || balance == null || balance < stake) return;
     setErr(null);
     setLast(null);
     setPick(null);
-    setOpenCups([]);
-    setOrder([0, 1, 2]);
+    setLifted([]);
+    setPositionOf([0, 1, 2]);
 
     const preview = Math.floor(Math.random() * 3);
     setPreviewBall(preview);
     setPhase("show");
-    setOpenCups([preview]);
+    setLifted([preview]);
 
-    await new Promise((r) => setTimeout(r, 900));
-    setOpenCups([]);
+    await new Promise((r) => setTimeout(r, 1100));
+    setLifted([]);
+    await new Promise((r) => setTimeout(r, 250));
     setPhase("shuffle");
 
-    // Cosmetic swaps
-    for (let i = 0; i < 6; i++) {
-      await new Promise((r) => setTimeout(r, 120));
-      setOrder((prev) => {
-        const next = [...prev];
-        const a = Math.floor(Math.random() * 3);
-        let b = Math.floor(Math.random() * 3);
-        if (b === a) b = (a + 1) % 3;
-        const t = next[a]!;
-        next[a] = next[b]!;
-        next[b] = t;
-        return next;
-      });
+    // Real visual swaps between slots
+    const swaps: [number, number][] = [
+      [0, 1],
+      [1, 2],
+      [0, 2],
+      [0, 1],
+      [1, 2],
+      [0, 2],
+      [0, 1],
+      [1, 2],
+    ];
+    for (const [a, b] of swaps) {
+      swapPositions(a, b);
+      await new Promise((r) => setTimeout(r, 280));
     }
-    setOrder([0, 1, 2]);
+
+    // Settle to identity so cup id === slot (easier to pick)
+    setPositionOf([0, 1, 2]);
+    await new Promise((r) => setTimeout(r, 200));
     setPhase("pick");
   }
 
@@ -183,9 +186,8 @@ export default function ThimblesPage() {
 
       setLast(data);
       setPhase("reveal");
-      // Lift chosen cup + ball cup so player sees the gem
       const ball = typeof data.ball === "number" ? data.ball : cup;
-      setOpenCups([...new Set([cup, ball])]);
+      setLifted([...new Set([cup, ball])]);
       if (typeof data.balanceAfter === "number") setBalance(data.balanceAfter);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Play failed");
@@ -203,60 +205,89 @@ export default function ThimblesPage() {
       : null;
 
   const canStart =
-    phase === "ready" || phase === "reveal"
-      ? balance != null && balance >= stake && stake >= CASINO_MIN_STAKE
-      : false;
+    (phase === "ready" || phase === "reveal") &&
+    balance != null &&
+    balance >= stake &&
+    stake >= CASINO_MIN_STAKE;
+
+  /** Slot centre as % of stage width */
+  const slotLeft = (slot: number) => `${16.6 + slot * 33.3}%`;
 
   return (
     <CasinoShell title="Thimbles" balance={balance}>
       <ResultBanner won={last?.won ?? null} text={resultText} />
 
       <p className="mb-2 text-center text-xs text-ink-muted">
-        {phase === "ready" && "Watch the gem, then find it after the shuffle"}
-        {phase === "show" && "Gem placed — cups closing…"}
-        {phase === "shuffle" && "Shuffling…"}
-        {phase === "pick" && "Tap a cup"}
+        {phase === "ready" && "Watch where the gem is, then track the shuffle"}
+        {phase === "show" && "Remember this cup…"}
+        {phase === "shuffle" && "Follow the cups…"}
+        {phase === "pick" && "Tap the cup with the gem"}
         {phase === "reveal" &&
-          (last?.won ? "You found the gem!" : "Wrong cup")}
+          (last?.won ? "Nice find!" : "Wrong cup — try again")}
         {" · "}
-        pays {THIMBLES_MULT.toFixed(2)}x
+        {THIMBLES_MULT.toFixed(2)}x
       </p>
 
-      {/* Stage */}
-      <div className="mb-4 rounded-2xl border border-ink-muted/15 bg-gradient-to-b from-stone-200/80 to-stone-300/50 px-2 py-6 dark:from-stone-800/50 dark:to-stone-900/40">
-        <div className="flex items-end justify-center gap-2">
-          {order.map((cupIndex, slot) => {
-            const selected = pick === cupIndex;
-            const open = openCups.includes(cupIndex);
-            const showGem =
-              open &&
-              ((phase === "show" && cupIndex === previewBall) ||
-                (phase === "reveal" && last?.ball === cupIndex));
-            return (
-              <button
-                key={`${slot}-${cupIndex}`}
-                type="button"
-                disabled={phase !== "pick" || busy}
-                onClick={() => void chooseCup(cupIndex)}
-                className="w-[30%] disabled:cursor-default"
-              >
-                <Barrel
-                  open={open}
-                  selected={selected || (phase === "pick" && false)}
-                  shaking={phase === "shuffle"}
-                  showGem={!!showGem}
-                />
+      {/* Stage with absolutely positioned cups so they can slide */}
+      <div className="relative mb-4 h-44 overflow-hidden rounded-2xl border border-ink-muted/15 bg-gradient-to-b from-stone-300/60 to-stone-400/40 dark:from-stone-800/60 dark:to-stone-900/50">
+        {/* slot markers */}
+        {[0, 1, 2].map((s) => (
+          <div
+            key={`slot-${s}`}
+            className="pointer-events-none absolute bottom-3 h-2 w-14 -translate-x-1/2 rounded-full bg-black/10"
+            style={{ left: slotLeft(s) }}
+          />
+        ))}
+
+        {[0, 1, 2].map((cupId) => {
+          const slot = positionOf[cupId] ?? cupId;
+          const isLifted = lifted.includes(cupId);
+          const showGem =
+            isLifted &&
+            ((phase === "show" && cupId === previewBall) ||
+              (phase === "reveal" && last?.ball === cupId));
+          const highlight = pick === cupId;
+
+          return (
+            <button
+              key={cupId}
+              type="button"
+              disabled={phase !== "pick" || busy}
+              onClick={() => void chooseCup(cupId)}
+              className="absolute bottom-6 w-20 -translate-x-1/2 disabled:cursor-default"
+              style={{
+                left: slotLeft(slot),
+                transition:
+                  phase === "shuffle"
+                    ? "left 0.26s cubic-bezier(0.4, 0, 0.2, 1)"
+                    : "left 0.2s ease",
+                zIndex: isLifted ? 20 : 10 + slot,
+              }}
+            >
+              {/* gem sits under cup, visible when lifted */}
+              {showGem && (
                 <span
-                  className={`mt-1 block text-center text-[11px] font-bold ${
-                    selected ? "text-brand" : "text-ink-muted"
-                  }`}
+                  className="absolute bottom-1 left-1/2 z-0 -translate-x-1/2 text-2xl"
+                  aria-hidden
                 >
-                  {cupIndex + 1}
+                  💎
                 </span>
-              </button>
-            );
-          })}
-        </div>
+              )}
+              <CupShell
+                lifted={isLifted}
+                highlight={highlight}
+                dim={phase === "reveal" && !isLifted}
+              />
+              <span
+                className={`mt-1 block text-center text-[11px] font-bold ${
+                  highlight ? "text-brand" : "text-ink-muted"
+                }`}
+              >
+                {cupId + 1}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       <StakeBar
@@ -275,15 +306,15 @@ export default function ThimblesPage() {
       )}
 
       {phase === "pick" ? (
-        <p className="mt-4 text-center text-sm font-semibold text-ink">
-          Choose a cup…
+        <p className="mt-4 text-center text-sm font-semibold text-brand">
+          Tap a cup
         </p>
       ) : phase === "shuffle" || phase === "show" ? (
         <PrimaryBtn
           busy
           disabled
           label="…"
-          busyLabel={phase === "show" ? "Placing gem…" : "Shuffling…"}
+          busyLabel={phase === "show" ? "Showing gem…" : "Shuffling…"}
           onClick={() => {}}
         />
       ) : (
@@ -300,5 +331,4 @@ export default function ThimblesPage() {
       )}
     </CasinoShell>
   );
-             }
-          
+        }
