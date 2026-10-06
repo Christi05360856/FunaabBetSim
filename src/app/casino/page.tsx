@@ -35,6 +35,9 @@ const ICONS: Record<string, string> = {
   mines: "💣",
   wheel: "🎡",
   crash: "✈️",
+  thimbles: "🥛",
+  "campus-crash": "🚌",
+  penalty: "🥅",
 };
 
 export default function CasinoPage() {
@@ -228,4 +231,4 @@ export default function CasinoPage() {
       </div>
     </main>
   );
-              }
+}
