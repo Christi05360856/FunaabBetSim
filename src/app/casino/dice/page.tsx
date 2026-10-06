@@ -118,7 +118,7 @@ export default function DicePage() {
   const resultText =
     last && typeof last.roll === "number"
       ? last.won
-        ? `${last.roll.toFixed(2)} is ${direction} ${target} · +${chips(last.profit ?? 0)} · ${last.multiplier?.toFixed(2)}x`
+        ? `${last.roll.toFixed(2)} is ${direction} ${target} · ${last.multiplier?.toFixed(2)}x · Payout ${chips(last.payout ?? Math.floor(stake * (last.multiplier ?? 1) * 100) / 100)}`
         : `${last.roll.toFixed(2)} is not ${direction} ${target} · Lost ${chips(stake)}`
       : null;
 
@@ -258,4 +258,5 @@ export default function DicePage() {
       />
     </CasinoShell>
   );
-              }
+          }
+        
