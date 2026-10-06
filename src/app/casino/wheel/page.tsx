@@ -23,7 +23,7 @@ const COLORS = [
   "#8b5cf6",
   "#ef4444",
   "#ec4899",
-  "#64748b",
+  "#475569",
   "#14b8a6",
   "#6366f1",
   "#f97316",
@@ -49,6 +49,9 @@ export default function WheelPage() {
   const [last, setLast] = useState<PlayRes | null>(null);
   const [history, setHistory] = useState<number[]>([]);
   const [spinDeg, setSpinDeg] = useState(0);
+
+  const n = WHEEL_SEGMENTS.length;
+  const segAngle = 360 / n;
 
   const loadBal = useCallback(async () => {
     if (!user) return;
@@ -88,11 +91,12 @@ export default function WheelPage() {
         setHistory((h) => [data.multiplier!, ...h].slice(0, 8));
       }
       if (typeof data.segment === "number") {
-        const n = WHEEL_SEGMENTS.length;
-        const segAngle = 360 / n;
-        // Land pointer at top of chosen segment + extra spins
+        // Pointer is at top (0°). Segment i center is at i*seg + seg/2 from start.
+        // Rotate so that center lands under pointer.
         const target =
-          spinDeg + 360 * 4 + (360 - data.segment * segAngle - segAngle / 2);
+          spinDeg +
+          360 * 5 +
+          (360 - (data.segment * segAngle + segAngle / 2));
         setSpinDeg(target);
       }
     } catch (e) {
@@ -102,10 +106,9 @@ export default function WheelPage() {
     }
   }
 
-  const n = WHEEL_SEGMENTS.length;
   const gradient = WHEEL_SEGMENTS.map((_, i) => {
-    const start = (i / n) * 360;
-    const end = ((i + 1) / n) * 360;
+    const start = i * segAngle;
+    const end = (i + 1) * segAngle;
     return `${COLORS[i % COLORS.length]} ${start}deg ${end}deg`;
   }).join(", ");
 
@@ -137,33 +140,40 @@ export default function WheelPage() {
         </div>
       )}
 
-      {/* Wheel visual */}
-      <div className="relative mx-auto mb-4 h-56 w-56">
-        <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 text-brand">
+      {/* Wheel with on-segment labels */}
+      <div className="relative mx-auto mb-5 h-64 w-64">
+        <div className="absolute left-1/2 top-0 z-20 -translate-x-1/2 text-lg leading-none text-brand drop-shadow">
           ▼
         </div>
         <div
-          className="h-full w-full rounded-full border-4 border-ink-muted/20 shadow-inner transition-transform duration-1000 ease-out"
+          className="absolute inset-0 rounded-full border-4 border-ink-muted/20 shadow-inner transition-transform duration-[1.2s] ease-out"
           style={{
             background: `conic-gradient(${gradient})`,
             transform: `rotate(${spinDeg}deg)`,
           }}
-        />
-        <div className="absolute inset-[28%] flex items-center justify-center rounded-full bg-surface shadow">
-          <span className="text-xs font-bold text-ink-muted">SPIN</span>
+        >
+          {/* Labels sit in the middle of each segment, rotate with the wheel */}
+          {WHEEL_SEGMENTS.map((mult, i) => {
+            const mid = i * segAngle + segAngle / 2;
+            // Place label ~62% from center toward edge
+            return (
+              <span
+                key={i}
+                className="absolute left-1/2 top-1/2 origin-center text-[10px] font-extrabold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]"
+                style={{
+                  transform: `rotate(${mid}deg) translateY(-78px) rotate(${-mid}deg)`,
+                }}
+              >
+                {mult === 0 ? "0" : mult % 1 === 0 ? `${mult}x` : `${mult}x`}
+              </span>
+            );
+          })}
         </div>
-      </div>
-
-      {/* Legend */}
-      <div className="mb-3 flex flex-wrap justify-center gap-1.5">
-        {[...new Set(WHEEL_SEGMENTS)].sort((a, b) => a - b).map((m) => (
-          <span
-            key={m}
-            className="rounded-md bg-ink-muted/10 px-2 py-0.5 text-[10px] font-bold tabular-nums"
-          >
-            {m.toFixed(2)}x
+        <div className="absolute inset-[30%] z-10 flex items-center justify-center rounded-full bg-surface shadow-md">
+          <span className="text-xs font-bold tracking-wide text-ink-muted">
+            SPIN
           </span>
-        ))}
+        </div>
       </div>
 
       <StakeBar
@@ -180,12 +190,13 @@ export default function WheelPage() {
 
       <PrimaryBtn
         busy={busy}
-        disabled={balance == null || balance < stake || stake < CASINO_MIN_STAKE}
+        disabled={
+          balance == null || balance < stake || stake < CASINO_MIN_STAKE
+        }
         label="Spin"
         busyLabel="Spinning…"
         onClick={() => void play()}
       />
     </CasinoShell>
   );
-      }
-        
+}
