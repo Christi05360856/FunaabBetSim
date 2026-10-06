@@ -89,7 +89,26 @@ export function BetSlip() {
     setCodeCopied(false);
   }, [items.length, totalOdds]);
 
-if (pathname?.startsWith("/admin") || pathname?.startsWith("/casino")) return null;
+  // Clear stale success text when selections change
+  useEffect(() => {
+    setFeedback(null);
+    setBookingCode(null);
+    const rules = wallet?.promoBetRules ?? null;
+    const eligible = isValidPromoTicket(items, undefined, rules);
+    if (!eligible) {
+      setFundMode((m) => (m === "promo" ? "cash" : m));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length, totalOdds]);
+
+  // Hide FAB on admin + casino — AFTER all hooks (Rules of Hooks)
+  if (
+    pathname?.startsWith("/admin") ||
+    pathname?.startsWith("/casino")
+  ) {
+    return null;
+  }
+
 
   const stakeNum = Number(stake) || 0;
   const purchased = Math.max(0, wallet?.purchased ?? 0);
@@ -105,13 +124,6 @@ if (pathname?.startsWith("/admin") || pathname?.startsWith("/casino")) return nu
   const promoCanCover =
     promoEligible && promo >= stakeNum && stakeNum >= MINIMUM_STAKE;
 
-  // Clear stale success text when selections change
-  useEffect(() => {
-    setFeedback(null);
-    setBookingCode(null);
-    if (!promoEligible && fundMode === "promo") setFundMode("cash");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length, totalOdds]);
 
   const activeBalance = fundMode === "promo" ? promo : balance;
   const overBalance = stake !== "" && stakeNum > activeBalance;
@@ -746,4 +758,5 @@ function TicketIcon() {
       <path d="M20 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v2a2 2 0 010 4v2a2 2 0 002 2h12a2 2 0 002-2v-2a2 2 0 010-4zM8 13H6v-2h2v2zm0-4H6V7h2v2zm4 4h-2v-2h2v2zm0-4h-2V7h2v2zm4 4h-2v-2h2v2zm0-4h-2V7h2v2z" />
     </svg>
   );
-                    }
+                      }
+                    
