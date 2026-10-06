@@ -5,14 +5,10 @@
 
 export const CASINO_START_CHIPS = 10_000;
 export const CASINO_RELOAD_CHIPS = 5_000;
-/** Cooldown after a successful zero-balance reload. */
-export const CASINO_RELOAD_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+export const CASINO_RELOAD_COOLDOWN_MS = 60 * 60 * 1000;
 
-/** Min / max demo stake per round */
 export const CASINO_MIN_STAKE = 10;
 export const CASINO_MAX_STAKE = 5_000;
-
-/** House edge applied to fair multiplier (~1%). */
 export const CASINO_HOUSE_EDGE = 0.01;
 
 export type CasinoGameId = "dice" | "coin" | "mines" | "wheel" | "crash";
@@ -26,13 +22,12 @@ export interface CasinoGameMeta {
 
 export const CASINO_GAMES: CasinoGameMeta[] = [
   { id: "dice", name: "Dice", blurb: "Roll over / under a target", playReady: true },
-  { id: "coin", name: "Coin Flip", blurb: "Heads or tails", playReady: false },
-  { id: "mines", name: "Mines", blurb: "Clear tiles, avoid bombs", playReady: false },
-  { id: "wheel", name: "Wheel", blurb: "Spin for a multiplier", playReady: false },
-  { id: "crash", name: "Crash Lite", blurb: "Cash out before it crashes", playReady: false },
+  { id: "coin", name: "Coin Flip", blurb: "Heads or tails", playReady: true },
+  { id: "mines", name: "Mines", blurb: "Clear tiles, avoid bombs", playReady: true },
+  { id: "wheel", name: "Wheel", blurb: "Spin for a multiplier", playReady: true },
+  { id: "crash", name: "Crash Lite", blurb: "Cash out before it crashes", playReady: true },
 ];
 
-/** Firestore: casino_wallets/{uid} — separate from wallets/{uid} */
 export interface CasinoDemoWallet {
   uid: string;
   balance: number;
@@ -42,31 +37,15 @@ export interface CasinoDemoWallet {
 }
 
 export type DiceDirection = "under" | "over";
+export type CoinSide = "heads" | "tails";
 
-export interface DicePlayRequest {
-  game: "dice";
-  stake: number;
-  /** Target 2–98 inclusive */
-  target: number;
-  direction: DiceDirection;
-}
+export const MINES_GRID = 25; // 5×5
+export const MINES_MIN = 1;
+export const MINES_MAX = 10;
 
-export interface DicePlayResult {
-  game: "dice";
-  stake: number;
-  target: number;
-  direction: DiceDirection;
-  roll: number;
-  won: boolean;
-  multiplier: number;
-  payout: number;
-  /** Net change: payout - stake (0 if lost) */
-  profit: number;
-  balanceAfter: number;
-  playId: string;
-}
+/** Wheel multipliers (including zeros). Index = segment. */
+export const WHEEL_SEGMENTS = [0, 0.5, 1.1, 1.5, 2, 3, 5, 0, 1.2, 1.5, 2, 10] as const;
 
 export function isCasinoGameId(v: string): v is CasinoGameId {
   return (CASINO_GAMES as { id: string }[]).some((g) => g.id === v);
 }
-
