@@ -71,7 +71,7 @@ export default function ThimblesPage() {
       });
       const data = (await res.json()) as PlayRes;
       if (!res.ok) throw new Error(data.error || "Play failed");
-      await new Promise((r) => setTimeout(r, 800));
+      await new Promise((r) => setTimeout(r, 900));
       setShuffling(false);
       setLifted(typeof data.ball === "number" ? data.ball : null);
       setLast(data);
@@ -88,7 +88,7 @@ export default function ThimblesPage() {
     last != null && typeof last.ball === "number"
       ? last.won
         ? `Ball under cup ${last.ball + 1} · Payout ${chips(last.payout ?? 0)}`
-        : `Ball under cup ${(last.ball ?? 0) + 1} · You picked ${(last.pick ?? pick) + 1} · Lost ${chips(stake)}`
+        : `Ball under cup ${last.ball + 1} · You picked ${(last.pick ?? pick) + 1} · Lost ${chips(stake)}`
       : null;
 
   return (
@@ -110,23 +110,26 @@ export default function ThimblesPage() {
               type="button"
               disabled={busy}
               onClick={() => setPick(i)}
-              className={`relative flex w-[28%] flex-col items-center transition ${
+              className={`relative flex w-[28%] flex-col items-center ${
                 shuffling ? "animate-bounce" : ""
               }`}
             >
               <div
-                className={`flex h-24 w-full items-end justify-center rounded-t-full border-2 transition-transform duration-500 ${
+                className={`flex h-24 w-full items-end justify-center rounded-t-[50%] border-2 transition-transform duration-500 ${
                   selected
                     ? "border-brand bg-brand/15"
                     : "border-ink-muted/25 bg-surface"
-                } ${lift ? "-translate-y-6" : ""}`}
+                } ${lift ? "-translate-y-8" : ""}`}
               >
-                <span className="mb-2 text-2xl" aria-hidden>
+                <span className="mb-2 text-3xl" aria-hidden>
                   🥛
                 </span>
               </div>
               {showBall && (
-                <span className="absolute bottom-8 text-xl" aria-hidden>
+                <span
+                  className="absolute bottom-10 text-2xl drop-shadow"
+                  aria-hidden
+                >
                   ⚽
                 </span>
               )}
@@ -148,7 +151,9 @@ export default function ThimblesPage() {
         balance={balance}
         min={CASINO_MIN_STAKE}
         max={CASINO_MAX_STAKE}
-        potentialLabel={`Payout ${chips(Math.floor(stake * THIMBLES_MULT * 100) / 100)}`}
+        potentialLabel={`Payout ${chips(
+          Math.floor(stake * THIMBLES_MULT * 100) / 100
+        )}`}
       />
 
       {err && (
