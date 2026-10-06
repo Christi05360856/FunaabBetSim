@@ -22,6 +22,7 @@ type PlayRes = {
   won?: boolean;
   multiplier?: number;
   profit?: number;
+  payout?: number;
   balanceAfter?: number;
 };
 
@@ -93,7 +94,7 @@ export default function CoinPage() {
   const resultText =
     last?.flip != null
       ? last.won
-        ? `Landed ${last.flip.toUpperCase()} · You picked ${pick} · +${chips(last.profit ?? 0)}`
+        ? `Landed ${last.flip.toUpperCase()} · You picked ${pick} · Payout ${chips(last.payout ?? Math.floor(stake * 1.98 * 100) / 100)}`
         : `Landed ${last.flip.toUpperCase()} · You picked ${pick} · Lost ${chips(stake)}`
       : null;
 
@@ -178,4 +179,4 @@ export default function CoinPage() {
       />
     </CasinoShell>
   );
-}
+          }
