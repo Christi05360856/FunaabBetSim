@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { CASINO_MAX_STAKE, CASINO_MIN_STAKE } from "@/types/casino";
 import {
@@ -34,6 +34,8 @@ export default function CrashPage() {
   const [displayX, setDisplayX] = useState(1);
   const [flying, setFlying] = useState(false);
   const [crashed, setCrashed] = useState(false);
+  /** Locked target for the in-flight round (ignores slider moves during fly). */
+  const lockedCashout = useRef(2);
 
   const loadBal = useCallback(async () => {
     if (!user) return;
@@ -50,11 +52,13 @@ export default function CrashPage() {
     void loadBal();
   }, [loadBal]);
 
-  // Map multiplier → plane height % (1.0x floor → ~10%, 10x+ → ~85%)
   const planeBottom = Math.min(85, 8 + Math.log2(Math.max(1, displayX)) * 22);
 
   async function play() {
     if (!user || busy) return;
+    const target = Math.floor(cashoutAt * 100) / 100;
+    lockedCashout.current = target;
+
     setBusy(true);
     setErr(null);
     setLast(null);
@@ -69,7 +73,11 @@ export default function CrashPage() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ game: "crash", stake, cashoutAt }),
+        body: JSON.stringify({
+          game: "crash",
+          stake,
+          cashoutAt: target,
+        }),
       });
       const data = (await res.json()) as PlayRes;
       if (!res.ok) throw new Error(data.error || "Play failed");
@@ -100,8 +108,8 @@ export default function CrashPage() {
   const resultText =
     last != null && typeof last.crashPoint === "number"
       ? last.won
-        ? `Crashed ${last.crashPoint.toFixed(2)}x · Cashed ${last.cashoutAt?.toFixed(2)}x · +${chips(last.profit ?? 0)}`
-        : `Crashed ${last.crashPoint.toFixed(2)}x · Lost ${chips(stake)}`
+        ? `Crashed ${last.crashPoint.toFixed(2)}x · You cashed ${Number(last.cashoutAt).toFixed(2)}x · +${chips(last.profit ?? 0)}`
+        : `Crashed ${last.crashPoint.toFixed(2)}x before ${Number(last.cashoutAt ?? lockedCashout.current).toFixed(2)}x · Lost ${chips(stake)}`
       : null;
 
   return (
@@ -127,11 +135,8 @@ export default function CrashPage() {
         </div>
       )}
 
-      {/* Sky + plane */}
       <div className="relative mb-4 h-48 overflow-hidden rounded-2xl border border-ink-muted/15 bg-gradient-to-b from-sky-200/40 via-surface to-surface dark:from-sky-900/20">
-        {/* runway line */}
         <div className="absolute bottom-3 left-4 right-4 h-px bg-ink-muted/20" />
-        {/* plane */}
         <div
           className={`absolute left-1/2 text-3xl transition-all duration-75 ${
             crashed ? "opacity-40" : "opacity-100"
@@ -161,7 +166,9 @@ export default function CrashPage() {
             {displayX.toFixed(2)}x
           </p>
           <p className="mt-1 text-[11px] font-semibold text-ink-muted">
-            Auto cash out at {cashoutAt.toFixed(2)}x
+            {busy
+              ? `Cash out locked at ${lockedCashout.current.toFixed(2)}x`
+              : `Will cash out at ${cashoutAt.toFixed(2)}x`}
           </p>
         </div>
       </div>
@@ -169,7 +176,7 @@ export default function CrashPage() {
       <div className="mb-3 rounded-2xl border border-ink-muted/15 bg-surface p-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-ink-muted">
-            Cash out at
+            Auto cash out
           </span>
           <span className="text-sm font-extrabold tabular-nums">
             {cashoutAt.toFixed(2)}x
@@ -181,17 +188,19 @@ export default function CrashPage() {
           max={10}
           step={0.01}
           value={cashoutAt}
+          disabled={busy}
           onChange={(e) => setCashoutAt(Number(e.target.value))}
-          className="mt-2 w-full accent-emerald-600"
+          className="mt-2 w-full accent-emerald-600 disabled:opacity-50"
         />
         <div className="mt-2 flex gap-2">
           {[1.5, 2, 3, 5].map((v) => (
             <button
               key={v}
               type="button"
+              disabled={busy}
               onClick={() => setCashoutAt(v)}
-              className={`flex-1 rounded-lg py-1.5 text-xs font-bold ${
-                cashoutAt === v
+              className={`flex-1 rounded-lg py-1.5 text-xs font-bold disabled:opacity-50 ${
+                Math.abs(cashoutAt - v) < 0.001
                   ? "bg-brand text-white"
                   : "bg-ink-muted/10 text-ink"
               }`}
@@ -208,7 +217,7 @@ export default function CrashPage() {
         balance={balance}
         min={CASINO_MIN_STAKE}
         max={CASINO_MAX_STAKE}
-        potentialLabel={`Win ${chips(potential)}`}
+        potentialLabel={`Win ${chips(potential)} if plane passes ${cashoutAt.toFixed(2)}x`}
       />
 
       {err && (
@@ -226,4 +235,4 @@ export default function CrashPage() {
       />
     </CasinoShell>
   );
-              }
+}
