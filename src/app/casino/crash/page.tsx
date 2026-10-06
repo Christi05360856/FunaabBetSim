@@ -32,6 +32,8 @@ export default function CrashPage() {
   const [last, setLast] = useState<PlayRes | null>(null);
   const [history, setHistory] = useState<number[]>([]);
   const [displayX, setDisplayX] = useState(1);
+  const [flying, setFlying] = useState(false);
+  const [crashed, setCrashed] = useState(false);
 
   const loadBal = useCallback(async () => {
     if (!user) return;
@@ -48,12 +50,17 @@ export default function CrashPage() {
     void loadBal();
   }, [loadBal]);
 
+  // Map multiplier → plane height % (1.0x floor → ~10%, 10x+ → ~85%)
+  const planeBottom = Math.min(85, 8 + Math.log2(Math.max(1, displayX)) * 22);
+
   async function play() {
     if (!user || busy) return;
     setBusy(true);
     setErr(null);
     setLast(null);
     setDisplayX(1);
+    setFlying(true);
+    setCrashed(false);
     try {
       const token = await user.getIdToken();
       const res = await fetch("/api/casino/play", {
@@ -67,14 +74,15 @@ export default function CrashPage() {
       const data = (await res.json()) as PlayRes;
       if (!res.ok) throw new Error(data.error || "Play failed");
 
-      // Animate up to crash (or cashout visual)
       const end = data.crashPoint ?? 1;
-      const steps = 24;
+      const steps = 28;
       for (let i = 1; i <= steps; i++) {
-        await new Promise((r) => setTimeout(r, 30));
+        await new Promise((r) => setTimeout(r, 35));
         setDisplayX(1 + (end - 1) * (i / steps));
       }
       setDisplayX(end);
+      setCrashed(true);
+      setFlying(false);
       setLast(data);
       if (typeof data.balanceAfter === "number") setBalance(data.balanceAfter);
       if (typeof data.crashPoint === "number") {
@@ -82,6 +90,7 @@ export default function CrashPage() {
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Play failed");
+      setFlying(false);
     } finally {
       setBusy(false);
     }
@@ -118,25 +127,45 @@ export default function CrashPage() {
         </div>
       )}
 
-      {/* Multiplier stage */}
-      <div className="mb-4 flex h-40 flex-col items-center justify-center rounded-2xl border border-ink-muted/15 bg-surface">
-        <p
-          className={`text-5xl font-black tabular-nums tracking-tight ${
-            last?.won === false
-              ? "text-red-500"
-              : last?.won === true
-                ? "text-emerald-500"
-                : "text-ink"
+      {/* Sky + plane */}
+      <div className="relative mb-4 h-48 overflow-hidden rounded-2xl border border-ink-muted/15 bg-gradient-to-b from-sky-200/40 via-surface to-surface dark:from-sky-900/20">
+        {/* runway line */}
+        <div className="absolute bottom-3 left-4 right-4 h-px bg-ink-muted/20" />
+        {/* plane */}
+        <div
+          className={`absolute left-1/2 text-3xl transition-all duration-75 ${
+            crashed ? "opacity-40" : "opacity-100"
           }`}
+          style={{
+            bottom: `${planeBottom}%`,
+            transform: crashed
+              ? "translateX(-50%) rotate(35deg)"
+              : flying
+                ? "translateX(-50%) rotate(-12deg)"
+                : "translateX(-50%) rotate(0deg)",
+          }}
+          aria-hidden
         >
-          {displayX.toFixed(2)}x
-        </p>
-        <p className="mt-2 text-[11px] font-semibold text-ink-muted">
-          Auto cash out at {cashoutAt.toFixed(2)}x
-        </p>
+          ✈️
+        </div>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pt-4">
+          <p
+            className={`text-4xl font-black tabular-nums tracking-tight ${
+              last?.won === false
+                ? "text-red-500"
+                : last?.won === true
+                  ? "text-emerald-500"
+                  : "text-ink"
+            }`}
+          >
+            {displayX.toFixed(2)}x
+          </p>
+          <p className="mt-1 text-[11px] font-semibold text-ink-muted">
+            Auto cash out at {cashoutAt.toFixed(2)}x
+          </p>
+        </div>
       </div>
 
-      {/* Cashout target */}
       <div className="mb-3 rounded-2xl border border-ink-muted/15 bg-surface p-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-ink-muted">
@@ -188,11 +217,13 @@ export default function CrashPage() {
 
       <PrimaryBtn
         busy={busy}
-        disabled={balance == null || balance < stake || stake < CASINO_MIN_STAKE}
+        disabled={
+          balance == null || balance < stake || stake < CASINO_MIN_STAKE
+        }
         label="Place bet"
         busyLabel="Flying…"
         onClick={() => void play()}
       />
     </CasinoShell>
   );
-          }
+              }
