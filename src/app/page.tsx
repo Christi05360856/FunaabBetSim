@@ -1,231 +1,340 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useAuth } from "@/lib/auth/AuthContext";
-import {
-  CASINO_GAMES,
-  CASINO_RELOAD_CHIPS,
-  CASINO_START_CHIPS,
-} from "@/types/casino";
+import type { Competition, Market, Match, Team } from "@/types/domain";
+import { groupFixturesForBrowsing } from "@/lib/domain/fixtureDisplay";
+import { isBettingOpen } from "@/lib/domain/matchClock";
+import { resolveSelection } from "@/lib/domain/selectionLabel";
+import { useBetSlip } from "@/lib/context/BetSlipContext";
+import { MatchCard, type MatchCardSelection } from "@/components/sportsbook/MatchCard";
+import { SectionHeader } from "@/components/sportsbook/SectionHeader";
 
-type BalancePayload = {
-  ok?: boolean;
-  balance?: number;
-  canReload?: boolean;
-  reloadReason?: string | null;
-  retryAfterMs?: number;
-  error?: string;
+type FixturesPayload = {
+  matches: Match[];
+  teams: Team[];
+  competitions: Competition[];
+  markets?: Market[];
 };
 
-function chips(n: number) {
-  return Math.floor(n).toLocaleString("en-NG");
+function isLiveStatus(s: Match["status"]) {
+  return s === "live" || s === "halftime" || s === "second_half";
 }
 
-function cooldown(ms: number) {
-  const s = Math.max(0, Math.ceil(ms / 1000));
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return m <= 0 ? `${r}s` : `${m}m ${r.toString().padStart(2, "0")}s`;
-}
+export default function HomePage() {
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [teams, setTeams] = useState<Record<string, Team>>({});
+  const [competitions, setCompetitions] = useState<Record<string, Competition>>({});
+  const [marketsByMatch, setMarketsByMatch] = useState<
+    Record<string, Market | undefined>
+  >({});
+  const [now, setNow] = useState(() => Date.now());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-const ICONS: Record<string, string> = {
-  dice: "🎲",
-  coin: "🪙",
-  mines: "💣",
-  wheel: "🎡",
-  crash: "📈",
-};
-
-export default function CasinoPage() {
-  const { user, loading: authLoading } = useAuth();
-  const [balance, setBalance] = useState<number | null>(null);
-  const [canReload, setCanReload] = useState(false);
-  const [retryAfterMs, setRetryAfterMs] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [reloading, setReloading] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const slip = useBetSlip();
 
   const load = useCallback(async () => {
-    if (!user) {
-      setBalance(null);
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
       return;
     }
-    setLoading(true);
-    setErr(null);
     try {
-      const token = await user.getIdToken();
-      const res = await fetch("/api/casino/balance", {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
+      const res = await fetch("/api/public/fixtures", { cache: "no-store" });
+      if (!res.ok) throw new Error("Could not load fixtures");
+      const data = (await res.json()) as FixturesPayload;
+
+      setMatches(
+        (data.matches ?? []).filter(
+          (m) => m?.id && m?.homeTeamId && m?.awayTeamId && m?.kickoffAt
+        )
+      );
+
+      const teamMap: Record<string, Team> = {};
+      (data.teams ?? []).forEach((t) => {
+        if (t?.id) teamMap[t.id] = t;
       });
-      const data = (await res.json()) as BalancePayload;
-      if (!res.ok) throw new Error(data.error || "Could not load balance");
-      setBalance(typeof data.balance === "number" ? data.balance : 0);
-      setCanReload(!!data.canReload);
-      setRetryAfterMs(data.retryAfterMs ?? 0);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to load");
+      setTeams(teamMap);
+
+      const compMap: Record<string, Competition> = {};
+      (data.competitions ?? []).forEach((c) => {
+        if (c?.id) compMap[c.id] = c;
+      });
+      setCompetitions(compMap);
+
+      const mw: Record<string, Market | undefined> = {};
+      (data.markets ?? []).forEach((mkt) => {
+        if (
+          mkt?.matchId &&
+          mkt.type === "match_winner" &&
+          (mkt.status === "active" || mkt.status === "locked")
+        ) {
+          // Prefer active over locked if both appear
+          if (!mw[mkt.matchId] || mkt.status === "active") {
+            mw[mkt.matchId] = mkt;
+          }
+        }
+      });
+      setMarketsByMatch(mw);
+      setError(null);
+    } catch {
+      setError("Fixtures unavailable. Pull to refresh or try again.");
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     void load();
+    const id = setInterval(() => void load(), 120_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load]);
 
   useEffect(() => {
-    if (retryAfterMs <= 0) return;
-    const t = setInterval(() => {
-      setRetryAfterMs((prev) => {
-        const next = Math.max(0, prev - 1000);
-        if (next === 0) setCanReload(true);
-        return next;
-      });
-    }, 1000);
-    return () => clearInterval(t);
-  }, [retryAfterMs > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
-  async function onReload() {
-    if (!user || reloading) return;
-    setReloading(true);
-    setMsg(null);
-    setErr(null);
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch("/api/casino/reload", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = (await res.json()) as BalancePayload & {
-        granted?: number;
-      };
-      if (!res.ok) {
-        setCanReload(false);
-        setRetryAfterMs(data.retryAfterMs ?? 0);
-        throw new Error(data.error || "Reload failed");
-      }
-      setBalance(typeof data.balance === "number" ? data.balance : 0);
-      setCanReload(false);
-      setRetryAfterMs(data.retryAfterMs ?? 0);
-      setMsg(`+${chips(data.granted ?? CASINO_RELOAD_CHIPS)} chips`);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Reload failed");
-    } finally {
-      setReloading(false);
+  const { live, upcoming } = useMemo(
+    () => groupFixturesForBrowsing(matches, now),
+    [matches, now]
+  );
+
+  /** Popular: soonest open/scheduled with a match_winner market */
+  const popular = useMemo(() => {
+    return matches
+      .filter(
+        (m) =>
+          !isLiveStatus(m.status) &&
+          m.status !== "finished" &&
+          m.status !== "result_confirmed" &&
+          m.status !== "settled" &&
+          m.status !== "voided" &&
+          m.status !== "postponed" &&
+          marketsByMatch[m.id] &&
+          isBettingOpen(m, now)
+      )
+      .sort((a, b) => a.kickoffAt - b.kickoffAt)
+      .slice(0, 6);
+  }, [matches, marketsByMatch, now]);
+
+  const featured = useMemo(() => {
+    if (live[0]) return live[0];
+    if (popular[0]) return popular[0];
+    return upcoming[0]?.matches[0] ?? null;
+  }, [live, popular, upcoming]);
+
+  const upcomingSections = useMemo(() => {
+    // Cap total cards on home so it stays scannable
+    let remaining = 8;
+    const out: { key: string; label: string; matches: Match[] }[] = [];
+    for (const sec of upcoming) {
+      if (remaining <= 0) break;
+      const slice = sec.matches.slice(0, remaining);
+      if (slice.length === 0) continue;
+      out.push({ key: sec.key, label: sec.label, matches: slice });
+      remaining -= slice.length;
     }
+    return out;
+  }, [upcoming]);
+
+  const selectedIds = useMemo(() => {
+    const set = new Set<string>();
+    (slip.items ?? []).forEach((it) => {
+      set.add(`${it.matchId}:${it.selectionId}`);
+    });
+    return set;
+  }, [slip.items]);
+
+  function teamName(id: string, fallback: string) {
+    return teams[id]?.name ?? fallback;
   }
 
-  if (authLoading) {
+  function compName(id: string) {
+    return competitions[id]?.name ?? "";
+  }
+
+  function oddsFor(match: Match): MatchCardSelection[] | undefined {
+    const mkt = marketsByMatch[match.id];
+    if (!mkt?.selections?.length) return undefined;
+    return mkt.selections.map((s) => ({ ...s, marketId: mkt.id }));
+  }
+
+  function canBetMatch(match: Match) {
+    const mkt = marketsByMatch[match.id];
     return (
-      <main className="mx-auto flex min-h-[50vh] max-w-lg items-center justify-center px-4">
-        <p className="text-sm text-ink-muted">Loading…</p>
-      </main>
+      isBettingOpen(match, now) &&
+      Boolean(mkt) &&
+      mkt!.status === "active" &&
+      (mkt!.selections?.length ?? 0) > 0
     );
   }
 
-  if (!user) {
+  function toggleSel(match: Match, sel: MatchCardSelection) {
+    const mkt = marketsByMatch[match.id];
+    if (!mkt) return;
+    const home = teamName(match.homeTeamId, "Home");
+    const away = teamName(match.awayTeamId, "Away");
+    const { market: marketName, pick } = resolveSelection(sel.id, sel.label);
+    slip.toggleItem({
+      matchId: match.id,
+      marketId: mkt.id,
+      selectionId: sel.id,
+      selectionLabel: pick,
+      odds: sel.odds,
+      homeTeamName: home,
+      awayTeamName: away,
+      marketName,
+    });
+  }
+
+  function renderCard(match: Match, compact = false) {
     return (
-      <main className="mx-auto max-w-lg px-4 py-16 text-center">
-        <p className="text-lg font-bold text-ink">Casino</p>
-        <p className="mt-2 text-sm text-ink-muted">Sign in to play for free.</p>
-        <Link
-          href="/login"
-          className="mt-6 inline-block rounded-2xl bg-brand px-6 py-3 text-sm font-bold text-white"
-        >
-          Sign in
-        </Link>
-      </main>
+      <MatchCard
+        key={match.id}
+        match={match}
+        homeName={teamName(match.homeTeamId, "Home")}
+        awayName={teamName(match.awayTeamId, "Away")}
+        competitionName={compName(match.competitionId)}
+        odds1x2={oddsFor(match)}
+        selectedIds={selectedIds}
+        canBet={canBetMatch(match)}
+        onToggleSelection={(sel) => toggleSel(match, sel)}
+        compact={compact}
+      />
     );
   }
 
   return (
-    <main className="mx-auto min-h-[100dvh] max-w-lg bg-bg px-4 pb-28 pt-4 text-ink">
-      {/* Title row */}
-      <div className="mb-4 flex items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight">Casino</h1>
-          <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-            Play for free · Demo chips
-          </p>
-        </div>
+    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-28 pt-4">
+      {/* Quick actions */}
+      <div className="flex gap-2">
+        <Link
+          href="/fixtures?filter=live"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-red-500/10 px-3 py-2.5 text-xs font-bold text-red-600"
+        >
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
+          Live
+        </Link>
+        <Link
+          href="/fixtures"
+          className="flex flex-1 items-center justify-center rounded-xl bg-brand/10 px-3 py-2.5 text-xs font-bold text-brand"
+        >
+          All sports
+        </Link>
+        <Link
+          href="/bets"
+          className="flex flex-1 items-center justify-center rounded-xl bg-ink-muted/10 px-3 py-2.5 text-xs font-bold text-ink"
+        >
+          My Bets
+        </Link>
       </div>
 
-      {/* Balance card */}
-      <section className="rounded-2xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/10 to-transparent p-4">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-          Demo balance
-        </p>
-        <p className="mt-1 text-3xl font-extrabold tabular-nums tracking-tight">
-          {loading && balance == null ? "…" : chips(balance ?? 0)}
-          <span className="ml-1 text-sm font-semibold text-ink-muted">
-            chips
-          </span>
-        </p>
-        <p className="mt-1 text-[11px] text-ink-muted">
-          Start {chips(CASINO_START_CHIPS)} · Reload {chips(CASINO_RELOAD_CHIPS)}{" "}
-          when empty
-        </p>
+      {loading && (
+        <div className="flex flex-col gap-3">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-28 animate-pulse rounded-2xl bg-ink-muted/10"
+            />
+          ))}
+        </div>
+      )}
 
-        {balance === 0 && (
+      {error && !loading && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm text-red-700">
+          <p>{error}</p>
           <button
             type="button"
-            disabled={!canReload || reloading || retryAfterMs > 0}
-            onClick={() => void onReload()}
-            className="mt-3 w-full rounded-xl bg-brand py-2.5 text-sm font-bold text-white disabled:opacity-45"
+            onClick={() => {
+              setLoading(true);
+              void load();
+            }}
+            className="mt-2 text-xs font-bold underline"
           >
-            {reloading
-              ? "Reloading…"
-              : retryAfterMs > 0
-                ? `Reload in ${cooldown(retryAfterMs)}`
-                : canReload
-                  ? `Reload ${chips(CASINO_RELOAD_CHIPS)} chips`
-                  : "Reload unavailable"}
+            Retry
           </button>
-        )}
-      </section>
-
-      {msg && (
-        <p className="mt-3 text-center text-xs font-semibold text-emerald-600">
-          {msg}
-        </p>
+        </div>
       )}
-      {err && (
-        <p className="mt-3 text-center text-xs font-semibold text-red-600">
-          {err}
+
+      {!loading && !error && matches.length === 0 && (
+        <p className="py-12 text-center text-sm text-ink-muted">
+          No fixtures right now — check back soon.
         </p>
       )}
 
-      {/* Games */}
-      <h2 className="mb-2 mt-6 text-xs font-bold uppercase tracking-wider text-ink-muted">
-        Games
-      </h2>
-      <div className="grid grid-cols-2 gap-3">
-        {CASINO_GAMES.map((g) => (
-          <Link
-            key={g.id}
-            href={g.playReady ? `/casino/${g.id}` : "#"}
-            className={`relative overflow-hidden rounded-2xl border border-ink-muted/12 bg-surface p-4 transition active:scale-[0.98] ${
-              g.playReady ? "" : "pointer-events-none opacity-50"
-            }`}
-          >
-            <span className="text-2xl" aria-hidden>
-              {ICONS[g.id] ?? "🎮"}
-            </span>
-            <p className="mt-2 text-sm font-bold text-ink">{g.name}</p>
-            <p className="mt-0.5 text-[11px] leading-snug text-ink-muted">
-              {g.blurb}
-            </p>
-            {g.playReady && (
-              <span className="mt-3 inline-block rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-bold text-brand">
-                Play
-              </span>
-            )}
-          </Link>
+      {/* Featured */}
+      {!loading && featured && (
+        <section>
+          <SectionHeader title="Featured" href={`/fixtures/${featured.id}`} hrefLabel="Open" />
+          {renderCard(featured)}
+        </section>
+      )}
+
+      {/* Live */}
+      {!loading && live.length > 0 && (
+        <section>
+          <SectionHeader
+            title={`Live (${live.length})`}
+            href="/fixtures"
+            hrefLabel="See all"
+            accent="live"
+          />
+          <div className="flex flex-col gap-2.5">
+            {live.slice(0, 5).map((m) => renderCard(m))}
+          </div>
+        </section>
+      )}
+
+      {/* Popular */}
+      {!loading && popular.length > 0 && (
+        <section>
+          <SectionHeader title="Popular" href="/fixtures" hrefLabel="See all" />
+          <div className="flex flex-col gap-2.5">
+            {popular
+              .filter((m) => m.id !== featured?.id)
+              .slice(0, 5)
+              .map((m) => renderCard(m))}
+          </div>
+        </section>
+      )}
+
+      {/* Upcoming by day */}
+      {!loading &&
+        upcomingSections.map((sec) => (
+          <section key={sec.key}>
+            <SectionHeader
+              title={sec.label}
+              href="/fixtures"
+              hrefLabel="See all"
+            />
+            <div className="flex flex-col gap-2.5">
+              {sec.matches
+                .filter(
+                  (m) =>
+                    m.id !== featured?.id &&
+                    !popular.some((p) => p.id === m.id && sec.label === "Today")
+                )
+                .map((m) => renderCard(m, true))}
+            </div>
+          </section>
         ))}
-      </div>
+
+      {!loading && matches.length > 0 && (
+        <Link
+          href="/fixtures"
+          className="rounded-2xl bg-brand py-3.5 text-center text-sm font-bold text-white shadow-card"
+        >
+          Browse all fixtures
+        </Link>
+      )}
     </main>
   );
-}
+      }
+        
