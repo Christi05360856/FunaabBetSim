@@ -103,12 +103,11 @@ export function BetSlip() {
 
   // Hide FAB on admin + casino — AFTER all hooks (Rules of Hooks)
   if (
-    pathname?.startsWith("/admin") ||
-    pathname?.startsWith("/casino")
-  ) {
-    return null;
+  pathname?.startsWith("/admin") ||
+  pathname?.startsWith("/casino")
+) {
+  return null;
   }
-
 
   const stakeNum = Number(stake) || 0;
   const purchased = Math.max(0, wallet?.purchased ?? 0);
