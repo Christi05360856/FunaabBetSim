@@ -9,6 +9,10 @@ import { resolveCrashRound, validateCrashInput } from "@/lib/casino/crash";
 import { resolveThimblesRound, validateThimblesInput } from "@/lib/casino/thimbles";
 import { resolvePenaltyRound, validatePenaltyInput } from "@/lib/casino/penalty";
 import { resolveCampusCrashRound, validateCampusCrashInput } from "@/lib/casino/campusCrash";
+import { resolvePlinkoRound, validatePlinkoInput } from "@/lib/casino/plinko";
+import { resolveHiloRound, validateHiloInput } from "@/lib/casino/hilo";
+import { resolveKenoRound, validateKenoInput } from "@/lib/casino/keno";
+import { resolvePenaltySeriesRound, validatePenaltySeriesInput } from "@/lib/casino/penaltySeries";
 import { CASINO_MAX_STAKE, CASINO_MIN_STAKE } from "@/types/casino";
 
 export const dynamic = "force-dynamic";
@@ -440,10 +444,217 @@ export async function POST(request: NextRequest) {
       });
     }
 
+
+    if (game === "plinko") {
+      const parsed = validatePlinkoInput(body);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+      if (!stakeOk(parsed.stake)) {
+        return NextResponse.json(
+          {
+            error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}`,
+          },
+          { status: 400 }
+        );
+      }
+      const round = resolvePlinkoRound({ stake: parsed.stake });
+      const settled = await settleCasinoPlay({
+        uid: decoded.uid,
+        game: "plinko",
+        stake: parsed.stake,
+        payout: round.payout,
+        meta: {
+          path: round.path,
+          slot: round.slot,
+          multiplier: round.multiplier,
+          won: round.won,
+        },
+      });
+      if (!settled.ok) {
+        return NextResponse.json(
+          { error: settled.error, code: settled.code },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({
+        ok: true,
+        game: "plinko",
+        stake: parsed.stake,
+        path: round.path,
+        slot: round.slot,
+        multiplier: round.multiplier,
+        payout: round.payout,
+        profit: round.profit,
+        won: round.won,
+        balanceAfter: settled.balanceAfter,
+        playId: settled.playId,
+      });
+    }
+
+    if (game === "hilo") {
+      const parsed = validateHiloInput(body);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+      if (!stakeOk(parsed.stake)) {
+        return NextResponse.json(
+          {
+            error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}`,
+          },
+          { status: 400 }
+        );
+      }
+      const round = resolveHiloRound({
+        stake: parsed.stake,
+        current: parsed.current,
+        choice: parsed.choice,
+      });
+      const settled = await settleCasinoPlay({
+        uid: decoded.uid,
+        game: "hilo",
+        stake: parsed.stake,
+        payout: round.payout,
+        meta: {
+          current: round.current,
+          next: round.next,
+          choice: round.choice,
+          won: round.won,
+          multiplier: round.multiplier,
+        },
+      });
+      if (!settled.ok) {
+        return NextResponse.json(
+          { error: settled.error, code: settled.code },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({
+        ok: true,
+        game: "hilo",
+        stake: parsed.stake,
+        current: round.current,
+        next: round.next,
+        choice: round.choice,
+        won: round.won,
+        multiplier: round.multiplier,
+        payout: round.payout,
+        profit: round.profit,
+        balanceAfter: settled.balanceAfter,
+        playId: settled.playId,
+      });
+    }
+
+    if (game === "keno") {
+      const parsed = validateKenoInput(body);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+      if (!stakeOk(parsed.stake)) {
+        return NextResponse.json(
+          {
+            error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}`,
+          },
+          { status: 400 }
+        );
+      }
+      const round = resolveKenoRound({
+        stake: parsed.stake,
+        picks: parsed.picks,
+      });
+      const settled = await settleCasinoPlay({
+        uid: decoded.uid,
+        game: "keno",
+        stake: parsed.stake,
+        payout: round.payout,
+        meta: {
+          picks: round.picks,
+          drawn: round.drawn,
+          hits: round.hits,
+          multiplier: round.multiplier,
+          won: round.won,
+        },
+      });
+      if (!settled.ok) {
+        return NextResponse.json(
+          { error: settled.error, code: settled.code },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({
+        ok: true,
+        game: "keno",
+        stake: parsed.stake,
+        picks: round.picks,
+        drawn: round.drawn,
+        hits: round.hits,
+        multiplier: round.multiplier,
+        payout: round.payout,
+        profit: round.profit,
+        won: round.won,
+        balanceAfter: settled.balanceAfter,
+        playId: settled.playId,
+      });
+    }
+
+    if (game === "penalty-series") {
+      const parsed = validatePenaltySeriesInput(body);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+      if (!stakeOk(parsed.stake)) {
+        return NextResponse.json(
+          {
+            error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}`,
+          },
+          { status: 400 }
+        );
+      }
+      const round = resolvePenaltySeriesRound({
+        stake: parsed.stake,
+        shots: parsed.shots,
+      });
+      const settled = await settleCasinoPlay({
+        uid: decoded.uid,
+        game: "penalty-series",
+        stake: parsed.stake,
+        payout: round.payout,
+        meta: {
+          shots: round.shots,
+          keepers: round.keepers,
+          results: round.results,
+          goals: round.goals,
+          multiplier: round.multiplier,
+          won: round.won,
+        },
+      });
+      if (!settled.ok) {
+        return NextResponse.json(
+          { error: settled.error, code: settled.code },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({
+        ok: true,
+        game: "penalty-series",
+        stake: parsed.stake,
+        shots: round.shots,
+        keepers: round.keepers,
+        results: round.results,
+        goals: round.goals,
+        multiplier: round.multiplier,
+        payout: round.payout,
+        profit: round.profit,
+        won: round.won,
+        balanceAfter: settled.balanceAfter,
+        playId: settled.playId,
+      });
+    }
+
     return NextResponse.json({ error: "Unknown game" }, { status: 400 });
   } catch (e) {
     console.error("[casino/play]", e);
     return NextResponse.json({ error: "Play failed" }, { status: 500 });
   }
         }
-  
+      
