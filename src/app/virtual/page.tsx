@@ -224,7 +224,7 @@ export default function InstantVirtualPage() {
   }
 
   return (
-    <main className="mx-auto min-h-[100dvh] max-w-lg bg-bg pb-40 text-ink">
+    <main className="mx-auto min-h-[100dvh] max-w-lg bg-bg pb-48 text-ink">
       <header className="sticky top-0 z-30 border-b border-ink-muted/10 bg-emerald-700 px-3 py-2.5 text-white">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -485,8 +485,11 @@ export default function InstantVirtualPage() {
       )}
 
       <div
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-ink-muted/15 bg-surface/95 px-2 pt-2 backdrop-blur"
-        style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+        className="fixed inset-x-0 z-40 border-t border-ink-muted/15 bg-surface/95 px-2 pt-2 backdrop-blur"
+        style={{
+          bottom: "calc(3.75rem + env(safe-area-inset-bottom, 0px))",
+          paddingBottom: "0.5rem",
+        }}
       >
         <div className="mx-auto max-w-lg">
           {legs.length > 0 && (
@@ -541,5 +544,4 @@ export default function InstantVirtualPage() {
       </div>
     </main>
   );
-        }
-          
+                                }
