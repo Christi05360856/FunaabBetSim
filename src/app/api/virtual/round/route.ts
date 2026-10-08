@@ -3,10 +3,11 @@ import { verifyRequest } from "@/lib/auth/verifyRequest";
 import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
 import { createVirtualRound, getVirtualRound } from "@/lib/virtual/rounds";
 import { publicMatch } from "@/lib/virtual/engine";
+import { ensureCasinoDemoWallet } from "@/lib/casino/demoWallet";
 
 export const dynamic = "force-dynamic";
 
-/** POST — create a new Instant Virtual board (demo). */
+/** POST — deal a new Instant Virtual board + demo balance. */
 export async function POST(request: NextRequest) {
   const decoded = await verifyRequest(request);
   if (!decoded) {
@@ -21,9 +22,19 @@ export async function POST(request: NextRequest) {
   if (limited) return limited;
 
   try {
+    const body = await request.json().catch(() => ({}));
+    void body; // league is filtered client-side from full board
+
     const { public: pub } = await createVirtualRound();
-    return NextResponse.json({ ok: true, round: pub });
-  } catch {
+    const wallet = await ensureCasinoDemoWallet(decoded.uid);
+
+    return NextResponse.json({
+      ok: true,
+      round: pub,
+      balance: wallet.balance,
+    });
+  } catch (e) {
+    console.error("[virtual/round POST]", e);
     return NextResponse.json(
       { error: "Could not create virtual round" },
       { status: 500 }
@@ -31,7 +42,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/** GET ?id= — fetch public board. */
+/** GET ?id= — re-fetch an existing public board. */
 export async function GET(request: NextRequest) {
   const decoded = await verifyRequest(request);
   if (!decoded) {
@@ -54,6 +65,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const wallet = await ensureCasinoDemoWallet(decoded.uid);
+
   return NextResponse.json({
     ok: true,
     round: {
@@ -62,5 +75,6 @@ export async function GET(request: NextRequest) {
       expiresAt: stored.expiresAt,
       matches: stored.matches.map(publicMatch),
     },
+    balance: wallet.balance,
   });
 }
