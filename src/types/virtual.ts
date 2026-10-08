@@ -1,6 +1,6 @@
 /** Instant Virtual Football — demo chips only (casino wallet). */
 
-export const VIRTUAL_MATCHES_PER_ROUND = 8;
+export const VIRTUAL_MATCHES_PER_LEAGUE = 8;
 export const VIRTUAL_ROUND_TTL_MS = 10 * 60 * 1000;
 export const VIRTUAL_HOUSE_MARGIN = 0.06;
 
@@ -32,6 +32,7 @@ export interface VirtualOddsBtts {
 
 export interface VirtualMatchPublic {
   id: string;
+  league: string;
   home: string;
   away: string;
   odds1x2: VirtualOdds1x2;
