@@ -450,8 +450,8 @@ export default function VirtualPage() {
                     <div className="grid grid-cols-2 gap-2 border-t border-ink-muted/10 bg-bg/40 p-2">
                       {(
                         [
-                          ["ou25", "over", `Over 2.5 · ${m.oddsOu.over.toFixed(2)}`, m.oddsOu.over],
-                          ["ou25", "under", `Under 2.5 · ${m.oddsOu.under.toFixed(2)}`, m.oddsOu.under],
+                          ["ou25", "over", `Over 2.5 · ${m.oddsOu25.over.toFixed(2)}`, m.oddsOu25.over],
+                          ["ou25", "under", `Under 2.5 · ${m.oddsOu25.under.toFixed(2)}`, m.oddsOu25.under],
                           ["btts", "yes", `BTTS Yes · ${m.oddsBtts.yes.toFixed(2)}`, m.oddsBtts.yes],
                           ["btts", "no", `BTTS No · ${m.oddsBtts.no.toFixed(2)}`, m.oddsBtts.no],
                         ] as const
@@ -813,4 +813,4 @@ export default function VirtualPage() {
       )}
     </main>
   );
-            }
+}
