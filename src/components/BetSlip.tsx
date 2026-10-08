@@ -113,12 +113,13 @@ export function BetSlip() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.length, totalOdds]);
 
-  // Hide FAB on admin + casino — AFTER all hooks (Rules of Hooks)
+  // Hide FAB on admin + casino + virtual — AFTER all hooks (Rules of Hooks)
   if (
-  pathname?.startsWith("/admin") ||
-  pathname?.startsWith("/casino")
-) {
-  return null;
+    pathname?.startsWith("/admin") ||
+    pathname?.startsWith("/casino") ||
+    pathname?.startsWith("/virtual")
+  ) {
+    return null;
   }
 
   const stakeNum = Number(stake) || 0;
