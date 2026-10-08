@@ -1,5 +1,5 @@
 import "server-only";
-import { randomBytes } from "crypto";
+import { shuffled } from "@/lib/casino/rng";
 import {
   CASINO_HOUSE_EDGE,
   MINES_GRID,
@@ -8,16 +8,7 @@ import {
 } from "@/types/casino";
 
 function shuffleIndices(n: number): number[] {
-  const arr: number[] = Array.from({ length: n }, (_, i) => i);
-  for (let i = n - 1; i > 0; i--) {
-    const buf = randomBytes(4);
-    const j = buf.readUInt32BE(0) % (i + 1);
-    const a = arr[i] as number;
-    const b = arr[j] as number;
-    arr[i] = b;
-    arr[j] = a;
-  }
-  return arr;
+  return shuffled(Array.from({ length: n }, (_, i) => i));
 }
 
 /** Fair sequential pick probability → multiplier with house edge */
