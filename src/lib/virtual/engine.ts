@@ -46,12 +46,13 @@ function factorial(n: number): number {
 
 function applyMargin(probs: number[]): number[] {
   const sum = probs.reduce((a, b) => a + b, 0) || 1;
-  const norm = probs.map((p) => p / sum);
+  const norm = probs.map((p) => Math.max(p, 1e-6) / sum);
   const edge = 1 + VIRTUAL_HOUSE_MARGIN;
-  const inv = norm.map((p) => 1 / Math.max(p, 0.02));
-  const invSum = inv.reduce((a, b) => a + b, 0);
-  const scale = invSum / edge;
-  return inv.map((x) => Math.round((x / scale) * 100) / 100);
+  // Book overround: sum(1/odds) = edge  →  odds_i = 1 / (p_i * edge)
+  return norm.map((p) => {
+    const o = 1 / (p * edge);
+    return Math.round(Math.max(1.15, Math.min(o, 50)) * 100) / 100;
+  });
 }
 
 function odds1x2FromStrength(hs: number, as: number): VirtualOdds1x2 {
@@ -72,9 +73,9 @@ function odds1x2FromStrength(hs: number, as: number): VirtualOdds1x2 {
   }
   const [oh, od, oa] = applyMargin([pH, pD, pA]);
   return {
-    home: Math.max(1.2, oh ?? 2.5),
-    draw: Math.max(1.2, od ?? 3.2),
-    away: Math.max(1.2, oa ?? 2.8),
+    home: oh ?? 2.5,
+    draw: od ?? 3.2,
+    away: oa ?? 2.8,
   };
 }
 
@@ -94,8 +95,8 @@ function oddsOu25(hs: number, as: number): VirtualOddsOu {
   pUnder = Math.min(0.85, Math.max(0.15, pUnder));
   const [ou, uu] = applyMargin([1 - pUnder, pUnder]);
   return {
-    over: Math.max(1.25, ou ?? 1.9),
-    under: Math.max(1.25, uu ?? 1.9),
+    over: ou ?? 1.9,
+    under: uu ?? 1.9,
   };
 }
 
@@ -113,8 +114,8 @@ function oddsBtts(hs: number, as: number): VirtualOddsBtts {
   pYes = Math.min(0.85, Math.max(0.15, pYes));
   const [yy, nn] = applyMargin([pYes, 1 - pYes]);
   return {
-    yes: Math.max(1.25, yy ?? 1.85),
-    no: Math.max(1.25, nn ?? 1.95),
+    yes: yy ?? 1.85,
+    no: nn ?? 1.95,
   };
 }
 
@@ -221,4 +222,4 @@ export function lookupOdds(
     if (pick === "no") return m.oddsBtts.no;
   }
   return null;
-}
+  }
