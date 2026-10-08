@@ -113,7 +113,7 @@ export default function DicePage() {
   const rule =
     direction === "under"
       ? `Win if roll is under ${target}`
-      : `Win if roll is over ${target}`;
+      : `Win if roll is ${target} or higher`;
 
   const resultText =
     last && typeof last.roll === "number"
@@ -227,7 +227,7 @@ export default function DicePage() {
         <div className="mt-2 flex justify-between text-[11px] text-ink-muted">
           <span>Win chance {winChance.toFixed(0)}%</span>
           <span>
-            {direction === "under" ? `roll < ${target}` : `roll > ${target}`}
+            {direction === "under" ? `roll < ${target}` : `roll ≥ ${target}`}
           </span>
         </div>
       </div>
@@ -259,4 +259,4 @@ export default function DicePage() {
     </CasinoShell>
   );
           }
-        
+
