@@ -1,12 +1,11 @@
 import "server-only";
-import { randomBytes } from "crypto";
 import { PENALTY_MULT, type PenaltySide } from "@/types/casino";
+import { randomIndex } from "@/lib/casino/rng";
 
 const SIDES: PenaltySide[] = ["left", "center", "right"];
 
 function randSide(): PenaltySide {
-  const buf = randomBytes(4);
-  return SIDES[buf.readUInt32BE(0) % 3]!;
+  return SIDES[randomIndex(SIDES.length)] ?? "center";
 }
 
 export function resolvePenaltyRound(opts: {
