@@ -67,9 +67,18 @@ export const THIMBLES_CUPS = 3;
 export const THIMBLES_MULT =
   Math.floor((THIMBLES_CUPS * (1 - CASINO_HOUSE_EDGE)) * 100) / 100;
 
-export const PENALTY_MULT = THIMBLES_MULT;
+/**
+ * Penalty: keeper dives left / centre / right at random, so a shot scores with
+ * probability 2/3. Fair multiplier is 1.5x; minus the 1% edge, floored → 1.48x
+ * (return-to-player ≈ 98.7%).
+ */
+export const PENALTY_MULT = 1.48;
 
-export const WHEEL_SEGMENTS = [0, 0.5, 1.1, 1.5, 2, 3, 5, 0, 1.2, 1.5, 2, 10] as const;
+/**
+ * 12 equally likely segments. Average multiplier = 11.8 / 12 → return-to-player
+ * ≈ 98.3%. (The previous table averaged 2.32x, i.e. paid players 232%.)
+ */
+export const WHEEL_SEGMENTS = [0, 0.4, 0.8, 1.2, 1.5, 3, 0, 0.4, 0.8, 1.2, 1.5, 1] as const;
 
 /** Plinko: 17 buckets (16 peg rows), Stake-style low risk. */
 export const PLINKO_SLOTS = [
@@ -90,32 +99,25 @@ export const KENO_MAX_PICKS = 10;
 /**
  * Keno payout table: [pickCount][hits] = multiplier.
  * Sparse — only defined cells pay; others 0.
- * Rough EV near 0.96–0.99 depending on pick size.
+ * Tuned from the exact hypergeometric odds (40 numbers, 10 drawn) so every
+ * pick size returns ≈ 97%. Top prizes capped at 2500x.
  */
 export const KENO_PAYTABLE: Record<number, Record<number, number>> = {
-  1: { 1: 3.6 },
-  2: { 2: 14 },
-  3: { 2: 2.2, 3: 45 },
-  4: { 2: 1.2, 3: 6, 4: 90 },
-  5: { 3: 3, 4: 18, 5: 350 },
-  6: { 3: 2, 4: 8, 5: 70, 6: 1200 },
-  7: { 3: 1.5, 4: 4, 5: 25, 6: 200, 7: 4000 },
-  8: { 4: 3, 5: 12, 6: 80, 7: 800, 8: 8000 },
-  9: { 4: 2, 5: 7, 6: 35, 7: 250, 8: 2000, 9: 10000 },
-  10: { 5: 5, 6: 20, 7: 100, 8: 800, 9: 4000, 10: 10000 },
+  1: { 1: 3.87 },
+  2: { 2: 16.81 },
+  3: { 2: 2.51, 3: 51.54 },
+  4: { 2: 1.66, 3: 8.33, 4: 124 },
+  5: { 3: 5.34, 4: 32.09, 5: 624 },
+  6: { 3: 2.99, 4: 11.99, 5: 104, 6: 1799 },
+  7: { 3: 2.16, 4: 5.76, 5: 36.06, 6: 288, 7: 2500 },
+  8: { 4: 5.77, 5: 23.09, 6: 153, 7: 1000, 8: 2500 },
+  9: { 4: 3.49, 5: 12.23, 6: 61.17, 7: 436, 8: 1000, 9: 2500 },
+  10: { 5: 11.82, 6: 47.31, 7: 236, 8: 500, 9: 1000, 10: 2500 },
 };
 
 /** Penalty series: 5 shots, mult by goals scored. */
 export const PENALTY_SERIES_SHOTS = 5;
-export const PENALTY_SERIES_MULT: Record<number, number> = {
-  0: 0,
-  1: 0.4,
-  2: 1.1,
-  3: 2.4,
-  4: 5.5,
-  5: 14,
-};
 
 export function isCasinoGameId(v: string): v is CasinoGameId {
   return (CASINO_GAMES as { id: string }[]).some((g) => g.id === v);
-  }
+}
