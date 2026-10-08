@@ -3,19 +3,30 @@ import { randomUnit } from "@/lib/casino/rng";
 import { CASINO_HOUSE_EDGE } from "@/types/casino";
 
 /**
- * Crash point ≥ 1.00. House edge via 1% instant bust chance + scaled curve.
+ * Crash point from a uniform u in [0, 1).
+ * P(crashPoint >= c) = (1 - edge) / c for every c > 1, so a fixed cash-out
+ * target c pays c with probability 0.99 / c → return-to-player is exactly 99%.
+ * (No extra "instant bust" roll — that would charge the edge twice.)
  */
-export function generateCrashPoint(): number {
-  if (randomUnit() < CASINO_HOUSE_EDGE) return 1.0;
-  const r = Math.max(1e-9, 1 - randomUnit());
-  const raw = 0.99 / r;
+export function crashPointFromUnit(u: number): number {
+  const r = Math.max(1e-12, 1 - u);
+  const raw = (1 - CASINO_HOUSE_EDGE) / r;
   const point = Math.floor(raw * 100) / 100;
   return Math.min(Math.max(point, 1.0), 1000);
 }
 
-export function resolveCrashRound(opts: { stake: number; cashoutAt: number }) {
-  const crashPoint = generateCrashPoint();
-  const cashoutAt = Math.floor(opts.cashoutAt * 100) / 100;
+export function generateCrashPoint(): number {
+  return crashPointFromUnit(randomUnit());
+}
+
+export function resolveCrashRound(opts: {
+  stake: number;
+  cashoutAt: number;
+  /** Test hook only — production calls omit it. */
+  crashPoint?: number;
+}) {
+  const crashPoint = opts.crashPoint ?? generateCrashPoint();
+  const cashoutAt = Math.round(opts.cashoutAt * 100) / 100;
   const won = cashoutAt <= crashPoint && cashoutAt >= 1.01;
   const multiplier = won ? cashoutAt : 0;
   const payout = won ? Math.floor(opts.stake * cashoutAt * 100) / 100 : 0;
@@ -33,6 +44,6 @@ export function validateCrashInput(raw: { stake?: unknown; cashoutAt?: unknown }
   return {
     ok: true as const,
     stake: Math.floor(stake * 100) / 100,
-    cashoutAt: Math.floor(cashoutAt * 100) / 100,
+    cashoutAt: Math.round(cashoutAt * 100) / 100,
   };
 }
