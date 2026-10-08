@@ -1,5 +1,4 @@
 /**
- * Casino demo types — isolated from sports Wallet / ledger.
  * Chips are never withdrawable and never mix with purchased/promo.
  */
 
