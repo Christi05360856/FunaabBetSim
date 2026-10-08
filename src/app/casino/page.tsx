@@ -151,6 +151,12 @@ export default function CasinoPage() {
             Play for free · Demo chips
           </p>
         </div>
+        <Link
+          href="/virtual"
+          className="shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2 text-xs font-bold text-emerald-700 dark:text-emerald-300"
+        >
+          Virtual
+        </Link>
       </div>
 
       {/* Balance card */}
@@ -198,6 +204,30 @@ export default function CasinoPage() {
         </p>
       )}
 
+      {/* Instant Virtual — prominent entry */}
+      <Link
+        href="/virtual"
+        className="mt-5 flex items-center gap-3 overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/15 to-transparent p-4 active:scale-[0.99]"
+      >
+        <span className="text-3xl" aria-hidden>
+          ⚽
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+            Instant
+          </p>
+          <p className="truncate text-base font-bold text-ink">
+            Virtual Football
+          </p>
+          <p className="truncate text-[11px] text-ink-muted">
+            Simulated matches · 1X2, O/U, BTTS
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white">
+          Play
+        </span>
+      </Link>
+
       {/* Games */}
       <h2 className="mb-2 mt-6 text-xs font-bold uppercase tracking-wider text-ink-muted">
         Games
@@ -228,4 +258,4 @@ export default function CasinoPage() {
       </div>
     </main>
   );
-}
+            }
