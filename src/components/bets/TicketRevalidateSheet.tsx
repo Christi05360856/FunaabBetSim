@@ -53,11 +53,6 @@ export function TicketRevalidateSheet({
         <h2 id="reval-title" className="text-base font-bold text-ink">
           {title}
         </h2>
-        <p className="mt-1 text-xs text-ink-muted">
-          Live odds from the server. This builds a{" "}
-          <span className="font-semibold text-ink">new</span> slip — nothing is
-          placed until you set a stake and confirm.
-        </p>
 
         {(warning || dropped.length > 0 || oddsChangedCount > 0) && (
           <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-800 dark:text-amber-200">
