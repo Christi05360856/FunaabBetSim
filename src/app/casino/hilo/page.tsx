@@ -81,7 +81,18 @@ export default function HiloPage() {
       const data: PlayRes = await res.json();
       if (!res.ok) throw new Error(data.error || "Play failed");
       setResult(data);
-      if (typeof data.next === "number") setCurrent(data.next);
+      if (typeof data.next === "number") {
+        const nextCard = data.next;
+        setCurrent(nextCard);
+        // Nothing beats a King / sits below an Ace — flip to the possible side.
+        setChoice((c) =>
+          nextCard >= 13 && c === "higher"
+            ? "lower"
+            : nextCard <= 1 && c === "lower"
+              ? "higher"
+              : c
+        );
+      }
       if (typeof data.balanceAfter === "number") setBalance(data.balanceAfter);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
@@ -110,7 +121,7 @@ export default function HiloPage() {
           <button
             key={c}
             type="button"
-            disabled={busy}
+            disabled={busy || (c === "higher" ? current >= 13 : current <= 1)}
             onClick={() => setChoice(c)}
             className={`rounded-xl py-3 text-sm font-bold capitalize disabled:opacity-60 ${
               choice === c
