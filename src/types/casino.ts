@@ -72,9 +72,12 @@ export const PENALTY_MULT = THIMBLES_MULT;
 
 export const WHEEL_SEGMENTS = [0, 0.5, 1.1, 1.5, 2, 3, 5, 0, 1.2, 1.5, 2, 10] as const;
 
-/** Plinko: 9 buckets (8 peg rows). Multipliers tuned ~1% house edge. */
-export const PLINKO_SLOTS = [5.6, 2.1, 1.1, 0.7, 0.4, 0.7, 1.1, 2.1, 5.6] as const;
-export const PLINKO_ROWS = 8;
+/** Plinko: 17 buckets (16 peg rows), Stake-style low risk. ~99% RTP. */
+export const PLINKO_SLOTS = [
+  16, 9, 2, 1.4, 1.4, 1.2, 1.1, 1, 0.5,
+  1, 1.1, 1.2, 1.4, 1.4, 2, 9, 16,
+] as const;
+export const PLINKO_ROWS = 16;
 
 /** Hi-Lo card range 1–13 (Ace–King face value). */
 export const HILO_MIN = 1;
@@ -116,4 +119,4 @@ export const PENALTY_SERIES_MULT: Record<number, number> = {
 
 export function isCasinoGameId(v: string): v is CasinoGameId {
   return (CASINO_GAMES as { id: string }[]).some((g) => g.id === v);
-  }
+}
