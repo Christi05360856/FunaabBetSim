@@ -28,46 +28,129 @@ type PlayRes = {
 
 type Phase = "ready" | "show" | "shuffle" | "pick" | "reveal";
 
-/** Rounded cup / thimble (not a flat box). */
-function CupShell({
+/** Wooden barrel with steel hoops and a dark open top. */
+function BarrelShell({
+  uid,
   lifted,
   highlight,
   dim,
 }: {
+  uid: string;
   lifted: boolean;
   highlight: boolean;
   dim?: boolean;
 }) {
+  const wood = `wood-${uid}`;
+  const steel = `steel-${uid}`;
+  const inner = `inner-${uid}`;
+  const rim = `rim-${uid}`;
+
   return (
     <div
-      className={`relative mx-auto h-[100px] w-[72px] transition-transform duration-500 ease-out ${
-        lifted ? "-translate-y-12 -rotate-[22deg]" : ""
+      className={`relative mx-auto h-[100px] w-[84px] transition-transform duration-500 ease-out ${
+        lifted ? "-translate-y-10 -rotate-[14deg]" : ""
       } ${dim ? "opacity-70" : ""}`}
-      style={{ transformOrigin: "70% 100%" }}
+      style={{
+        transformOrigin: "70% 100%",
+        filter: highlight ? "drop-shadow(0 0 7px #10b981)" : undefined,
+      }}
     >
-      {/* rim */}
-      <div
-        className={`absolute left-1/2 top-0 z-20 h-4 w-[72px] -translate-x-1/2 rounded-full border-2 ${
-          highlight
-            ? "border-brand bg-emerald-600"
-            : "border-amber-950 bg-amber-800"
-        }`}
-      />
-      {/* outer body — trapezoid feel via rounded bottom */}
-      <div
-        className={`absolute left-1/2 top-2 z-10 h-[88px] w-[68px] -translate-x-1/2 rounded-b-[36px] rounded-t-[8px] border-2 border-t-0 shadow-md ${
-          highlight
-            ? "border-brand bg-gradient-to-b from-amber-500 via-amber-700 to-amber-950"
-            : "border-amber-950 bg-gradient-to-b from-amber-500 via-amber-700 to-amber-950"
-        }`}
+      <svg
+        viewBox="0 0 84 100"
+        width="84"
+        height="100"
+        className="block overflow-visible"
+        aria-hidden
       >
-        {/* wood bands */}
-        <div className="absolute left-[8%] top-[28%] h-[3px] w-[84%] rounded-full bg-amber-950/50" />
-        <div className="absolute left-[6%] top-[52%] h-[4px] w-[88%] rounded-full bg-slate-400/70" />
-        <div className="absolute left-[8%] top-[72%] h-[3px] w-[84%] rounded-full bg-amber-950/50" />
+        <defs>
+          <linearGradient id={wood} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#3f230e" />
+            <stop offset="0.25" stopColor="#9a5a26" />
+            <stop offset="0.5" stopColor="#c8803f" />
+            <stop offset="0.75" stopColor="#8f5122" />
+            <stop offset="1" stopColor="#38200c" />
+          </linearGradient>
+          <linearGradient id={steel} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#323f56" />
+            <stop offset="0.3" stopColor="#9fb0cc" />
+            <stop offset="0.5" stopColor="#dbe3f1" />
+            <stop offset="0.75" stopColor="#7a8bab" />
+            <stop offset="1" stopColor="#2e3b52" />
+          </linearGradient>
+          <linearGradient id={rim} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#d89556" />
+            <stop offset="1" stopColor="#8a5024" />
+          </linearGradient>
+          <radialGradient id={inner} cx="0.5" cy="0.4" r="0.7">
+            <stop offset="0" stopColor="#140a04" />
+            <stop offset="1" stopColor="#3d210d" />
+          </radialGradient>
+        </defs>
+
+        {/* body */}
+        <path
+          d="M10 14 C0 40 0 62 10 86 C30 96 54 96 74 86 C84 62 84 40 74 14 Z"
+          fill={`url(#${wood})`}
+          stroke="#2a1608"
+          strokeWidth="1.5"
+        />
+
+        {/* staves */}
+        <g
+          fill="none"
+          stroke="#2a1608"
+          strokeOpacity="0.45"
+          strokeWidth="1.2"
+        >
+          <path d="M24 20 C17 44 17 66 24 92" />
+          <path d="M42 22 L42 96" />
+          <path d="M60 20 C67 44 67 66 60 92" />
+        </g>
+
         {/* shine */}
-        <div className="absolute left-[12%] top-[18%] h-[40%] w-[10px] rounded-full bg-white/15" />
-      </div>
+        <path
+          d="M17 30 C13 46 13 62 17 76"
+          fill="none"
+          stroke="#ffffff"
+          strokeOpacity="0.22"
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+
+        {/* hoops */}
+        <path
+          d="M5 30 Q42 41 79 30 L80 38 Q42 49 4 38 Z"
+          fill={`url(#${steel})`}
+          stroke="#1f2a3d"
+          strokeWidth="1"
+        />
+        <path
+          d="M3.5 62 Q42 73 80.5 62 L80.5 70 Q42 81 3.5 70 Z"
+          fill={`url(#${steel})`}
+          stroke="#1f2a3d"
+          strokeWidth="1"
+        />
+
+        {/* top rim + opening */}
+        <ellipse
+          cx="42"
+          cy="14"
+          rx="32"
+          ry="10"
+          fill={`url(#${rim})`}
+          stroke="#2a1608"
+          strokeWidth="1.5"
+        />
+        <ellipse
+          cx="42"
+          cy="14.5"
+          rx="26.5"
+          ry="7"
+          fill={`url(#${inner})`}
+          stroke="#2a1608"
+          strokeWidth="1"
+        />
+      </svg>
     </div>
   );
 }
@@ -201,7 +284,7 @@ export default function ThimblesPage() {
     last != null && typeof last.ball === "number"
       ? last.won
         ? `Found it! · Payout ${chips(last.payout ?? 0)}`
-        : `Miss · Ball was under cup ${last.ball + 1} · Lost ${chips(stake)}`
+        : `Miss · Ball was under barrel ${last.ball + 1} · Lost ${chips(stake)}`
       : null;
 
   const canStart =
@@ -219,22 +302,25 @@ export default function ThimblesPage() {
 
       <p className="mb-2 text-center text-xs text-ink-muted">
         {phase === "ready" && "Watch where the gem is, then track the shuffle"}
-        {phase === "show" && "Remember this cup…"}
-        {phase === "shuffle" && "Follow the cups…"}
-        {phase === "pick" && "Tap the cup with the gem"}
+        {phase === "show" && "Remember this barrel…"}
+        {phase === "shuffle" && "Follow the barrels…"}
+        {phase === "pick" && "Tap the barrel with the gem"}
         {phase === "reveal" &&
-          (last?.won ? "Nice find!" : "Wrong cup — try again")}
+          (last?.won ? "Nice find!" : "Wrong barrel — try again")}
         {" · "}
         {THIMBLES_MULT.toFixed(2)}x
       </p>
 
-      {/* Stage with absolutely positioned cups so they can slide */}
-      <div className="relative mb-4 h-44 overflow-hidden rounded-2xl border border-ink-muted/15 bg-gradient-to-b from-stone-300/60 to-stone-400/40 dark:from-stone-800/60 dark:to-stone-900/50">
-        {/* slot markers */}
+      {/* Stage with absolutely positioned barrels so they can slide */}
+      <div className="relative mb-4 h-56 overflow-hidden rounded-2xl border border-slate-900/40 bg-gradient-to-b from-slate-500 to-slate-700 shadow-inner">
+        {/* stone texture hint */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.10),transparent_45%),radial-gradient(circle_at_80%_60%,rgba(0,0,0,0.18),transparent_50%)]" />
+
+        {/* floor shadows */}
         {[0, 1, 2].map((s) => (
           <div
             key={`slot-${s}`}
-            className="pointer-events-none absolute bottom-3 h-2 w-14 -translate-x-1/2 rounded-full bg-black/10"
+            className="pointer-events-none absolute bottom-6 h-3 w-20 -translate-x-1/2 rounded-full bg-black/30 blur-[2px]"
             style={{ left: slotLeft(s) }}
           />
         ))}
@@ -254,7 +340,7 @@ export default function ThimblesPage() {
               type="button"
               disabled={phase !== "pick" || busy}
               onClick={() => void chooseCup(cupId)}
-              className="absolute bottom-6 w-20 -translate-x-1/2 disabled:cursor-default"
+              className="absolute bottom-7 w-24 -translate-x-1/2 disabled:cursor-default"
               style={{
                 left: slotLeft(slot),
                 transition:
@@ -264,23 +350,25 @@ export default function ThimblesPage() {
                 zIndex: isLifted ? 20 : 10 + slot,
               }}
             >
-              {/* gem sits under cup, visible when lifted */}
+              {/* gem sits under barrel, visible when lifted */}
               {showGem && (
                 <span
-                  className="absolute bottom-1 left-1/2 z-0 -translate-x-1/2 text-2xl"
+                  className="absolute left-1/2 z-0 -translate-x-1/2 text-3xl"
+                  style={{ bottom: 20 }}
                   aria-hidden
                 >
                   💎
                 </span>
               )}
-              <CupShell
+              <BarrelShell
+                uid={`b${cupId}`}
                 lifted={isLifted}
                 highlight={highlight}
                 dim={phase === "reveal" && !isLifted}
               />
               <span
                 className={`mt-1 block text-center text-[11px] font-bold ${
-                  highlight ? "text-brand" : "text-ink-muted"
+                  highlight ? "text-emerald-300" : "text-white/80"
                 }`}
               >
                 {cupId + 1}
@@ -307,7 +395,7 @@ export default function ThimblesPage() {
 
       {phase === "pick" ? (
         <p className="mt-4 text-center text-sm font-semibold text-brand">
-          Tap a cup
+          Tap a barrel
         </p>
       ) : phase === "shuffle" || phase === "show" ? (
         <PrimaryBtn
@@ -331,4 +419,4 @@ export default function ThimblesPage() {
       )}
     </CasinoShell>
   );
-        }
+      }
