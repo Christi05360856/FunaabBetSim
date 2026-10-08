@@ -34,7 +34,14 @@ const ICONS: Record<string, string> = {
   coin: "🪙",
   mines: "💣",
   wheel: "🎡",
-  crash: "📈",
+  crash: "🚀",
+  thimbles: "🕳️",
+  "campus-crash": "🚌",
+  penalty: "⚽",
+  plinko: "🟣",
+  hilo: "🃏",
+  keno: "🔢",
+  "penalty-series": "🥅",
 };
 
 export default function CasinoPage() {
@@ -258,4 +265,4 @@ export default function CasinoPage() {
       </div>
     </main>
   );
-            }
+}
