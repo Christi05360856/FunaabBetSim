@@ -229,10 +229,10 @@ export default function HomePage() {
           All sports
         </Link>
         <Link
-          href="/bets"
-          className="flex flex-1 items-center justify-center rounded-xl bg-ink-muted/10 px-3 py-2.5 text-xs font-bold text-ink"
+          href="/virtual"
+          className="flex flex-1 items-center justify-center rounded-xl bg-emerald-500/10 px-3 py-2.5 text-xs font-bold text-emerald-700 dark:text-emerald-400"
         >
-          My Bets
+          Virtual
         </Link>
       </div>
 
@@ -337,4 +337,5 @@ export default function HomePage() {
     </main>
   );
       }
-        
+
+              
