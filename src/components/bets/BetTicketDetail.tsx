@@ -161,7 +161,7 @@ export function BetTicketDetail({
                     <div
                       className={
                         "h-0.5 flex-1 " +
-                        (timeline[i - 1].done ? "bg-emerald-500" : "bg-ink-muted/20")
+                        (timeline[i - 1]?.done ? "bg-emerald-500" : "bg-ink-muted/20")
                       }
                     />
                   )}
@@ -306,4 +306,4 @@ export function BetTicketDetail({
       </div>
     </div>
   );
-}
+        }
