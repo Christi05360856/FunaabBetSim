@@ -1,11 +1,11 @@
 import "server-only";
 import { CASINO_HOUSE_EDGE, type DiceDirection } from "@/types/casino";
-import { rollDice100 } from "@/lib/casino/rng";
+import { rollDiceCents } from "@/lib/casino/rng";
 
+/** Win chance in percent. Roll is an integer 0..9999 (hundredths). */
 export function diceWinChance(target: number, direction: DiceDirection): number {
-  // target is the threshold on 0–100 scale
   if (direction === "under") return target; // win if roll < target
-  return 100 - target; // win if roll > target
+  return 100 - target; // win if roll >= target
 }
 
 export function diceMultiplier(target: number, direction: DiceDirection): number {
@@ -17,10 +17,25 @@ export function diceMultiplier(target: number, direction: DiceDirection): number
   return Math.max(1.01, Math.floor(mult * 10000) / 10000);
 }
 
+/**
+ * Exact integer comparison (hundredths) — no float edge cases.
+ * under: wins on 0 … targetCents-1      → exactly target% of 10 000 rolls
+ * over : wins on targetCents … 9999     → exactly (100 - target)% of 10 000 rolls
+ */
+export function diceOutcome(
+  rollCents: number,
+  targetCents: number,
+  direction: DiceDirection
+): boolean {
+  return direction === "under" ? rollCents < targetCents : rollCents >= targetCents;
+}
+
 export function resolveDiceRound(opts: {
   stake: number;
   target: number;
   direction: DiceDirection;
+  /** Test hook only — production calls omit it. */
+  rollCents?: number;
 }): {
   roll: number;
   won: boolean;
@@ -29,9 +44,9 @@ export function resolveDiceRound(opts: {
   profit: number;
 } {
   const { stake, target, direction } = opts;
-  const roll = rollDice100();
-  const won =
-    direction === "under" ? roll < target : roll > target;
+  const rollCents = opts.rollCents ?? rollDiceCents();
+  const roll = rollCents / 100;
+  const won = diceOutcome(rollCents, Math.round(target * 100), direction);
   const multiplier = diceMultiplier(target, direction);
   const payout = won ? Math.floor(stake * multiplier * 100) / 100 : 0;
   const profit = won ? Math.floor((payout - stake) * 100) / 100 : -stake;
@@ -53,14 +68,15 @@ export function validateDiceInput(raw: {
   if (!Number.isFinite(target) || target < 2 || target > 98) {
     return { ok: false, error: "Target must be between 2 and 98" };
   }
-  // one decimal ok, snap to 2 decimals max
   if (direction !== "under" && direction !== "over") {
     return { ok: false, error: "Direction must be under or over" };
   }
   return {
     ok: true,
     stake: Math.floor(stake * 100) / 100,
-    target: Math.floor(target * 100) / 100,
+    // round (not floor): 33.3 * 100 is 3329.999… in floating point
+    target: Math.round(target * 100) / 100,
     direction,
   };
 }
+  
