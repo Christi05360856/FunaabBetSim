@@ -203,6 +203,6 @@ export async function POST(request: NextRequest) {
       : -stakeRounded,
     combinedOdds,
     legs: resolvedLegs,
-    balance: settled.wallet.balance,
+    balance: settled.balanceAfter,
   });
-}
+                                  }
