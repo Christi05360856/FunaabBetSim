@@ -1,13 +1,13 @@
 import "server-only";
-import { randomBytes } from "crypto";
 import type { PenaltySide } from "@/types/casino";
 import { PENALTY_LADDER } from "@/lib/casino/penaltyLadder";
+import { randomIndex } from "@/lib/casino/rng";
 
 const SIDES: PenaltySide[] = ["left", "center", "right"];
 const MAX_SHOTS = PENALTY_LADDER.length;
 
 function randSide(): PenaltySide {
-  return SIDES[randomBytes(4).readUInt32BE(0) % 3]!;
+  return SIDES[randomIndex(SIDES.length)] ?? "center";
 }
 
 /**
@@ -22,7 +22,6 @@ export function resolvePenaltySeriesRound(opts: {
 }) {
   const { stake, shots } = opts;
   const target = shots.length;
-
   const keepers: PenaltySide[] = [];
   const results: boolean[] = [];
   let goals = 0;
@@ -30,15 +29,13 @@ export function resolvePenaltySeriesRound(opts: {
   for (let i = 0; i < target; i++) {
     const keeper = randSide();
     const scored = shots[i] !== keeper;
-
     keepers.push(keeper);
     results.push(scored);
-
     if (!scored) break;
     goals += 1;
   }
 
-  const completed = goals === target;
+  const completed = target > 0 && goals === target;
   const multiplier = completed ? (PENALTY_LADDER[target - 1] ?? 0) : 0;
   const payout =
     completed && multiplier > 0
@@ -64,20 +61,20 @@ export function validatePenaltySeriesInput(raw: {
   shots?: unknown;
 }) {
   const stake = Number(raw.stake);
-
   if (!Number.isFinite(stake) || stake <= 0) {
     return { ok: false as const, error: "Invalid stake" };
   }
-
-    if (!Array.isArray(raw.shots) || raw.shots.length !== MAX_SHOTS) {
+  if (
+    !Array.isArray(raw.shots) ||
+    raw.shots.length < 1 ||
+    raw.shots.length > MAX_SHOTS
+  ) {
     return {
       ok: false as const,
-      error: `Provide exactly ${MAX_SHOTS} shots`,
+      error: `Provide between 1 and ${MAX_SHOTS} shots`,
     };
-    }
-
+  }
   const shots: PenaltySide[] = [];
-
   for (const s of raw.shots) {
     if (s !== "left" && s !== "center" && s !== "right") {
       return {
@@ -87,7 +84,6 @@ export function validatePenaltySeriesInput(raw: {
     }
     shots.push(s);
   }
-
   return {
     ok: true as const,
     stake: Math.floor(stake * 100) / 100,
