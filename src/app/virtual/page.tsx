@@ -92,27 +92,20 @@ export default function VirtualPage() {
   }, [user]);
 
   const loadRound = useCallback(
-    async (lg: string, force = false) => {
+    async (_lg?: string) => {
       if (!user) return;
       setBusy(true);
       setErr(null);
       try {
         const t = await token();
-        const res = await fetch(
-          force
-            ? "/api/virtual/round"
-            : `/api/virtual/round?league=${encodeURIComponent(lg)}`,
-          force
-            ? {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${t}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ league: lg }),
-              }
-            : { headers: { Authorization: `Bearer ${t}` } }
-        );
+        const res = await fetch("/api/virtual/round", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${t}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({}),
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to load board");
         setRound(data.round);
@@ -132,10 +125,15 @@ export default function VirtualPage() {
   );
 
   useEffect(() => {
-    if (user) void loadRound(league, false);
-  }, [user, league]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (user) void loadRound();
+    // only on mount / user change — league is client filter
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
-  const matches = round?.matches ?? [];
+  const matches = useMemo(() => {
+    const all = round?.matches ?? [];
+    return all.filter((m) => m.league === league);
+  }, [round, league]);
 
   const totalOdds = useMemo(
     () =>
@@ -717,7 +715,7 @@ export default function VirtualPage() {
             <button
               type="button"
               disabled={busy}
-              onClick={() => void loadRound(league, true)}
+              onClick={() => void loadRound()}
               className="rounded-xl border border-ink-muted/20 px-3 py-2.5 text-xs font-bold text-ink-muted disabled:opacity-40"
             >
               Next round
@@ -794,7 +792,7 @@ export default function VirtualPage() {
           <button
             type="button"
             disabled={busy}
-            onClick={() => void loadRound(league, true)}
+            onClick={() => void loadRound()}
             className="bg-brand py-3.5 text-sm font-bold text-white disabled:opacity-50"
           >
             Next Round
@@ -808,4 +806,4 @@ export default function VirtualPage() {
       )}
     </main>
   );
-                }
+              }
