@@ -14,6 +14,11 @@ import {
 } from "@/types/domain";
 import { formatMoney } from "@/lib/domain/selectionLabel";
 import { isValidPromoTicket } from "@/lib/domain/wallet";
+import {
+  TicketRevalidateSheet,
+  type ReviewDropped,
+  type ReviewLeg,
+} from "@/components/bets/TicketRevalidateSheet";
 
 async function copyText(value: string): Promise<boolean> {
   try {
@@ -62,6 +67,13 @@ export function BetSlip() {
   const [codeCopied, setCodeCopied] = useState(false);
   const [loadCodeInput, setLoadCodeInput] = useState("");
   const [loadingCode, setLoadingCode] = useState(false);
+  const [codeReview, setCodeReview] = useState<{
+    legs: ReviewLeg[];
+    totalOdds: number;
+    dropped: ReviewDropped[];
+    oddsChangedCount: number;
+    warning?: string;
+  } | null>(null);
   /** cash = normal; promo = spend promo points only */
   const [fundMode, setFundMode] = useState<"cash" | "promo">("cash");
   const [mounted, setMounted] = useState(false);
@@ -239,36 +251,65 @@ export function BetSlip() {
             "Code not found or selections finished"
         );
       }
-      const legs = (body.booking?.legs ?? []) as {
-        matchId: string;
-        marketId: string;
-        selectionId: string;
-        selectionLabel: string;
-        odds: number;
-      }[];
+      const legs = (body.booking?.legs ?? []) as ReviewLeg[];
       if (!legs.length) throw new Error("Empty booking");
-      loadLegs(
-        legs.map((l) => {
-          const x = l as {
-            homeTeamName?: string;
-            awayTeamName?: string;
-            marketName?: string;
-          };
-          return {
-            ...l,
-            homeTeamName: (x.homeTeamName || "").trim() || "Home",
-            awayTeamName: (x.awayTeamName || "").trim() || "Away",
-            marketName: (x.marketName || "").trim() || "Market",
-          };
-        })
-      );
+      const dropped = (body.dropped ?? []) as ReviewDropped[];
+      const oddsChangedCount = Number(body.oddsChangedCount) || 0;
+      if (dropped.length > 0 || oddsChangedCount > 0 || body.warning) {
+        setCodeReview({
+          legs,
+          totalOdds: Number(body.booking?.totalOdds) || 1,
+          dropped,
+          oddsChangedCount,
+          warning: body.warning as string | undefined,
+        });
+      } else {
+        loadLegs(
+          legs.map((l) => ({
+            matchId: l.matchId,
+            marketId: l.marketId,
+            selectionId: l.selectionId,
+            selectionLabel: l.selectionLabel,
+            odds: l.odds,
+            marketType: l.marketType,
+            homeTeamName: (l.homeTeamName || "").trim() || "Home",
+            awayTeamName: (l.awayTeamName || "").trim() || "Away",
+            marketName: (l.marketName || "").trim() || "Market",
+          }))
+        );
+        setFeedback("Code loaded · " + legs.length + " selection(s)");
+      }
       setLoadCodeInput("");
-      setFeedback("Code loaded");
     } catch (e) {
       setFeedback(e instanceof Error ? e.message : "Could not load code");
     } finally {
       setLoadingCode(false);
     }
+  }
+
+  function confirmCodeReview() {
+    if (!codeReview || codeReview.legs.length === 0) return;
+    loadLegs(
+      codeReview.legs.map((l) => ({
+        matchId: l.matchId,
+        marketId: l.marketId,
+        selectionId: l.selectionId,
+        selectionLabel: l.selectionLabel,
+        odds: l.odds,
+        marketType: l.marketType,
+        homeTeamName: (l.homeTeamName || "").trim() || "Home",
+        awayTeamName: (l.awayTeamName || "").trim() || "Away",
+        marketName: (l.marketName || "").trim() || "Market",
+      }))
+    );
+    const skipped = codeReview.dropped.length;
+    setCodeReview(null);
+    setFeedback(
+      "Loaded " +
+        codeReview.legs.length +
+        " selection(s)" +
+        (skipped ? " · " + skipped + " skipped" : "")
+    );
   }
 
   return (
@@ -747,6 +788,21 @@ export function BetSlip() {
           </div>,
           document.body
         )}
+
+      {codeReview && (
+        <div className="pointer-events-auto">
+          <TicketRevalidateSheet
+            title="Load code — review"
+            legs={codeReview.legs}
+            totalOdds={codeReview.totalOdds}
+            dropped={codeReview.dropped}
+            oddsChangedCount={codeReview.oddsChangedCount}
+            warning={codeReview.warning}
+            onConfirm={confirmCodeReview}
+            onCancel={() => setCodeReview(null)}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -757,5 +813,4 @@ function TicketIcon() {
       <path d="M20 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v2a2 2 0 010 4v2a2 2 0 002 2h12a2 2 0 002-2v-2a2 2 0 010-4zM8 13H6v-2h2v2zm0-4H6V7h2v2zm4 4h-2v-2h2v2zm0-4h-2V7h2v2zm4 4h-2v-2h2v2zm0-4h-2V7h2v2z" />
     </svg>
   );
-                      }
-                    
+}
