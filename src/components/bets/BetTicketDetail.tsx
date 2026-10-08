@@ -12,10 +12,14 @@ import { useSheetHistory } from "@/lib/hooks/useSheetHistory";
 import { useBetSlip } from "@/lib/context/BetSlipContext";
 import { shareOfficialTicket } from "@/components/bets/TicketShareCard";
 import {
+  TicketRevalidateSheet,
+  type ReviewDropped,
+  type ReviewLeg,
+} from "@/components/bets/TicketRevalidateSheet";
+import {
   betLegs,
   displayOdds,
   legResult,
-  legsToSlipItems,
   matchLabel,
   settledReturn,
   settlementTimeline,
@@ -41,12 +45,82 @@ export function BetTicketDetail({
   const isAcca = legs.length > 1;
   const { requestClose } = useSheetHistory(true, onClose);
   const [shareBusy, setShareBusy] = useState(false);
+  const [betAgainBusy, setBetAgainBusy] = useState(false);
+  const [betAgainErr, setBetAgainErr] = useState<string | null>(null);
+  const [review, setReview] = useState<{
+    legs: ReviewLeg[];
+    totalOdds: number;
+    dropped: ReviewDropped[];
+    oddsChangedCount: number;
+    warning?: string;
+  } | null>(null);
   const timeline = settlementTimeline(bet, matches);
 
-  function onBetAgain() {
-    const items = legsToSlipItems(bet, matches, teams);
-    if (items.length === 0) return;
-    loadLegs(items);
+  async function onBetAgain() {
+    setBetAgainErr(null);
+    setBetAgainBusy(true);
+    try {
+      const legs = betLegs(bet).map((leg) => {
+        const m = matches[leg.matchId];
+        const home = m ? teams[m.homeTeamId]?.name : undefined;
+        const away = m ? teams[m.awayTeamId]?.name : undefined;
+        const { market } = resolveSelection(
+          leg.selectionId,
+          leg.selectionLabel,
+          (leg as { marketType?: string }).marketType
+        );
+        return {
+          matchId: leg.matchId,
+          marketId: leg.marketId,
+          selectionId: leg.selectionId,
+          selectionLabel: leg.selectionLabel,
+          odds: leg.odds,
+          homeTeamName: home,
+          awayTeamName: away,
+          marketName: market,
+        };
+      });
+      const res = await fetch("/api/bets/revalidate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ legs }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          body.error ?? "None of these selections are still available"
+        );
+      }
+      setReview({
+        legs: (body.legs ?? []) as ReviewLeg[],
+        totalOdds: Number(body.totalOdds) || 1,
+        dropped: (body.dropped ?? []) as ReviewDropped[],
+        oddsChangedCount: Number(body.oddsChangedCount) || 0,
+        warning: body.warning as string | undefined,
+      });
+    } catch (e) {
+      setBetAgainErr(e instanceof Error ? e.message : "Bet again failed");
+    } finally {
+      setBetAgainBusy(false);
+    }
+  }
+
+  function confirmReview() {
+    if (!review || review.legs.length === 0) return;
+    loadLegs(
+      review.legs.map((l) => ({
+        matchId: l.matchId,
+        marketId: l.marketId,
+        selectionId: l.selectionId,
+        selectionLabel: l.selectionLabel,
+        odds: l.odds,
+        marketType: l.marketType,
+        homeTeamName: (l.homeTeamName || "").trim() || "Home",
+        awayTeamName: (l.awayTeamName || "").trim() || "Away",
+        marketName: (l.marketName || "").trim() || "Market",
+      }))
+    );
+    setReview(null);
     requestClose();
     router.push("/fixtures");
   }
@@ -283,6 +357,12 @@ export function BetTicketDetail({
         )}
       </div>
 
+      {betAgainErr && (
+        <p className="mx-3 mb-2 rounded-xl bg-rose-500/10 px-3 py-2 text-center text-xs font-semibold text-rose-700">
+          {betAgainErr}
+        </p>
+      )}
+
       {/* Actions */}
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-ink-muted/15 bg-surface/95 px-3 py-3 backdrop-blur"
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
@@ -290,10 +370,11 @@ export function BetTicketDetail({
         <div className="mx-auto flex max-w-lg gap-2">
           <button
             type="button"
-            onClick={onBetAgain}
-            className="flex-1 rounded-xl border border-emerald-600/40 py-3 text-sm font-bold text-emerald-700 dark:text-emerald-400"
+            onClick={() => void onBetAgain()}
+            disabled={betAgainBusy}
+            className="flex-1 rounded-xl border border-emerald-600/40 py-3 text-sm font-bold text-emerald-700 disabled:opacity-50 dark:text-emerald-400"
           >
-            Bet again
+            {betAgainBusy ? "Checking…" : "Bet again"}
           </button>
           <button
             type="button"
@@ -304,6 +385,19 @@ export function BetTicketDetail({
           </button>
         </div>
       </div>
+
+      {review && (
+        <TicketRevalidateSheet
+          title="Bet again — review"
+          legs={review.legs}
+          totalOdds={review.totalOdds}
+          dropped={review.dropped}
+          oddsChangedCount={review.oddsChangedCount}
+          warning={review.warning}
+          onConfirm={confirmReview}
+          onCancel={() => setReview(null)}
+        />
+      )}
     </div>
   );
-        }
+                }
