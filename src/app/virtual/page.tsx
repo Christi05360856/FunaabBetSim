@@ -68,7 +68,7 @@ function pickLabel(market: string, pick: string) {
 }
 
 export default function VirtualPage() {
-  const { user, getIdToken } = useAuth();
+  const { user } = useAuth();
   const [league, setLeague] = useState(VIRTUAL_LEAGUES[0]!.id);
   const [round, setRound] = useState<VirtualRoundPublic | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
@@ -87,10 +87,9 @@ export default function VirtualPage() {
   const [simSkip, setSimSkip] = useState(false);
 
   const token = useCallback(async () => {
-    const t = await getIdToken();
-    if (!t) throw new Error("Sign in required");
-    return t;
-  }, [getIdToken]);
+    if (!user) throw new Error("Sign in required");
+    return user.getIdToken();
+  }, [user]);
 
   const loadRound = useCallback(
     async (lg: string, force = false) => {
@@ -814,4 +813,4 @@ export default function VirtualPage() {
       )}
     </main>
   );
-    }
+            }
