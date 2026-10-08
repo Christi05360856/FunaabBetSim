@@ -83,8 +83,10 @@ export default function WheelPage() {
     const currentMod = ((current % 360) + 360) % 360;
     const desiredMod = (360 - mid) % 360;
     let delta = desiredMod - currentMod;
-    if (delta <= 20) delta += 360; // always a visible spin
-    return current + delta + 360 * 4;
+    if (delta < 0) delta += 360;
+    // 3–4 full rotations so the spin is clearly visible
+    const turns = 3 + Math.floor(Math.random() * 2); // 3 or 4
+    return current + delta + 360 * turns;
   }
 
   async function play() {
@@ -110,7 +112,7 @@ export default function WheelPage() {
         spinDegRef.current = next;
         setSpinDeg(next);
         // Wait for CSS transition before showing result banner
-        await new Promise((r) => setTimeout(r, 1300));
+        await new Promise((r) => setTimeout(r, 3800));
       }
 
       setLast(data);
@@ -173,7 +175,9 @@ export default function WheelPage() {
           style={{
             background: `conic-gradient(${gradient})`,
             transform: `rotate(${spinDeg}deg)`,
-            transition: busy ? "transform 1.2s cubic-bezier(0.12, 0.8, 0.2, 1)" : "none",
+            transition: busy
+              ? "transform 3.6s cubic-bezier(0.15, 0.85, 0.12, 1)"
+              : "none",
           }}
         >
           {WHEEL_SEGMENTS.map((mult, i) => {
@@ -225,4 +229,5 @@ export default function WheelPage() {
       />
     </CasinoShell>
   );
-              }
+      }
+                              
