@@ -1,10 +1,6 @@
 import "server-only";
-import { randomBytes } from "crypto";
+import { randomIndex } from "@/lib/casino/rng";
 import { PLINKO_ROWS, PLINKO_SLOTS } from "@/types/casino";
-
-function unit(): number {
-  return randomBytes(4).readUInt32BE(0) / 0x1_0000_0000;
-}
 
 /**
  * Simulate ball path: at each row, go left (0) or right (1) with 50%.
@@ -15,7 +11,7 @@ export function resolvePlinkoRound(opts: { stake: number }) {
   const path: number[] = [];
   let rights = 0;
   for (let r = 0; r < PLINKO_ROWS; r++) {
-    const right = unit() < 0.5 ? 1 : 0;
+    const right = randomIndex(2);
     path.push(right);
     rights += right;
   }
