@@ -72,7 +72,7 @@ export const PENALTY_MULT = THIMBLES_MULT;
 
 export const WHEEL_SEGMENTS = [0, 0.5, 1.1, 1.5, 2, 3, 5, 0, 1.2, 1.5, 2, 10] as const;
 
-/** Plinko: 17 buckets (16 peg rows), Stake-style low risk. ~99% RTP. */
+/** Plinko: 17 buckets (16 peg rows), Stake-style low risk. */
 export const PLINKO_SLOTS = [
   16, 9, 2, 1.4, 1.4, 1.2, 1.1, 1, 0.5,
   1, 1.1, 1.2, 1.4, 1.4, 2, 9, 16,
@@ -119,4 +119,4 @@ export const PENALTY_SERIES_MULT: Record<number, number> = {
 
 export function isCasinoGameId(v: string): v is CasinoGameId {
   return (CASINO_GAMES as { id: string }[]).some((g) => g.id === v);
-}
+  }
