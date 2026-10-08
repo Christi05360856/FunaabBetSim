@@ -280,11 +280,6 @@ export default function VirtualPage() {
       const minute = Math.floor(e * 90);
       const next: Record<string, SimScore> = {};
       for (const m of targets) {
-        // goals appear progressively
-        const goalProgress = Math.min(1, e * 1.15);
-        const home = Math.min(m.h, Math.floor(goalProgress * (m.h + 0.001)));
-        const away = Math.min(m.a, Math.floor(goalProgress * (m.a + 0.001)));
-        // delay second goal slightly for drama
         const homeFinal =
           m.h === 0 ? 0 : Math.min(m.h, Math.floor(e * m.h + (e > 0.3 ? 0.2 : 0)));
         const awayFinal =
@@ -779,7 +774,7 @@ export default function VirtualPage() {
         </div>
       )}
 
-      {phase === "result" && (
+      {phase === "result" && result && (
         <div
           className="fixed inset-x-0 z-40 grid grid-cols-2"
           style={{
@@ -813,4 +808,4 @@ export default function VirtualPage() {
       )}
     </main>
   );
-}
+                }
