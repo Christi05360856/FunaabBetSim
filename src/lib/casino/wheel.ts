@@ -1,11 +1,9 @@
 import "server-only";
-import { randomBytes } from "crypto";
 import { WHEEL_SEGMENTS } from "@/types/casino";
+import { randomIndex } from "@/lib/casino/rng";
 
 export function resolveWheelRound(opts: { stake: number }) {
-  const buf = randomBytes(4);
-  const len = WHEEL_SEGMENTS.length;
-  const idx = buf.readUInt32BE(0) % len;
+  const idx = randomIndex(WHEEL_SEGMENTS.length);
   const multiplier: number = WHEEL_SEGMENTS[idx] ?? 0;
   const won = multiplier > 0;
   const payout = won ? Math.floor(opts.stake * multiplier * 100) / 100 : 0;
