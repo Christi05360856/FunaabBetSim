@@ -1,5 +1,5 @@
 import "server-only";
-import { randomBytes } from "crypto";
+import { shuffled } from "@/lib/casino/rng";
 import {
   KENO_DRAW,
   KENO_MAX_PICKS,
@@ -9,11 +9,9 @@ import {
 
 function shuffleDraw(): number[] {
   const pool = Array.from({ length: KENO_POOL }, (_, i) => i + 1);
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = randomBytes(4).readUInt32BE(0) % (i + 1);
-    [pool[i], pool[j]] = [pool[j]!, pool[i]!];
-  }
-  return pool.slice(0, KENO_DRAW).sort((a, b) => a - b);
+  return shuffled(pool)
+    .slice(0, KENO_DRAW)
+    .sort((a, b) => a - b);
 }
 
 export function resolveKenoRound(opts: {
