@@ -1,14 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useAuth } from "@/lib/auth/AuthContext";
 import {
   CASINO_MAX_STAKE,
   CASINO_MIN_STAKE,
-  PENALTY_SERIES_MULT,
-  PENALTY_SERIES_SHOTS,
   type PenaltySide,
 } from "@/types/casino";
+import { PENALTY_LADDER } from "@/lib/casino/penaltyLadder";
 import {
   CasinoShell,
   PrimaryBtn,
@@ -32,11 +31,15 @@ type PlayRes = {
   balanceAfter?: number;
 };
 
+const MAX_SHOTS = PENALTY_LADDER.length;
+
 const SIDES: { id: PenaltySide; label: string; arrow: string }[] = [
   { id: "left", label: "Left", arrow: "◀" },
   { id: "center", label: "Center", arrow: "▲" },
   { id: "right", label: "Right", arrow: "▶" },
 ];
+
+type Phase = "idle" | "fly" | "done";
 
 function keeperOffset(side: PenaltySide | null, animating: boolean): string {
   if (!side || animating) return "translateX(-50%)";
@@ -45,10 +48,7 @@ function keeperOffset(side: PenaltySide | null, animating: boolean): string {
   return "translateX(-50%)";
 }
 
-function ballStyle(
-  shot: PenaltySide | null,
-  phase: "idle" | "fly" | "done"
-): React.CSSProperties {
+function ballStyle(shot: PenaltySide | null, phase: Phase): CSSProperties {
   if (phase === "idle" || !shot) {
     return {
       bottom: "8%",
@@ -80,15 +80,21 @@ export default function PenaltySeriesPage() {
   const { user } = useAuth();
   const [balance, setBalance] = useState<number | null>(null);
   const [stake, setStake] = useState(100);
-  const [shots, setShots] = useState<PenaltySide[]>(
-    Array(PENALTY_SERIES_SHOTS).fill("center") as PenaltySide[]
+
+  // How many goals in a row you are going for (1..5)
+  const [target, setTarget] = useState(MAX_SHOTS);
+  const [picks, setPicks] = useState<(PenaltySide | null)[]>(
+    Array(MAX_SHOTS).fill(null)
   );
+  const [pickIndex, setPickIndex] = useState(0);
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [last, setLast] = useState<PlayRes | null>(null);
-  const [phase, setPhase] = useState<"idle" | "fly" | "done">("idle");
+  const [phase, setPhase] = useState<Phase>("idle");
   const [activeShot, setActiveShot] = useState(0);
-  const [revealed, setRevealed] = useState(0);
+  const [scored, setScored] = useState(0);
+  const [missedAt, setMissedAt] = useState<number | null>(null);
   const [showKeeper, setShowKeeper] = useState<PenaltySide | null>(null);
 
   const loadBal = useCallback(async () => {
@@ -106,24 +112,43 @@ export default function PenaltySeriesPage() {
     void loadBal();
   }, [loadBal]);
 
-  function setShot(side: PenaltySide) {
-    if (busy) return;
-    setLast(null);
-    setShots((prev) => {
+  const chosen = picks
+    .slice(0, target)
+    .filter((p): p is PenaltySide => p !== null);
+  const ready = chosen.length === target;
+  const mult = PENALTY_LADDER[target - 1] ?? 0;
+  const potential = Math.floor(stake * mult * 100) / 100;
+  const completed = !!last?.completed;
+
+  function selectTarget(n: number) {
+    if (busy || last) return;
+    setTarget(n);
+    setPickIndex((cur) => Math.min(cur, n - 1));
+  }
+
+  function choose(side: PenaltySide) {
+    if (busy || last) return;
+    setPicks((prev) => {
       const next = [...prev];
-      next[activeShot] = side;
+      next[pickIndex] = side;
       return next;
     });
+    const nextEmpty = picks.findIndex(
+      (p, i) => i < target && i !== pickIndex && p === null
+    );
+    if (nextEmpty !== -1) setPickIndex(nextEmpty);
   }
 
   async function play() {
-    if (!user || busy) return;
+    if (!user || busy || !ready) return;
 
     setBusy(true);
     setErr(null);
     setLast(null);
     setShowKeeper(null);
-    setRevealed(0);
+    setScored(0);
+    setMissedAt(null);
+    setActiveShot(0);
     setPhase("fly");
 
     try {
@@ -137,7 +162,7 @@ export default function PenaltySeriesPage() {
         body: JSON.stringify({
           game: "penalty-series",
           stake,
-          shots,
+          shots: chosen,
         }),
       });
 
@@ -147,7 +172,8 @@ export default function PenaltySeriesPage() {
       const results = data.results ?? [];
       const keepers = data.keepers ?? [];
 
-      // Reveal one penalty at a time. A miss ends the visual sequence immediately.
+      // Reveal one penalty at a time. A save ends the run immediately.
+      let goalsSoFar = 0;
       for (let i = 0; i < results.length; i++) {
         setActiveShot(i);
         setShowKeeper(null);
@@ -155,7 +181,13 @@ export default function PenaltySeriesPage() {
         await new Promise((r) => setTimeout(r, 520));
         setShowKeeper(keepers[i] ?? null);
         setPhase("done");
-        setRevealed(i + 1);
+
+        if (results[i]) {
+          goalsSoFar += 1;
+          setScored(goalsSoFar);
+        } else {
+          setMissedAt(i);
+        }
         await new Promise((r) => setTimeout(r, 430));
 
         if (!results[i]) break;
@@ -177,24 +209,89 @@ export default function PenaltySeriesPage() {
     setLast(null);
     setPhase("idle");
     setShowKeeper(null);
-    setRevealed(0);
+    setScored(0);
+    setMissedAt(null);
     setActiveShot(0);
-    setShots(Array(PENALTY_SERIES_SHOTS).fill("center") as PenaltySide[]);
+    setPickIndex(0);
+    setPicks(Array(MAX_SHOTS).fill(null));
   }
 
-  const failed = last && !last.completed;
-  const completed = last?.completed;
+  const ballShot: PenaltySide | null =
+    phase === "idle" ? null : (picks[activeShot] ?? null);
 
   return (
     <CasinoShell title="Penalty Series" balance={balance}>
-      <div className="mb-3 flex items-center justify-between rounded-xl bg-surface px-3 py-2 text-xs">
-        <span className="font-bold text-ink">5 Consecutive Penalties</span>
-        <span className="font-bold text-brand">
-          {revealed}/{PENALTY_SERIES_SHOTS}
-        </span>
+      {/* Ladder: tap a step to choose your target */}
+      <div className="mb-3 rounded-2xl bg-surface px-2 py-3">
+        <div className="relative grid grid-cols-5">
+          <div className="absolute left-[10%] right-[10%] top-[11px] h-1.5 rounded-full bg-ink-muted/15" />
+          <div
+            className="absolute left-[10%] top-[11px] h-1.5 rounded-full bg-emerald-500 transition-all duration-300"
+            style={{
+              width: `${(scored <= 1 ? 0 : (scored - 1) / (MAX_SHOTS - 1)) * 80}%`,
+            }}
+          />
+          {PENALTY_LADDER.map((m, i) => {
+            const isGoal = i < scored;
+            const isMiss = missedAt === i;
+            const isActive = busy && i === activeShot && !isGoal && !isMiss;
+            const isTarget = !busy && !last && i === target - 1;
+            const inRange = !busy && !last && i < target - 1;
+            const dim = i >= target;
+            return (
+              <button
+                key={i}
+                type="button"
+                disabled
+                onClick={() => selectTarget(i + 1)}
+                className={`relative z-10 flex flex-col items-center gap-1 disabled:cursor-default ${
+                  dim ? "opacity-40" : ""
+                }`}
+              >
+                <span
+                  className={`flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs ${
+                    isGoal
+                      ? "border-emerald-500 bg-emerald-500 text-white"
+                      : isMiss
+                        ? "border-red-500 bg-red-500 text-white"
+                        : isActive
+                          ? "border-brand bg-white"
+                          : isTarget
+                            ? "border-brand bg-brand/20"
+                            : inRange
+                              ? "border-brand/40 bg-surface"
+                              : "border-ink-muted/30 bg-surface"
+                  }`}
+                >
+                  {isGoal ? "⚽" : isMiss ? "✕" : ""}
+                </span>
+                <span
+                  className={`text-[11px] font-black ${
+                    isGoal
+                      ? "text-emerald-600"
+                      : isMiss
+                        ? "text-red-500"
+                        : isTarget
+                          ? "text-brand"
+                          : "text-ink-muted"
+                  }`}
+                >
+                  x{m}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {!last && (
+          <p className="mt-2 text-center text-[11px] font-semibold text-ink-muted">
+            Goal: score {target} in a row →{" "}
+            <span className="text-brand">x{mult}</span> · win {chips(potential)}
+          </p>
+        )}
       </div>
 
-      {/* Same visual language as the normal Penalty game */}
+      {/* Pitch */}
       <div className="relative mb-4 overflow-hidden rounded-2xl border border-ink-muted/15">
         <div className="h-8 bg-gradient-to-b from-sky-300/50 to-sky-200/30 dark:from-sky-900/40 dark:to-sky-950/20" />
 
@@ -224,7 +321,7 @@ export default function PenaltySeriesPage() {
 
           <div
             className="absolute z-20 text-3xl"
-            style={ballStyle(shots[activeShot], phase)}
+            style={ballStyle(ballShot, phase)}
             aria-hidden
           >
             ⚽
@@ -236,7 +333,9 @@ export default function PenaltySeriesPage() {
                 completed ? "bg-emerald-500" : "bg-red-500"
               }`}
             >
-              {completed ? "5/5 — CASH OUT!" : `${last.goals ?? 0}/5 — FAILED`}
+              {completed
+                ? `${target}/${target} — CASH OUT!`
+                : `${last.goals ?? 0}/${target} — SAVED!`}
             </div>
           )}
         </div>
@@ -244,73 +343,67 @@ export default function PenaltySeriesPage() {
         <div className="h-6 bg-emerald-800/90" />
       </div>
 
-      {/* Progress */}
-      <div className="mb-4 grid grid-cols-5 gap-1.5">
-        {Array.from({ length: PENALTY_SERIES_SHOTS }, (_, i) => {
-          const result = last?.results?.[i];
-          const active = i === activeShot && busy;
-          return (
-            <div
-              key={i}
-              className={`h-2 rounded-full ${
-                result === true
-                  ? "bg-emerald-500"
-                  : result === false
-                    ? "bg-red-500"
-                    : active
-                      ? "bg-brand"
-                      : "bg-ink-muted/15"
-              }`}
-            />
-          );
-        })}
-      </div>
+      {/* Aim picker */}
+      {!last && (
+        <>
+          <div className="mb-2 flex justify-center gap-1.5">
+            {picks.slice(0, target).map((p, i) => (
+              <button
+                key={i}
+                type="button"
+                disabled={busy}
+                onClick={() => setPickIndex(i)}
+                className={`rounded-full px-3 py-1 text-[11px] font-bold disabled:opacity-60 ${
+                  i === pickIndex
+                    ? "bg-brand text-white"
+                    : p
+                      ? "bg-emerald-500/15 text-emerald-700"
+                      : "bg-ink-muted/10 text-ink-muted"
+                }`}
+              >
+                {i + 1}
+                {p ? ` ${p === "left" ? "◀" : p === "right" ? "▶" : "▲"}` : ""}
+              </button>
+            ))}
+          </div>
+
+          <p className="mb-2 text-center text-[11px] font-semibold text-ink-muted">
+            Aim shot {pickIndex + 1} of {target} · {chosen.length}/{target}{" "}
+            chosen
+          </p>
+
+          <div className="mb-4 grid grid-cols-3 gap-2">
+            {SIDES.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                disabled={busy}
+                onClick={() => choose(s.id)}
+                className={`flex flex-col items-center rounded-xl py-3 text-sm font-bold disabled:opacity-60 ${
+                  picks[pickIndex] === s.id
+                    ? "bg-brand text-white shadow-sm"
+                    : "border border-ink-muted/15 bg-surface text-ink"
+                }`}
+              >
+                <span className="text-base leading-none">{s.arrow}</span>
+                <span className="mt-1">{s.label}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <p className="mb-3 text-center text-[11px] text-ink-muted">
-        Score all 5 consecutive penalties. One save ends the attempt — no
-        partial payout.
+        Score every penalty up to your target. One save and the run is lost.
       </p>
-
-      <div className="mb-4 grid grid-cols-3 gap-2">
-        {SIDES.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            disabled={busy}
-            onClick={() => setShot(s.id)}
-            className={`flex flex-col items-center rounded-xl py-3 text-sm font-bold disabled:opacity-60 ${
-              shots[activeShot] === s.id
-                ? "bg-brand text-white shadow-sm"
-                : "border border-ink-muted/15 bg-surface text-ink"
-            }`}
-          >
-            <span className="text-base leading-none">{s.arrow}</span>
-            <span className="mt-1">{s.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <p className="mb-2 text-center text-[10px] font-semibold text-ink-muted">
-        Choosing for Shot {Math.min(activeShot + 1, PENALTY_SERIES_SHOTS)} of{" "}
-        {PENALTY_SERIES_SHOTS}
-      </p>
-
-      <div className="mb-3 flex flex-wrap justify-center gap-2 text-[10px] text-ink-muted">
-        <span className="rounded-full bg-brand/10 px-2 py-0.5 font-bold text-brand">
-          5/5 → {PENALTY_SERIES_MULT[PENALTY_SERIES_SHOTS]}x
-        </span>
-        <span className="rounded-full bg-red-500/10 px-2 py-0.5 font-bold text-red-600">
-          Any miss → 0x
-        </span>
-      </div>
 
       {last && (
         <ResultBanner
           won={!!last.won}
           text={
             last.won
-              ? `5/5 GOALS · +${chips(last.profit ?? 0)} · ${last.multiplier}x`
-              : `${last.goals ?? 0}/5 GOALS · −${chips(stake)}`
+              ? `${target}/${target} GOALS · +${chips(last.profit ?? 0)} · ${last.multiplier}x`
+              : `${last.goals ?? 0}/${target} GOALS · −${chips(stake)}`
           }
         />
       )}
@@ -332,11 +425,20 @@ export default function PenaltySeriesPage() {
       <PrimaryBtn
         busy={busy}
         disabled={
-          balance == null ||
-          balance < stake ||
-          stake < CASINO_MIN_STAKE
+          last
+            ? false
+            : !ready ||
+              balance == null ||
+              balance < stake ||
+              stake < CASINO_MIN_STAKE
         }
-        label={last ? "Start New Series" : "Take Series"}
+        label={
+          last
+            ? "Start New Series"
+            : ready
+              ? "Take Series"
+              : `Aim all ${target} shot${target > 1 ? "s" : ""}`
+        }
         busyLabel="Taking penalties…"
         onClick={() => {
           if (last) reset();
@@ -345,4 +447,4 @@ export default function PenaltySeriesPage() {
       />
     </CasinoShell>
   );
-        }
+    }
