@@ -18,7 +18,9 @@ export default function AppHeader() {
 
   if (HIDDEN_PREFIXES.some((p) => pathname?.startsWith(p))) return null;
 
-  const isCasino = pathname?.startsWith("/casino") ?? false;
+  const isCasino =
+    (pathname?.startsWith("/casino") ||
+      pathname?.startsWith("/virtual")) ?? false;
 
   return (
     <header className="sticky top-0 z-30 border-b border-ink-muted/15 bg-surface/90 backdrop-blur">
