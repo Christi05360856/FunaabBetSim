@@ -15,7 +15,7 @@ const W = 360;
 const H = 400;
 const TOP = 24;
 const BOT = 40;
-const SEG = 110; // ms per peg bounce
+const SEG = 260; // ms per peg bounce (higher = slower)
 
 function roundRect(
   c: CanvasRenderingContext2D,
@@ -137,7 +137,7 @@ export default function PlinkoBoard({ rows, slots, result, onDone }: Props) {
       if (a && b) {
         ball.current = {
           x: a.x + (b.x - a.x) * f,
-          y: a.y + (b.y - a.y) * f - Math.sin(f * Math.PI) * 5,
+          y: a.y + (b.y - a.y) * f - 4 * (rowH * 0.55) * f * (1 - f),
         };
       }
       draw();
@@ -168,4 +168,4 @@ export default function PlinkoBoard({ rows, slots, result, onDone }: Props) {
       }}
     />
   );
-}
+        }
