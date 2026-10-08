@@ -1,11 +1,10 @@
 import "server-only";
-import { randomBytes } from "crypto";
 import { THIMBLES_CUPS, THIMBLES_MULT } from "@/types/casino";
+import { randomIndex } from "@/lib/casino/rng";
 
 export function resolveThimblesRound(opts: { stake: number; pick: number }) {
   const { stake, pick } = opts;
-  const buf = randomBytes(4);
-  const ball = buf.readUInt32BE(0) % THIMBLES_CUPS;
+  const ball = randomIndex(THIMBLES_CUPS);
   const won = pick === ball;
   const multiplier = won ? THIMBLES_MULT : 0;
   const payout = won ? Math.floor(stake * multiplier * 100) / 100 : 0;
