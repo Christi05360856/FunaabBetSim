@@ -357,16 +357,16 @@ export function BetTicketDetail({
         )}
       </div>
 
-      {betAgainErr && (
-        <p className="mx-3 mb-2 rounded-xl bg-rose-500/10 px-3 py-2 text-center text-xs font-semibold text-rose-700">
-          {betAgainErr}
-        </p>
-      )}
-
-      {/* Actions */}
-      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-ink-muted/15 bg-surface/95 px-3 py-3 backdrop-blur"
+      {/* Actions + error (error must sit above footer, z-20) */}
+      <div
+        className="fixed inset-x-0 bottom-0 z-20 border-t border-ink-muted/15 bg-surface/95 px-3 pt-2 backdrop-blur"
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
+        {betAgainErr && (
+          <p className="mb-2 rounded-xl bg-rose-600 px-3 py-2.5 text-center text-xs font-semibold text-white">
+            {betAgainErr}
+          </p>
+        )}
         <div className="mx-auto flex max-w-lg gap-2">
           <button
             type="button"
@@ -400,4 +400,4 @@ export function BetTicketDetail({
       )}
     </div>
   );
-                }
+            }
