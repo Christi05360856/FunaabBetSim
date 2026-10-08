@@ -203,7 +203,7 @@ export default function VirtualPage() {
         body: JSON.stringify({
           roundId: round.id,
           stake: stakeNum,
-          selections: picks.map((p) => ({
+          legs: picks.map((p) => ({
             matchId: p.matchId,
             market: p.market,
             pick: p.pick,
@@ -569,7 +569,7 @@ export default function VirtualPage() {
         </div>
       )}
 
-      {/* ===== SIMULATION ===== */}
+       {/* ===== SIMULATION ===== */}
       {(phase === "sim" || phase === "result") && result && (
         <div className="flex flex-col">
           {/* Pitch */}
@@ -806,4 +806,4 @@ export default function VirtualPage() {
       )}
     </main>
   );
-              }
+}
