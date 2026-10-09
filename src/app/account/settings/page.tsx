@@ -48,6 +48,10 @@ export default function SettingsPage() {
           <Row label="Withdrawal PIN" href="/account/settings/pin" />
         </Section>
 
+        <Section title="Safer play">
+          <Row label="Age check, deposit limits and breaks" href="/account/safety" />
+        </Section>
+
         <Section title="Appearance">
           {(
             [
