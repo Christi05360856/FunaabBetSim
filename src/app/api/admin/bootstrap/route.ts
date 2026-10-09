@@ -1,29 +1,19 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { z } from "zod";
-import { verifyRequest } from "@/lib/auth/verifyRequest";
-import { adminAuth } from "@/lib/firebase/admin";
+import { NextResponse } from "next/server";
 
-const bodySchema = z.object({
-  secret: z.string().min(1),
-});
+/**
+ * Disabled on purpose. Self-service admin promotion over the internet is a
+ * privilege-escalation risk. Create admins offline with:
+ *   node scripts/setAdminClaim.mjs <uid>
+ * and delete ADMIN_BOOTSTRAP_SECRET from your hosting environment.
+ */
+function notFound() {
+  return NextResponse.json({ error: "Not found" }, { status: 404 });
+}
 
-export async function POST(request: NextRequest) {
-  const decoded = await verifyRequest(request);
-  if (!decoded) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET() {
+  return notFound();
+}
 
-  const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Missing secret" }, { status: 400 });
-  }
-
-  const expectedSecret = process.env.ADMIN_BOOTSTRAP_SECRET;
-  if (!expectedSecret || parsed.data.secret !== expectedSecret) {
-    return NextResponse.json({ error: "Incorrect secret" }, { status: 403 });
-  }
-
-  await adminAuth.setCustomUserClaims(decoded.uid, { admin: true });
-
-  return NextResponse.json({ ok: true, message: "You are now an admin. Log out and back in for it to take effect." });
+export async function POST() {
+  return notFound();
 }
