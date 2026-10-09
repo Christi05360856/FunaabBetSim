@@ -136,6 +136,38 @@ export async function flutterwaveVerifyByReference(
   return body.data;
 }
 
+/**
+ * Ask the bank (through Flutterwave) who owns an account number.
+ * Returns null if it cannot be resolved (unsupported bank, provider down).
+ */
+export async function flutterwaveResolveAccount(
+  accountNumber: string,
+  bankCode: string
+): Promise<{ accountName: string } | null> {
+  try {
+    const res = await fetchWithTimeout(`${FLW_BASE}/accounts/resolve`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secretKey()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        account_number: accountNumber,
+        account_bank: bankCode,
+      }),
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      status?: string;
+      data?: { account_name?: string };
+    };
+    const name = body.data?.account_name;
+    if (!res.ok || body.status !== "success" || !name) return null;
+    return { accountName: String(name) };
+  } catch {
+    return null;
+  }
+}
+
 export function isValidFlutterwaveWebhook(
   verifHashHeader: string | null
 ): boolean {
@@ -231,3 +263,4 @@ export async function flutterwaveGetTransfer(
   }
   return body.data;
 }
+  
