@@ -1,4 +1,5 @@
 import "server-only";
+import { safeEqual } from "@/lib/security/safeCompare";
 
 /**
  * Flutterwave Standard (v3) helpers — server only.
@@ -6,6 +7,21 @@ import "server-only";
  */
 
 const FLW_BASE = "https://api.flutterwave.com/v3";
+
+/** fetch with a hard timeout so a slow provider cannot hang a serverless function. */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  ms = 15000
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function secretKey(): string {
   const k = process.env.FLW_SECRET_KEY?.trim();
@@ -41,7 +57,7 @@ export type FlwInitResult = {
 export async function flutterwaveInitializePayment(
   payload: FlwInitPayload
 ): Promise<FlwInitResult> {
-  const res = await fetch(`${FLW_BASE}/payments`, {
+  const res = await fetchWithTimeout(`${FLW_BASE}/payments`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${secretKey()}`,
@@ -75,7 +91,7 @@ export type FlwVerifyData = {
 export async function flutterwaveVerifyTransaction(
   transactionId: string | number
 ): Promise<FlwVerifyData> {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${FLW_BASE}/transactions/${transactionId}/verify`,
     {
       method: "GET",
@@ -102,7 +118,7 @@ export async function flutterwaveVerifyByReference(
 ): Promise<FlwVerifyData> {
   const url = new URL(`${FLW_BASE}/transactions/verify_by_reference`);
   url.searchParams.set("tx_ref", txRef);
-  const res = await fetch(url.toString(), {
+  const res = await fetchWithTimeout(url.toString(), {
     method: "GET",
     headers: { Authorization: `Bearer ${secretKey()}` },
     cache: "no-store",
@@ -126,7 +142,7 @@ export function isValidFlutterwaveWebhook(
   const expected = flwSecretHash();
   if (!expected) return false;
   if (!verifHashHeader) return false;
-  return verifHashHeader === expected;
+  return safeEqual(verifHashHeader, expected);
 }
 
 export type FlwTransferInput = {
@@ -214,4 +230,4 @@ export async function flutterwaveGetTransfer(
     );
   }
   return body.data;
-  }
+}
