@@ -16,6 +16,19 @@ export type RateLimitBucket =
 
 type LimitConfig = { max: number; windowMs: number };
 
+/**
+ * Buckets that protect money or accounts FAIL CLOSED: if the limiter itself
+ * errors, the request is refused instead of waved through.
+ * Low-risk buckets (chat, predictions, ticket checks) fail open.
+ */
+const FAIL_CLOSED = new Set<RateLimitBucket>([
+  "register",
+  "place_bet",
+  "deposit_init",
+  "withdraw_request",
+  "auth_fail",
+]);
+
 const LIMITS: Record<RateLimitBucket, LimitConfig> = {
   register: { max: 5, windowMs: 60 * 60 * 1000 },
   place_bet: { max: 40, windowMs: 60 * 1000 },
@@ -144,12 +157,14 @@ export async function enforceRateLimit(
     return null;
   } catch (err) {
     console.error("rateLimit error", bucket, err);
+    if (FAIL_CLOSED.has(bucket)) {
+      return NextResponse.json(
+        { error: "Security check is temporarily unavailable. Please try again in a moment." },
+        { status: 503, headers: { "Retry-After": "10" } }
+      );
+    }
     return null;
   }
 }
 
-export function clientIp(request: { headers: Headers }): string {
-  const xf = request.headers.get("x-forwarded-for");
-  if (xf) return xf.split(",")[0]?.trim() || "unknown";
-  return request.headers.get("x-real-ip") || "unknown";
-}
+export { clientIp } from "@/lib/security/clientIp";
