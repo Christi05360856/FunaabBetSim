@@ -10,6 +10,7 @@ import { MIN_DEPOSIT_NGN, POINTS_PER_NAIRA } from "@/types/domain";
 import type { Deposit } from "@/types/domain";
 import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
 import { securityLog } from "@/lib/security/securityLog";
+import { appBaseUrl } from "@/lib/config/appUrl";
 
 const bodySchema = z.object({
   amountNgn: z.number().finite().min(MIN_DEPOSIT_NGN).max(500_000),
@@ -52,10 +53,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const origin =
-    request.headers.get("origin") ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    "https://funaab-betsim.vercel.app";
+  const origin = appBaseUrl();
 
   const txRef = makeTxRef(decoded.uid);
   const now = Date.now();
@@ -113,8 +111,10 @@ export async function POST(request: NextRequest) {
     await adminDb.collection("deposits").doc(txRef).update({
       status: "failed",
     });
-    const message =
-      err instanceof Error ? err.message : "Could not start payment";
-    return NextResponse.json({ error: message }, { status: 502 });
+    console.error("deposit init failed", err);
+    return NextResponse.json(
+      { error: "Could not start payment. Please try again." },
+      { status: 502 }
+    );
   }
 }
