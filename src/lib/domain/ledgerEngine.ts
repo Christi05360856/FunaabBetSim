@@ -1,5 +1,5 @@
 import type { LedgerEntry, LedgerType, Wallet } from "@/types/domain";
-import { availableToBet } from "@/lib/domain/wallet";
+import { availableToBet, cashAvailableForStake } from "@/lib/domain/wallet";
 
 /**
  * Bucket model:
@@ -23,6 +23,9 @@ export function normalizeWallet(raw: Wallet): Wallet {
       promo: 0,
       reservedStake: 0,
       reservedWithdrawal: 0,
+      reservedPromoStake: 0,
+      turnoverRequired: Math.max(0, Number(raw.turnoverRequired) || 0),
+      turnoverDone: Math.max(0, Number(raw.turnoverDone) || 0),
       balance: bal,
       lifetimeWagering: raw.lifetimeWagering ?? 0,
       resetPendingSince: null,
@@ -38,12 +41,19 @@ export function normalizeWallet(raw: Wallet): Wallet {
     purchased + promo - reservedStake - reservedWithdrawal
   );
 
+  const reservedPromoStake = Math.min(
+    reservedStake,
+    Math.max(0, Number(raw.reservedPromoStake) || 0)
+  );
   return {
     ...raw,
     purchased,
     promo,
     reservedStake,
     reservedWithdrawal,
+    reservedPromoStake,
+    turnoverRequired: Math.max(0, Number(raw.turnoverRequired) || 0),
+    turnoverDone: Math.max(0, Number(raw.turnoverDone) || 0),
     balance,
     lifetimeWagering: raw.lifetimeWagering ?? 0,
     resetPendingSince: raw.resetPendingSince ?? null,
@@ -98,24 +108,40 @@ function syncBalance(w: Wallet): Wallet {
   return { ...w, balance, resetPendingSince: null, updatedAt: Date.now() };
 }
 
-/** Lock stake into reservedStake (does not reduce purchased/promo yet). */
+/**
+ * Lock stake into reservedStake (does not reduce purchased/promo yet).
+ * Pass `forcedSplit` to choose exactly how much comes from cash vs promo;
+ * otherwise the legacy proportional split is used.
+ * Cash stakes count towards the withdrawal turnover requirement.
+ */
 export function applyStakeReserve(
   wallet: Wallet,
-  stake: number
+  stake: number,
+  forcedSplit?: StakeSplit
 ): { wallet: Wallet; split: StakeSplit } {
   const w = normalizeWallet(wallet);
   if (stake > availableToBet(w)) {
     throw new Error("Insufficient balance");
   }
-  // Split against unreserved funds for bookkeeping
-  const unreservedPurchased = w.purchased; // full credits; lock is on reservedStake
-  const unreservedPromo = w.promo;
-  const split = allocateStake(unreservedPurchased, unreservedPromo, stake);
+  let split: StakeSplit;
+  if (forcedSplit) {
+    const { fromPurchased, fromPromo } = forcedSplit;
+    const ok =
+      fromPurchased >= 0 &&
+      fromPromo >= 0 &&
+      Math.abs(fromPurchased + fromPromo - stake) < 1e-9;
+    if (!ok) throw new Error("Invalid stake split");
+    split = { fromPurchased, fromPromo };
+  } else {
+    split = allocateStake(w.purchased, w.promo, stake);
+  }
 
   const next = syncBalance({
     ...w,
     reservedStake: w.reservedStake + stake,
+    reservedPromoStake: (w.reservedPromoStake ?? 0) + split.fromPromo,
     lifetimeWagering: w.lifetimeWagering + stake,
+    turnoverDone: (w.turnoverDone ?? 0) + split.fromPurchased,
   });
   return { wallet: next, split };
 }
@@ -132,12 +158,14 @@ export function applyStakeLoss(
     purchased: Math.max(0, w.purchased - split.fromPurchased),
     promo: Math.max(0, w.promo - split.fromPromo),
     reservedStake: Math.max(0, w.reservedStake - stake),
+    reservedPromoStake: Math.max(0, (w.reservedPromoStake ?? 0) - split.fromPromo),
   });
 }
 
 /**
- * Win: release reserve, consume stake split, credit full payout to purchased
- * (winnings are withdrawable).
+ * Win: release reserve, consume stake split, credit `payout` to purchased
+ * (winnings are withdrawable). Callers pass the amount to CREDIT: for
+ * promo-funded bets that already excludes the promo stake (see computeCredit).
  */
 export function applyStakeWin(
   wallet: Wallet,
@@ -151,15 +179,21 @@ export function applyStakeWin(
     purchased: Math.max(0, w.purchased - split.fromPurchased) + payout,
     promo: Math.max(0, w.promo - split.fromPromo),
     reservedStake: Math.max(0, w.reservedStake - stake),
+    reservedPromoStake: Math.max(0, (w.reservedPromoStake ?? 0) - split.fromPromo),
   });
 }
 
 /** Void: release reserve only (buckets unchanged). */
-export function applyStakeVoid(wallet: Wallet, stake: number): Wallet {
+export function applyStakeVoid(
+  wallet: Wallet,
+  stake: number,
+  fromPromo = 0
+): Wallet {
   const w = normalizeWallet(wallet);
   return syncBalance({
     ...w,
     reservedStake: Math.max(0, w.reservedStake - stake),
+    reservedPromoStake: Math.max(0, (w.reservedPromoStake ?? 0) - fromPromo),
   });
 }
 
@@ -199,9 +233,8 @@ export function buildLedgerEntry(input: {
  */
 export function applyWithdrawalRequest(wallet: Wallet, amount: number): Wallet {
   const w = normalizeWallet(wallet);
-  // Same rule as withdrawableBalance: bet locks hit promo first, then cash.
-  const stakeLockOnCash = Math.max(0, w.reservedStake - w.promo);
-  const free = Math.max(0, w.purchased - stakeLockOnCash - w.reservedWithdrawal);
+  // Same rule as withdrawableBalance (cash locks tracked separately from promo).
+  const free = cashAvailableForStake(w);
   if (amount <= 0 || amount > free + 1e-9) {
     throw new Error("Insufficient withdrawable balance");
   }
@@ -228,4 +261,4 @@ export function applyWithdrawalComplete(wallet: Wallet, amount: number): Wallet 
     purchased: Math.max(0, w.purchased - amount),
     reservedWithdrawal: Math.max(0, w.reservedWithdrawal - amount),
   });
-    }
+}
