@@ -32,21 +32,45 @@ export function availableToBet(wallet: Pick<
 }
 
 /**
- * Cash that may leave to bank.
- * Open-bet locks are applied to promo first (already non-withdrawable),
- * then to cash — so a fresh deposit stays fully withdrawable until you bet it.
- * Pending withdrawal locks always sit on cash.
+ * Cash free to bet OR withdraw: purchased points minus the part of the open
+ * stakes that is locked cash (reservedStake minus the promo part) minus
+ * pending withdrawals. Tracking the promo part separately means a cash bet can
+ * never be mistaken for a promo bet (which used to allow over-withdrawal).
  */
-export function withdrawableBalance(wallet: Pick<
+export function cashAvailableForStake(wallet: Pick<
   Wallet,
-  "purchased" | "promo" | "reservedStake" | "reservedWithdrawal"
+  "purchased" | "reservedStake" | "reservedWithdrawal" | "reservedPromoStake"
 >): number {
   const purchased = wallet.purchased ?? 0;
-  const promo = wallet.promo ?? 0;
   const reservedStake = wallet.reservedStake ?? 0;
+  const reservedPromo = wallet.reservedPromoStake ?? 0;
   const reservedWithdrawal = wallet.reservedWithdrawal ?? 0;
-  const stakeLockOnCash = Math.max(0, reservedStake - promo);
-  return Math.max(0, purchased - stakeLockOnCash - reservedWithdrawal);
+  const cashLock = Math.max(0, reservedStake - reservedPromo);
+  return Math.max(0, purchased - cashLock - reservedWithdrawal);
+}
+
+/** Promo points not already locked in open bets. */
+export function promoAvailableForStake(wallet: Pick<
+  Wallet,
+  "promo" | "reservedPromoStake"
+>): number {
+  return Math.max(0, (wallet.promo ?? 0) - (wallet.reservedPromoStake ?? 0));
+}
+
+/** Cash that may leave to bank (promo is never withdrawable). */
+export function withdrawableBalance(wallet: Pick<
+  Wallet,
+  "purchased" | "promo" | "reservedStake" | "reservedWithdrawal" | "reservedPromoStake"
+>): number {
+  return cashAvailableForStake(wallet);
+}
+
+/** Points still to be wagered before a withdrawal is allowed. */
+export function turnoverRemaining(wallet: Pick<
+  Wallet,
+  "turnoverRequired" | "turnoverDone"
+>): number {
+  return Math.max(0, (wallet.turnoverRequired ?? 0) - (wallet.turnoverDone ?? 0));
 }
 
 export function canPlaceStake(balance: number, stake: number): boolean {
@@ -112,6 +136,9 @@ export function emptyWallet(uid: string, now = Date.now()): Wallet {
     promo: 0,
     reservedStake: 0,
     reservedWithdrawal: 0,
+    reservedPromoStake: 0,
+    turnoverRequired: 0,
+    turnoverDone: 0,
     lifetimeWagering: 0,
     resetPendingSince: null,
     updatedAt: now,
