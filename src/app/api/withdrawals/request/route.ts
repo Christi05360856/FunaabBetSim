@@ -22,12 +22,9 @@ import {
   normalizeAccountName,
 } from "@/lib/security/sessionGate";
 import { isValidPinFormat, verifyPin } from "@/lib/security/withdrawPin";
-
-function startOfTodayMs(): number {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
+import { clearPinAttempts, reservePinAttempt } from "@/lib/security/pinAttempts";
+import { publicErrorMessage } from "@/lib/security/publicError";
+import { startOfLagosDayMs } from "@/lib/time/lagosDay";
 
 export async function POST(request: NextRequest) {
   const decoded = await verifyRequest(request);
@@ -153,8 +150,6 @@ export async function POST(request: NextRequest) {
   const pinDoc = (pinSnap.data() ?? {}) as {
     pinHash?: string;
     pinSalt?: string;
-    pinFailCount?: number;
-    pinLockedUntil?: number;
   };
   if (!pinDoc.pinHash || !pinDoc.pinSalt) {
     return NextResponse.json(
@@ -165,9 +160,11 @@ export async function POST(request: NextRequest) {
       { status: 403 }
     );
   }
-  const pinLockedUntil = Number(pinDoc.pinLockedUntil ?? 0);
-  if (pinLockedUntil > Date.now()) {
-    const mins = Math.ceil((pinLockedUntil - Date.now()) / 60000);
+  // Count the attempt atomically BEFORE checking the PIN, so parallel
+  // requests cannot out-run the 5-attempt limit.
+  const attempt = await reservePinAttempt(uid);
+  if (!attempt.ok) {
+    const mins = Math.max(1, Math.ceil((attempt.lockedUntil - Date.now()) / 60000));
     return NextResponse.json(
       {
         error: `Withdrawal PIN locked. Try again in about ${mins} minute(s).`,
@@ -177,31 +174,13 @@ export async function POST(request: NextRequest) {
     );
   }
   if (!isValidPinFormat(pin) || !verifyPin(pin, pinDoc.pinSalt, pinDoc.pinHash)) {
-    const fails = Number(pinDoc.pinFailCount ?? 0) + 1;
-    const patch: Record<string, unknown> = {
-      pinFailCount: fails,
-      updatedAt: Date.now(),
-    };
-    if (fails >= 5) {
-      patch.pinLockedUntil = Date.now() + 15 * 60 * 1000;
-      patch.pinFailCount = 0;
-    }
-    await adminDb.collection("user_security").doc(uid).set(patch, { merge: true });
     void securityLog({ type: "PIN_FAIL", uid, ip });
     return NextResponse.json(
       { error: "Incorrect withdrawal PIN", code: "pin_invalid" },
       { status: 403 }
     );
   }
-  // reset fail counter on success
-  if (Number(pinDoc.pinFailCount ?? 0) > 0) {
-    await adminDb.collection("user_security").doc(uid).set(
-      { pinFailCount: 0, pinLockedUntil: 0, updatedAt: Date.now() },
-      { merge: true }
-    );
-  }
-
-
+  await clearPinAttempts(uid);
 
   try {
     const result = await adminDb.runTransaction(async (tx) => {
@@ -218,7 +197,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Daily cap + single pending (filter in memory — avoids composite index)
-      const dayStart = startOfTodayMs();
+      const dayStart = startOfLagosDayMs();
       const todayQ = await tx.get(
         adminDb.collection("withdrawals").where("uid", "==", uid).limit(40)
       );
@@ -310,10 +289,14 @@ export async function POST(request: NextRequest) {
     void securityLog({ type: "WITHDRAW_REQUESTED", uid, ip, meta: { amount } });
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Request failed";
-    const status = msg.includes("pending") || msg.includes("limit") || msg.includes("Withdrawable")
+    const raw = e instanceof Error ? e.message : "";
+    const status = raw.includes("pending") || raw.includes("limit") || raw.includes("Withdrawable")
       ? 400
       : 500;
-    return NextResponse.json({ error: msg }, { status });
+    return NextResponse.json(
+      { error: publicErrorMessage(e, "Withdrawal request failed. Please try again.") },
+      { status }
+    );
   }
 }
+  
