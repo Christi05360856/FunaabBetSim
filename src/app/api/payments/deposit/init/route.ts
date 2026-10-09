@@ -11,6 +11,7 @@ import type { Deposit } from "@/types/domain";
 import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
 import { securityLog } from "@/lib/security/securityLog";
 import { appBaseUrl } from "@/lib/config/appUrl";
+import { requireDepositAllowed } from "@/lib/compliance/gate";
 
 const bodySchema = z.object({
   amountNgn: z.number().finite().min(MIN_DEPOSIT_NGN).max(500_000),
@@ -54,6 +55,14 @@ export async function POST(request: NextRequest) {
   }
 
   const origin = appBaseUrl();
+
+  const gate = await requireDepositAllowed(decoded.uid, amount);
+  if (!gate.ok) {
+    return NextResponse.json(
+      { error: gate.error, code: gate.code },
+      { status: gate.status }
+    );
+  }
 
   const txRef = makeTxRef(decoded.uid);
   const now = Date.now();
