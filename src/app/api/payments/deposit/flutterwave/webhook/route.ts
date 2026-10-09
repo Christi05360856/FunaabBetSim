@@ -3,6 +3,7 @@ import {
   flutterwaveVerifyTransaction,
   isValidFlutterwaveWebhook,
 } from "@/lib/payments/flutterwave";
+import { evaluateFlutterwavePayment } from "@/lib/payments/verifyDeposit";
 import { creditVerifiedDeposit } from "@/lib/domain/creditDeposit";
 import { adminDb } from "@/lib/firebase/admin";
 import { resolveUserEmail, sendMail } from "@/lib/email/send";
@@ -69,20 +70,17 @@ export async function POST(request: NextRequest) {
 
   try {
     const verified = await flutterwaveVerifyTransaction(id as number | string);
-    if (
-      verified.status !== "successful" ||
-      verified.currency !== "NGN" ||
-      verified.tx_ref !== txRef
-    ) {
-      return NextResponse.json({ ok: true, verified: false });
+    const check = evaluateFlutterwavePayment(verified, txRef);
+    if (!check.ok) {
+      return NextResponse.json({ ok: true, verified: false, reason: check.reason });
     }
 
     const result = await creditVerifiedDeposit({
       txRef: verified.tx_ref,
       flwTransactionId: String(verified.id),
       flwRef: verified.flw_ref,
-      amountNgn: verified.amount,
-      currency: verified.currency,
+      amountNgn: check.amountNgn,
+      currency: "NGN",
     });
 
     // P1: notify user (never block webhook success on email failure)
@@ -92,7 +90,7 @@ export async function POST(request: NextRequest) {
         const uid = depSnap.exists ? String(depSnap.data()?.uid ?? "") : "";
         const email = uid ? await resolveUserEmail(uid) : null;
         if (email) {
-          const amountNgn = Math.round(Number(verified.amount));
+          const amountNgn = check.amountNgn;
           const tpl = depositEmailHtml({
             points: result.points,
             amountNgn,
@@ -130,9 +128,6 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("flutterwave webhook error", err);
     // 500 → Flutterwave retries
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "webhook failed" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Webhook processing failed" }, { status: 500 });
   }
 }
