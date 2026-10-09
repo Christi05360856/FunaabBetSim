@@ -1,4 +1,5 @@
 import "server-only";
+import { randomBytes } from "crypto";
 import {
   TEAMS_BY_LEAGUE,
   VIRTUAL_LEAGUES,
@@ -252,4 +253,10 @@ export function lookupOdds(
     if (pick === "no") return m.oddsBtts.no;
   }
   return null;
-                           }
+}
+
+/** Legacy unseeded board for old rounds.ts / play route. Prefer generateRoundFromSeed. */
+export function generateRoundMatches(): VirtualMatchInternal[] {
+  const seed = randomBytes(32).toString("hex");
+  return generateRoundFromSeed(seed);
+}
