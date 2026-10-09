@@ -2,11 +2,19 @@ import { NextResponse, type NextRequest } from "next/server";
 import { verifyRequest } from "@/lib/auth/verifyRequest";
 import { adminDb } from "@/lib/firebase/admin";
 import { placeBetBodySchema } from "@/lib/validation/schemas";
-import { canPlaceStake, availableToBet, isValidPromoTicket } from "@/lib/domain/wallet";
+import {
+  canPlaceStake,
+  availableToBet,
+  isValidPromoTicket,
+  cashAvailableForStake,
+  promoAvailableForStake,
+} from "@/lib/domain/wallet";
+import { checkBetLimits, computeCredit } from "@/lib/domain/limits";
 import {
   applyStakeReserve,
   buildLedgerEntry,
   normalizeWallet,
+  type StakeSplit,
 } from "@/lib/domain/ledgerEngine";
 import type {
   Bet,
@@ -179,27 +187,48 @@ export async function POST(request: NextRequest) {
         throw new Error("No valid selections on this ticket");
       }
 
+      const limitError = checkBetLimits({
+        stake,
+        legCount: validatedLegs.length,
+        combinedOdds,
+      });
+      if (limitError) throw new Error(limitError);
+
+      // Cash first. Promo points are only touched when asked for (funding
+      // "promo") or when cash runs out, and then the promo ticket rules apply.
+      const cashFree = cashAvailableForStake(wallet);
+      const promoFree = promoAvailableForStake(wallet);
+      let intended: StakeSplit;
       if (funding === "promo") {
+        if (promoFree < stake) {
+          throw new Error("Insufficient promo points for this stake");
+        }
+        intended = { fromPurchased: 0, fromPromo: stake };
+      } else {
+        const fromPurchased = Math.min(stake, cashFree);
+        const fromPromo = stake - fromPurchased;
+        if (fromPromo > promoFree) throw new Error("Insufficient balance");
+        intended = { fromPurchased, fromPromo };
+      }
+      if (intended.fromPromo > 0) {
         const rules = wallet.promoBetRules ?? null;
         if (!isValidPromoTicket(validatedLegs, marketTypes, rules)) {
           throw new Error(
             rules?.terms ||
-              "Ticket does not meet this promo's betting rules"
+              "Promo points can only be used on tickets that meet the promo rules. Use cash or choose a qualifying ticket."
           );
-        }
-        if ((wallet.promo ?? 0) < stake) {
-          throw new Error("Insufficient promo points for this stake");
         }
       }
 
       const now = Date.now();
-      const potentialPayout = Math.round(stake * combinedOdds);
       const balanceBefore = avail;
-      let { wallet: nextWallet, split } = applyStakeReserve(wallet, stake);
-      if (funding === "promo") {
-        // Prefer full stake from promo bucket for accounting
-        split = { fromPurchased: 0, fromPromo: stake };
-      }
+      const { wallet: nextWallet, split } = applyStakeReserve(
+        wallet,
+        stake,
+        intended
+      );
+      // Credit on a win: promo stake is not returned, and max win applies.
+      const potentialPayout = computeCredit(stake, combinedOdds, split.fromPromo);
       const isAcca = validatedLegs.length > 1;
       const first = validatedLegs[0]!;
 
@@ -221,6 +250,7 @@ export async function POST(request: NextRequest) {
         stake,
         stakePurchased: split.fromPurchased,
         stakePromo: split.fromPromo,
+        snr: true,
         potentialPayout,
         status: "open",
         placedAt: now,
@@ -262,6 +292,8 @@ export async function POST(request: NextRequest) {
         promo: nextWallet.promo,
         reservedStake: nextWallet.reservedStake,
         reservedWithdrawal: nextWallet.reservedWithdrawal,
+        reservedPromoStake: nextWallet.reservedPromoStake,
+        turnoverDone: nextWallet.turnoverDone,
         balance: nextWallet.balance,
         lifetimeWagering: nextWallet.lifetimeWagering,
         resetPendingSince: null,
@@ -296,7 +328,7 @@ export async function POST(request: NextRequest) {
       type: "BET_PLACED",
       uid,
       ip,
-      meta: { betId: result.betId, stake: "stake" in parsed.data ? undefined : undefined },
+      meta: { betId: result.betId, stake },
     });
 
     return NextResponse.json({ ok: true, ...result });
@@ -309,4 +341,4 @@ export async function POST(request: NextRequest) {
 
 
 
-      
+          
