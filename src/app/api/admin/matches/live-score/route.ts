@@ -3,6 +3,7 @@ import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { adminDb } from "@/lib/firebase/admin";
+import { computeCredit } from "@/lib/domain/limits";
 import {
   resolveClinchedOverUnderWinners,
   resolveClinchedBTS,
@@ -260,6 +261,7 @@ export async function POST(request: NextRequest) {
               purchased: next.purchased,
               promo: next.promo,
               reservedStake: next.reservedStake,
+              reservedPromoStake: next.reservedPromoStake,
               reservedWithdrawal: next.reservedWithdrawal,
               balance: next.balance,
               resetPendingSince: null,
@@ -296,14 +298,11 @@ export async function POST(request: NextRequest) {
         if ((allWon || winWithVoids) && bet.status === "open") {
           let payout = bet.potentialPayout;
           if (winWithVoids && !allWon) {
-            payout = Math.round(
-              bet.stake *
-                legs.reduce((acc, leg, i) => {
-                  if (nextStatuses[i] === "void") return acc;
-                  return acc * (Number(leg.odds) || 1);
-                }, 1) *
-                100
-            ) / 100;
+            const mult = legs.reduce((acc, leg, i) => {
+              if (nextStatuses[i] === "void") return acc;
+              return acc * (Number(leg.odds) || 1);
+            }, 1);
+            payout = computeCredit(bet.stake, mult, bet.snr ? (bet.stakePromo ?? 0) : 0);
           }
           if (wallet) {
             const before = normalizeWallet(wallet);
@@ -312,6 +311,7 @@ export async function POST(request: NextRequest) {
               purchased: next.purchased,
               promo: next.promo,
               reservedStake: next.reservedStake,
+              reservedPromoStake: next.reservedPromoStake,
               reservedWithdrawal: next.reservedWithdrawal,
               balance: next.balance,
               resetPendingSince: null,
@@ -348,11 +348,12 @@ export async function POST(request: NextRequest) {
         if (allVoid && bet.status === "open") {
           if (wallet) {
             const before = normalizeWallet(wallet);
-            const next = applyStakeVoid(before, bet.stake);
+            const next = applyStakeVoid(before, bet.stake, bet.stakePromo ?? 0);
             tx.update(walletRefs.get(bet.uid)!, {
               purchased: next.purchased,
               promo: next.promo,
               reservedStake: next.reservedStake,
+              reservedPromoStake: next.reservedPromoStake,
               reservedWithdrawal: next.reservedWithdrawal,
               balance: next.balance,
               resetPendingSince: null,
@@ -405,4 +406,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
             }
+
         
