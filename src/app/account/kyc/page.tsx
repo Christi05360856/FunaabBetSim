@@ -123,8 +123,10 @@ export default function KycPage() {
 
       <div className="mb-4 rounded-2xl bg-surface p-4 text-sm shadow-card">
         <p className="text-ink-muted">
-          Withdrawals require verified identity. Use the same name and bank
-          account you will cash out to. NIN is optional for now but recommended.
+          Withdrawals require verified identity (18+). Use your own name and
+          the bank account you will cash out to. We check the account name with
+          your bank. If you add your NIN, we keep only a one-way fingerprint of
+          it, never the number itself.
         </p>
         <p className="mt-2 text-xs font-semibold uppercase text-ink-muted">
           Status:{" "}
@@ -249,3 +251,4 @@ export default function KycPage() {
     </main>
   );
 }
+
