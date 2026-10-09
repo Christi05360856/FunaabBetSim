@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { sendMail } from "@/lib/email/send";
-import { requireAdminTotp } from "@/lib/security/adminTotp";
+import { requireAdminTotpOnce } from "@/lib/security/adminTotpGuard";
 
 /**
  * POST { to?: string, totpCode? }
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const totpErr = requireAdminTotp((body as { totpCode?: string }).totpCode);
+  const totpErr = await requireAdminTotpOnce((body as { totpCode?: string }).totpCode);
   if (totpErr) {
     return NextResponse.json({ error: totpErr }, { status: 401 });
   }
