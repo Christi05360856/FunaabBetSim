@@ -32,6 +32,12 @@ export interface Wallet {
   reservedStake: number;
   /** Amount locked in pending withdrawals. */
   reservedWithdrawal: number;
+  /** Part of reservedStake that is locked PROMO points (the rest is cash). */
+  reservedPromoStake?: number;
+  /** Points that must be wagered (cash stakes) before withdrawal is allowed. */
+  turnoverRequired?: number;
+  /** Cash points wagered towards turnoverRequired. */
+  turnoverDone?: number;
   lifetimeWagering: number;
   /** @deprecated Play-money self-reset removed; always null. */
   resetPendingSince: number | null;
@@ -194,6 +200,11 @@ export interface Bet {
   stakePurchased?: number;
   /** Points of stake taken from promo (proportional). */
   stakePromo?: number;
+  /**
+   * true = placed under "stake not returned" rules: potentialPayout already
+   * excludes the promo part of the stake.
+   */
+  snr?: boolean;
   potentialPayout: number;
   status: BetStatus;
   placedAt: number;
