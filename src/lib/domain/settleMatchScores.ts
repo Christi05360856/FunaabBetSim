@@ -3,6 +3,7 @@
  */
 import { revalidateTag } from "next/cache";
 import { adminDb } from "@/lib/firebase/admin";
+import { computeCredit } from "@/lib/domain/limits";
 import {
   resolveMatchWinnerSelectionId,
   resolveDoubleChanceSelectionIds,
@@ -354,6 +355,7 @@ const matchSnap = await tx.get(matchRef);
                 purchased: next.purchased,
                 promo: next.promo,
                 reservedStake: next.reservedStake,
+                reservedPromoStake: next.reservedPromoStake,
                 reservedWithdrawal: next.reservedWithdrawal,
                 balance: next.balance,
                 resetPendingSince: null,
@@ -398,11 +400,12 @@ const matchSnap = await tx.get(matchRef);
           if (bet.status === "open") {
             if (wallet) {
               const before = normalizeWallet(wallet);
-              const next = applyStakeVoid(before, bet.stake);
+              const next = applyStakeVoid(before, bet.stake, bet.stakePromo ?? 0);
               tx.update(walletRefs.get(bet.uid)!, {
                 purchased: next.purchased,
                 promo: next.promo,
                 reservedStake: next.reservedStake,
+                reservedPromoStake: next.reservedPromoStake,
                 reservedWithdrawal: next.reservedWithdrawal,
                 balance: next.balance,
                 resetPendingSince: null,
@@ -474,7 +477,7 @@ const matchSnap = await tx.get(matchRef);
                 if (legStatuses[i] === "void") return acc;
                 return acc * (Number(leg.odds) || 1);
               }, 1);
-              payout = Math.round(bet.stake * mult * 100) / 100;
+              payout = computeCredit(bet.stake, mult, bet.snr ? (bet.stakePromo ?? 0) : 0);
             }
             if (wallet) {
               const before = normalizeWallet(wallet);
@@ -487,6 +490,7 @@ const matchSnap = await tx.get(matchRef);
                 purchased: next.purchased,
                 promo: next.promo,
                 reservedStake: next.reservedStake,
+                reservedPromoStake: next.reservedPromoStake,
                 reservedWithdrawal: next.reservedWithdrawal,
                 balance: next.balance,
                 resetPendingSince: null,
@@ -555,4 +559,5 @@ const matchSnap = await tx.get(matchRef);
   revalidateTag("fixtures-core");
   revalidateTag("markets");
   return result;
-}
+  }
+                                              
