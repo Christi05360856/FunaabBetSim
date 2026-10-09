@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth/AuthContext";
 import { useWallet } from "@/lib/hooks/useWallet";
 import { availableToBet, withdrawableBalance } from "@/lib/domain/wallet";
 import { formatMoney } from "@/lib/domain/selectionLabel";
+import SafetyNotice from "@/components/SafetyNotice";
 
 export default function DashboardPage() {
   const { user, loading, logout } = useAuth();
@@ -57,6 +58,8 @@ export default function DashboardPage() {
           ⚙️
         </Link>
       </div>
+
+      <SafetyNotice />
 
       {depositStatus === "success" && (
         <div className="rounded-2xl border border-brand/30 bg-brand/10 px-4 py-3 text-sm text-brand">
@@ -261,4 +264,4 @@ function MenuItem({
       </svg>
     </Link>
   );
-      }
+}
