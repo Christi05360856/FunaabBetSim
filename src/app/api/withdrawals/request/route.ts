@@ -6,7 +6,7 @@ import {
   buildLedgerEntry,
   normalizeWallet,
 } from "@/lib/domain/ledgerEngine";
-import { withdrawableBalance } from "@/lib/domain/wallet";
+import { turnoverRemaining, withdrawableBalance } from "@/lib/domain/wallet";
 import {
   MAX_WITHDRAWAL,
   MIN_WITHDRAWAL,
@@ -189,6 +189,13 @@ export async function POST(request: NextRequest) {
       if (!walletSnap.exists) throw new Error("Wallet not found");
       const wallet = normalizeWallet(walletSnap.data() as Wallet);
 
+      const owed = turnoverRemaining(wallet);
+      if (owed > 0) {
+        throw new Error(
+          `Play through ₦${Math.ceil(owed).toLocaleString("en-NG")} more in bets before withdrawing. Deposits must be wagered first.`
+        );
+      }
+
       const free = withdrawableBalance(wallet);
       if (amount > free) {
         throw new Error(
@@ -290,7 +297,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     const raw = e instanceof Error ? e.message : "";
-    const status = raw.includes("pending") || raw.includes("limit") || raw.includes("Withdrawable")
+    const status = raw.includes("pending") || raw.includes("limit") || raw.includes("Withdrawable") || raw.includes("Play through")
       ? 400
       : 500;
     return NextResponse.json(
@@ -298,5 +305,4 @@ export async function POST(request: NextRequest) {
       { status }
     );
   }
-}
-  
+                                      }
