@@ -4,6 +4,8 @@ import {
   flutterwaveVerifyTransaction,
 } from "@/lib/payments/flutterwave";
 import { creditVerifiedDeposit } from "@/lib/domain/creditDeposit";
+import { evaluateFlutterwavePayment } from "@/lib/payments/verifyDeposit";
+import { appBaseUrl } from "@/lib/config/appUrl";
 import { resolveUserEmail, sendMail } from "@/lib/email/send";
 import { depositEmailHtml } from "@/lib/email/templates";
 
@@ -18,10 +20,7 @@ export async function GET(request: NextRequest) {
   const transactionId =
     searchParams.get("transaction_id") ?? searchParams.get("transactionId");
 
-  const origin =
-    process.env.APP_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    "https://funaab-betsim.vercel.app";
+  const origin = appBaseUrl();
 
   const dash = (q: string) =>
     NextResponse.redirect(`${origin}/dashboard?${q}`);
@@ -46,30 +45,13 @@ export async function GET(request: NextRequest) {
       verified = await flutterwaveVerifyByReference(txRef);
     }
 
-    const okStatus =
-      verified.status === "successful" || verified.status === "success";
-
-    if (!okStatus) {
+    const check = evaluateFlutterwavePayment(verified, txRef);
+    if (!check.ok) {
       return dash(
-        `deposit=failed&reason=${encodeURIComponent("flw_" + verified.status)}&ref=${encodeURIComponent(txRef)}`
+        `deposit=failed&reason=${encodeURIComponent(check.reason)}&ref=${encodeURIComponent(txRef)}`
       );
     }
-
-    if (String(verified.tx_ref) !== String(txRef)) {
-      return dash(
-        `deposit=failed&reason=${encodeURIComponent("tx_ref_mismatch")}&ref=${encodeURIComponent(txRef)}`
-      );
-    }
-
-    if (String(verified.currency).toUpperCase() !== "NGN") {
-      return dash(
-        `deposit=failed&reason=${encodeURIComponent("currency")}&ref=${encodeURIComponent(txRef)}`
-      );
-    }
-
-    const amountNgn = Math.round(
-      Number(verified.charged_amount ?? verified.amount)
-    );
+    const amountNgn = check.amountNgn;
 
     const result = await creditVerifiedDeposit({
       txRef: String(verified.tx_ref),
@@ -111,9 +93,9 @@ export async function GET(request: NextRequest) {
       `deposit=failed&reason=${encodeURIComponent(result.reason ?? "credit_failed")}&ref=${encodeURIComponent(txRef)}`
     );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "verify_error";
+    console.error("deposit callback error", err);
     return dash(
-      `deposit=failed&reason=${encodeURIComponent(msg.slice(0, 120))}&ref=${encodeURIComponent(txRef)}`
+      `deposit=failed&reason=${encodeURIComponent("verify_error")}&ref=${encodeURIComponent(txRef)}`
     );
   }
 }
