@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { writeAdminAudit } from "@/lib/security/adminAudit";
-import { requireAdminTotp } from "@/lib/security/adminTotp";
+import { requireAdminTotpOnce } from "@/lib/security/adminTotpGuard";
 
 /**
  * GET   — list KYC by status (default pending)
@@ -51,7 +51,7 @@ export async function PATCH(request: NextRequest) {
     totpCode?: string;
   };
 
-  const totpErr = requireAdminTotp(body.totpCode);
+  const totpErr = await requireAdminTotpOnce(body.totpCode);
   if (totpErr) {
     return NextResponse.json({ error: totpErr }, { status: 401 });
   }
