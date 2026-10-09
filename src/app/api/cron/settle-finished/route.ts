@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
+import { safeEqual } from "@/lib/security/safeCompare";
 import { settleMatchScores } from "@/lib/domain/settleMatchScores";
 import type { Match } from "@/types/domain";
 
@@ -31,7 +32,7 @@ async function run(request: NextRequest) {
     request.headers.get("x-cron-secret") ||
     (auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "");
 
-  if (headerSecret !== secret) {
+  if (!headerSecret || !safeEqual(headerSecret, secret)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
