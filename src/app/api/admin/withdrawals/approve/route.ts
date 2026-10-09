@@ -8,7 +8,7 @@ import {
 } from "@/lib/domain/ledgerEngine";
 import { flutterwaveTransfer } from "@/lib/payments/flutterwave";
 import type { Wallet, Withdrawal } from "@/types/domain";
-import { requireAdminTotp } from "@/lib/security/adminTotp";
+import { requireAdminTotpOnce } from "@/lib/security/adminTotpGuard";
 import { resolveUserEmail, sendMail } from "@/lib/email/send";
 import { withdrawalEmailHtml } from "@/lib/email/templates";
 import { writeAdminAudit } from "@/lib/security/adminAudit";
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   const mode = body.mode === "flutterwave" ? "flutterwave" : "manual";
   const note = body.note != null ? String(body.note).slice(0, 300) : null;
 
-  const totpErr = requireAdminTotp((body as { totpCode?: string }).totpCode);
+  const totpErr = await requireAdminTotpOnce((body as { totpCode?: string }).totpCode);
   if (totpErr) {
     return NextResponse.json({ error: totpErr }, { status: 401 });
   }
@@ -196,4 +196,4 @@ export async function POST(request: NextRequest) {
     mode,
     flwTransferId,
   });
-    }
+        }
