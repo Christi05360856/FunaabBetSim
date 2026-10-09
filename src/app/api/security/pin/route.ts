@@ -3,6 +3,7 @@ import { verifyRequest } from "@/lib/auth/verifyRequest";
 import { adminDb } from "@/lib/firebase/admin";
 import { requireRecentAuth } from "@/lib/security/sessionGate";
 import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
+import { reservePinAttempt } from "@/lib/security/pinAttempts";
 import { securityLog } from "@/lib/security/securityLog";
 import {
   hashPin,
@@ -106,25 +107,16 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const lockedUntil = Number(d.pinLockedUntil ?? 0);
-    if (lockedUntil > Date.now()) {
-      const mins = Math.ceil((lockedUntil - Date.now()) / 60000);
+    // Count the attempt atomically before checking (closes the parallel-guess race).
+    const attempt = await reservePinAttempt(user.uid);
+    if (!attempt.ok) {
+      const mins = Math.max(1, Math.ceil((attempt.lockedUntil - Date.now()) / 60000));
       return NextResponse.json(
         { error: `Too many attempts. Try again in about ${mins} minute(s).` },
         { status: 429 }
       );
     }
     if (!verifyPin(currentPin, d.pinSalt!, d.pinHash!)) {
-      const fails = Number(d.pinFailCount ?? 0) + 1;
-      const patch: PinDoc = {
-        pinFailCount: fails,
-        updatedAt: Date.now(),
-      };
-      if (fails >= 5) {
-        patch.pinLockedUntil = Date.now() + 15 * 60 * 1000;
-        patch.pinFailCount = 0;
-      }
-      await ref.set(patch, { merge: true });
       return NextResponse.json(
         { error: "Current PIN is incorrect" },
         { status: 403 }
