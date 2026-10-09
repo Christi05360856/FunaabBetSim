@@ -19,6 +19,7 @@ import type {
 import { isBettingOpen } from "@/lib/domain/matchClock";
 import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
 import { securityLog } from "@/lib/security/securityLog";
+import { publicErrorMessage } from "@/lib/security/publicError";
 
 type LegInput = {
   matchId: string;
@@ -300,10 +301,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Could not place bet";
+    const message = publicErrorMessage(err, "Could not place bet. Please try again.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
       }
+
 
 
 
