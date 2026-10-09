@@ -7,6 +7,9 @@ export const VIRTUAL_HOUSE_MARGIN = 0.06;
 export const VIRTUAL_MIN_ODDS = 1.15;
 export const VIRTUAL_MAX_ODDS = 50;
 
+/** Legacy per-user board TTL (kept so old rounds.ts / play route still typecheck). */
+export const VIRTUAL_ROUND_TTL_MS = 10 * 60 * 1000;
+
 export type VirtualMarketId = "1x2" | "ou25" | "btts";
 export type Virtual1x2Pick = "home" | "draw" | "away";
 export type VirtualOuPick = "over" | "under";
@@ -52,22 +55,29 @@ export interface VirtualMatchResult {
   goals: Array<{ minute: number; side: "home" | "away" }>;
 }
 
+/**
+ * Round payload.
+ * Shared clock rounds use index/startsAt/kickoffAt/phase.
+ * Legacy per-user boards use createdAt/expiresAt only.
+ */
 export interface VirtualRoundPublic {
   id: string;
-  index: number;
-  startsAt: number;
-  kickoffAt: number;
-  endsAt: number;
-  phase: "betting" | "live" | "result";
-  dayKey: string;
-  /** sha256 of day seed — published always. */
-  dayCommitment: string;
   matches: VirtualMatchPublic[];
-  /** Present only after kickoff. */
+  /** Shared schedule */
+  index?: number;
+  startsAt?: number;
+  kickoffAt?: number;
+  endsAt?: number;
+  phase?: "betting" | "live" | "result";
+  dayKey?: string;
+  dayCommitment?: string;
   results?: VirtualMatchResult[];
-  serverNow: number;
-  msToKickoff: number;
-  msToEnd: number;
+  serverNow?: number;
+  msToKickoff?: number;
+  msToEnd?: number;
+  /** Legacy */
+  createdAt?: number;
+  expiresAt?: number;
 }
 
 export interface VirtualBetLeg {
