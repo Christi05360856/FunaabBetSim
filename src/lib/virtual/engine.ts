@@ -260,3 +260,13 @@ export function generateRoundMatches(): VirtualMatchInternal[] {
   const seed = randomBytes(32).toString("hex");
   return generateRoundFromSeed(seed);
 }
+
+/** Legacy instant settle for old play/route.ts — random score from strengths. */
+export function resolveScore(
+  hs: number,
+  as: number
+): { homeGoals: number; awayGoals: number } {
+  const seed = randomBytes(16).toString("hex");
+  return resolveScoreFromRand(makePrng(seed), hs, as);
+}
+
