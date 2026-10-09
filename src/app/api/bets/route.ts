@@ -28,6 +28,7 @@ import { isBettingOpen } from "@/lib/domain/matchClock";
 import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
 import { securityLog } from "@/lib/security/securityLog";
 import { publicErrorMessage } from "@/lib/security/publicError";
+import { requirePlayAllowed } from "@/lib/compliance/gate";
 
 type LegInput = {
   matchId: string;
@@ -46,6 +47,14 @@ export async function POST(request: NextRequest) {
   const ip = clientIp(request);
   const limited = await enforceRateLimit("place_bet", `uid:${uid}`);
   if (limited) return limited;
+
+  const play = await requirePlayAllowed(uid);
+  if (!play.ok) {
+    return NextResponse.json(
+      { error: play.error, code: play.code },
+      { status: play.status }
+    );
+  }
 
   const raw = await request.json().catch(() => ({}));
   const idempotencyKey = (
@@ -341,4 +350,4 @@ export async function POST(request: NextRequest) {
 
 
 
-          
+      
