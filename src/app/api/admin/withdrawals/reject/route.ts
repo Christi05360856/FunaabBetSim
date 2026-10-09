@@ -7,7 +7,7 @@ import {
   normalizeWallet,
 } from "@/lib/domain/ledgerEngine";
 import type { Wallet, Withdrawal } from "@/types/domain";
-import { requireAdminTotp } from "@/lib/security/adminTotp";
+import { requireAdminTotpOnce } from "@/lib/security/adminTotpGuard";
 import { writeAdminAudit } from "@/lib/security/adminAudit";
 import { resolveUserEmail, sendMail } from "@/lib/email/send";
 import { withdrawalEmailHtml } from "@/lib/email/templates";
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   const withdrawalId = String(body.withdrawalId ?? "").trim();
   const note = body.note != null ? String(body.note).slice(0, 300) : "Rejected by admin";
 
-  const totpErr = requireAdminTotp((body as { totpCode?: string }).totpCode);
+  const totpErr = await requireAdminTotpOnce((body as { totpCode?: string }).totpCode);
   if (totpErr) {
     return NextResponse.json({ error: totpErr }, { status: 401 });
   }
