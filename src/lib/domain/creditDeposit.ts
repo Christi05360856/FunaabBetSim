@@ -11,6 +11,7 @@ import {
   writePromoCredit,
 } from "@/lib/domain/promoEngine";
 import { POINTS_PER_NAIRA } from "@/types/domain";
+import { betLimits } from "@/lib/domain/limits";
 import type { Deposit, Wallet } from "@/types/domain";
 
 /**
@@ -108,6 +109,11 @@ export async function creditVerifiedDeposit(input: {
       promo: before.promo,
       reservedStake: before.reservedStake,
       reservedWithdrawal: before.reservedWithdrawal,
+      // Deposits must be played through before they can be withdrawn.
+      turnoverRequired:
+        (before.turnoverRequired ?? 0) +
+        Math.round(points * betLimits().turnoverMultiplier),
+      turnoverDone: before.turnoverDone ?? 0,
       balance: balanceAfterPurchase,
       resetPendingSince: null,
       updatedAt: now,
@@ -190,4 +196,4 @@ export async function creditVerifiedDeposit(input: {
       uid: deposit.uid,
     };
   });
-}
+  }
