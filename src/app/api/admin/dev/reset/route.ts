@@ -4,7 +4,7 @@ import { verifyAdminRequest } from "@/lib/auth/verifyAdminRequest";
 import { requireRecentAuth } from "@/lib/security/sessionGate";
 import { securityLog } from "@/lib/security/securityLog";
 import { clientIp } from "@/lib/security/rateLimit";
-import { requireAdminTotp } from "@/lib/security/adminTotp";
+import { requireAdminTotpOnce } from "@/lib/security/adminTotpGuard";
 import { adminDb } from "@/lib/firebase/admin";
 import type { Competition, Match, Wallet } from "@/types/domain";
 import { STARTING_BALANCE } from "@/types/domain";
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
   }
 
   const bodyEarly = await request.json().catch(() => ({}));
-  const totpErr = requireAdminTotp((bodyEarly as { totpCode?: string }).totpCode);
+  const totpErr = await requireAdminTotpOnce((bodyEarly as { totpCode?: string }).totpCode);
   if (totpErr) {
     return NextResponse.json({ error: totpErr }, { status: 401 });
   }
@@ -404,4 +404,5 @@ export async function POST(request: NextRequest) {
   }
 
 
-    
+
+      
