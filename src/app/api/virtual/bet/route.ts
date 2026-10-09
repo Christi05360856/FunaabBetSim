@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
   const bet = await placeVirtualBet({
     uid: decoded.uid,
     roundId: round.id,
-    roundIndex: round.index,
+    roundIndex: round.index ?? 0,
     stake: stakeR,
     legs,
     combinedOdds: combined,
@@ -156,6 +156,6 @@ export async function POST(request: NextRequest) {
     combinedOdds: combined,
     potential: Math.floor(stakeR * combined * 100) / 100,
     balance: held.balanceAfter,
-    kickoffAt: round.kickoffAt,
+    kickoffAt: round.kickoffAt ?? Date.now(),
   });
 }
