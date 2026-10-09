@@ -59,13 +59,17 @@ function hotp(secret: Buffer, counter: number): string {
   return String(code % 1_000_000).padStart(6, "0");
 }
 
-export function verifyTotp(
+/**
+ * Returns the matching 30-second time step (counter) or null.
+ * The step number lets callers reject a code that was already used.
+ */
+export function matchTotpStep(
   secretBase32: string,
   token: string,
   window = 1
-): boolean {
+): number | null {
   const cleaned = String(token).replace(/\s/g, "");
-  if (!/^\d{6}$/.test(cleaned)) return false;
+  if (!/^\d{6}$/.test(cleaned)) return null;
   const secret = base32Decode(secretBase32);
   const counter = Math.floor(Date.now() / 1000 / 30);
   for (let w = -window; w <= window; w++) {
@@ -73,12 +77,20 @@ export function verifyTotp(
     try {
       const a = Buffer.from(expected);
       const b = Buffer.from(cleaned);
-      if (a.length === b.length && timingSafeEqual(a, b)) return true;
+      if (a.length === b.length && timingSafeEqual(a, b)) return counter + w;
     } catch {
       /* continue */
     }
   }
-  return false;
+  return null;
+}
+
+export function verifyTotp(
+  secretBase32: string,
+  token: string,
+  window = 1
+): boolean {
+  return matchTotpStep(secretBase32, token, window) !== null;
 }
 
 export function totpConfigured(): boolean {
