@@ -36,7 +36,6 @@ const ICONS: Record<string, string> = {
   wheel: "🎡",
   crash: "🚀",
   thimbles: "🕳️",
-  "campus-crash": "🚌",
   penalty: "⚽",
   plinko: "🟣",
   hilo: "🃏",
