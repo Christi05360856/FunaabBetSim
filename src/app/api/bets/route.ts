@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
       msg = "Unable to bet. Remove some selections and try again.";
     }
     return NextResponse.json({ error: msg }, { status: 400 });
-  },
+  }
 
   let legs: LegInput[];
   let stake: number;
