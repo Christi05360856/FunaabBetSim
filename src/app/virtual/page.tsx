@@ -2,6 +2,8 @@
 
 /**
  * Shared Instant Virtual Football — clock-scheduled rounds, same board for all.
+ * Client-only goal-by-goal animation uses results already on the round payload
+ * (no extra Firestore listeners / reads).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -13,6 +15,7 @@ import type {
   VirtualRoundPublic,
 } from "@/types/virtual";
 import { VIRTUAL_LEAGUES } from "@/lib/virtual/teamPool";
+import { sfxBet, sfxGoal, sfxLose, sfxWin } from "@/lib/casino/sounds";
 
 type PickLeg = {
   matchId: string;
@@ -45,6 +48,147 @@ function pickLabel(market: string, pick: string) {
   return pick === "yes" ? "BTTS Yes" : "BTTS No";
 }
 
+/** Client-side goal timeline player — pure UI, no network. */
+function GoalAnimation({
+  matches,
+  results,
+  onDone,
+  skip,
+}: {
+  matches: VirtualMatchPublic[];
+  results: VirtualMatchResult[];
+  onDone: () => void;
+  skip: boolean;
+}) {
+  const [minute, setMinute] = useState(0);
+  const [scores, setScores] = useState<Record<string, { h: number; a: number }>>(
+    {}
+  );
+  const [lastGoal, setLastGoal] = useState<string | null>(null);
+  const doneRef = useRef(false);
+
+  const byId = useMemo(() => {
+    const m: Record<string, VirtualMatchPublic> = {};
+    matches.forEach((x) => {
+      m[x.id] = x;
+    });
+    return m;
+  }, [matches]);
+
+  // All goals sorted by minute
+  const timeline = useMemo(() => {
+    const events: Array<{
+      minute: number;
+      matchId: string;
+      side: "home" | "away";
+    }> = [];
+    results.forEach((r) => {
+      (r.goals || []).forEach((g) => {
+        events.push({ minute: g.minute, matchId: r.matchId, side: g.side });
+      });
+    });
+    events.sort((a, b) => a.minute - b.minute);
+    return events;
+  }, [results]);
+
+  useEffect(() => {
+    // Init 0-0
+    const init: Record<string, { h: number; a: number }> = {};
+    results.forEach((r) => {
+      init[r.matchId] = { h: 0, a: 0 };
+    });
+    setScores(init);
+    setMinute(0);
+    setLastGoal(null);
+    doneRef.current = false;
+  }, [results]);
+
+  useEffect(() => {
+    if (skip) {
+      const final: Record<string, { h: number; a: number }> = {};
+      results.forEach((r) => {
+        final[r.matchId] = { h: r.homeGoals, a: r.awayGoals };
+      });
+      setScores(final);
+      setMinute(90);
+      if (!doneRef.current) {
+        doneRef.current = true;
+        onDone();
+      }
+      return;
+    }
+
+    let m = 0;
+    let idx = 0;
+    const id = setInterval(() => {
+      m += 2; // ~3s for full 90
+      if (m > 90) m = 90;
+      setMinute(m);
+      while (idx < timeline.length && timeline[idx]!.minute <= m) {
+        const ev = timeline[idx]!;
+        setScores((prev) => {
+          const cur = prev[ev.matchId] ?? { h: 0, a: 0 };
+          const next = {
+            ...prev,
+            [ev.matchId]: {
+              h: cur.h + (ev.side === "home" ? 1 : 0),
+              a: cur.a + (ev.side === "away" ? 1 : 0),
+            },
+          };
+          return next;
+        });
+        const match = byId[ev.matchId];
+        const team =
+          ev.side === "home" ? match?.home ?? "Home" : match?.away ?? "Away";
+        setLastGoal(`⚽ ${team} · ${ev.minute}'`);
+        sfxGoal();
+        idx++;
+      }
+      if (m >= 90) {
+        clearInterval(id);
+        if (!doneRef.current) {
+          doneRef.current = true;
+          onDone();
+        }
+      }
+    }, 70);
+    return () => clearInterval(id);
+  }, [timeline, byId, results, skip, onDone]);
+
+  return (
+    <div className="mx-3 mt-3 rounded-2xl border border-ink-muted/15 bg-surface p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs font-bold text-ink">Live · {minute}&apos;</p>
+        {lastGoal && (
+          <p className="text-[11px] font-semibold text-brand">{lastGoal}</p>
+        )}
+      </div>
+      <div className="flex flex-col gap-2">
+        {results.map((r) => {
+          const m = byId[r.matchId];
+          const sc = scores[r.matchId] ?? { h: 0, a: 0 };
+          return (
+            <div
+              key={r.matchId}
+              className="flex items-center justify-between rounded-xl bg-bg px-3 py-2 text-sm"
+            >
+              <span className="min-w-0 flex-1 truncate font-semibold">
+                {m?.home ?? "Home"}
+              </span>
+              <span className="mx-2 shrink-0 font-display text-base font-extrabold tabular-nums">
+                {sc.h} - {sc.a}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-right font-semibold">
+                {m?.away ?? "Away"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function VirtualPage() {
   const { user } = useAuth();
   const [league, setLeague] = useState(VIRTUAL_LEAGUES[0]!.id);
@@ -56,64 +200,82 @@ export default function VirtualPage() {
   const [err, setErr] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
-  // Server time minus this phone's clock, so the countdown matches the server.
   const offsetRef = useRef(0);
   const [ticketMsg, setTicketMsg] = useState<string | null>(null);
   const [settleInfo, setSettleInfo] = useState<{
     results: VirtualMatchResult[];
     summary: string;
   } | null>(null);
+  const [animDone, setAnimDone] = useState(false);
+  const [skipAnim, setSkipAnim] = useState(false);
+  const settledRoundRef = useRef<string | null>(null);
 
   const token = useCallback(async () => {
     if (!user) throw new Error("Sign in required");
     return user.getIdToken();
   }, [user]);
 
-  const loadRound = useCallback(async () => {
-    if (!user) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      const t = await token();
-      const res = await fetch("/api/virtual/round", {
-        headers: { Authorization: `Bearer ${t}` },
-        cache: "no-store",
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to load");
-      setRound(data.round);
-      if (typeof data.round?.serverNow === "number") {
-        offsetRef.current = data.round.serverNow - Date.now();
+  /** quiet = phase poll (no full-page busy spinner) */
+  const loadRound = useCallback(
+    async (quiet = false) => {
+      if (!user) return;
+      if (!quiet) {
+        setBusy(true);
+        setErr(null);
       }
-      if (typeof data.balance === "number") setBalance(data.balance);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed");
-    } finally {
-      setBusy(false);
-    }
-  }, [user, token]);
+      try {
+        const t = await token();
+        const res = await fetch("/api/virtual/round", {
+          headers: { Authorization: `Bearer ${t}` },
+          cache: "no-store",
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load");
+        setRound(data.round);
+        if (typeof data.round?.serverNow === "number") {
+          offsetRef.current = data.round.serverNow - Date.now();
+        }
+        if (typeof data.balance === "number") setBalance(data.balance);
+      } catch (e) {
+        if (!quiet) setErr(e instanceof Error ? e.message : "Failed");
+      } finally {
+        if (!quiet) setBusy(false);
+      }
+    },
+    [user, token]
+  );
 
   useEffect(() => {
-    if (user) void loadRound();
+    if (user) void loadRound(false);
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Tick clock + refresh board on phase boundaries
+  // Local clock only — no network
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now() + offsetRef.current), 1000);
     return () => clearInterval(id);
   }, []);
 
+  // Quiet refresh when phase boundaries pass (1 HTTP call, not Firestore onSnapshot)
   useEffect(() => {
-    if (!round || round.endsAt === undefined) return;
-    if (now >= round.endsAt) {
-      void loadRound();
+    if (!round || round.endsAt === undefined || round.kickoffAt === undefined)
+      return;
+    if (now >= round.endsAt || (round.phase === "betting" && now >= round.kickoffAt)) {
+      void loadRound(true);
     }
-  }, [now, round?.endsAt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [now, round?.endsAt, round?.kickoffAt, round?.phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-settle open bets once live/result
+  // Reset animation when round changes
+  useEffect(() => {
+    setAnimDone(false);
+    setSkipAnim(false);
+    setSettleInfo(null);
+  }, [round?.id]);
+
+  // Auto-settle once per round when live/result (one POST, transactional on server)
   useEffect(() => {
     if (!user || !round) return;
     if (round.phase === "betting") return;
+    if (settledRoundRef.current === round.id) return;
     let cancelled = false;
     (async () => {
       try {
@@ -128,6 +290,7 @@ export default function VirtualPage() {
         });
         const data = await res.json();
         if (cancelled || !res.ok) return;
+        settledRoundRef.current = round.id;
         if (typeof data.balance === "number") setBalance(data.balance);
         if (data.results) {
           const settled = (data.settled || []) as Array<{
@@ -142,6 +305,8 @@ export default function VirtualPage() {
               won.length > 0
                 ? `Settled · +${chips(Math.max(0, profit))}`
                 : `Settled · ${chips(profit)}`;
+            if (won.length > 0) sfxWin();
+            else sfxLose();
           }
           setSettleInfo({ results: data.results, summary });
         }
@@ -176,7 +341,10 @@ export default function VirtualPage() {
         ? Math.max(0, (round.kickoffAt ?? now) - now)
         : Math.max(0, (round.endsAt ?? now) - now);
 
-  function togglePick(m: VirtualMatchPublic, leg: Omit<PickLeg, "home" | "away">) {
+  function togglePick(
+    m: VirtualMatchPublic,
+    leg: Omit<PickLeg, "home" | "away">
+  ) {
     if (round?.phase !== "betting") return;
     setPicks((prev) => {
       const without = prev.filter((p) => p.matchId !== m.id);
@@ -237,9 +405,10 @@ export default function VirtualPage() {
       if (!res.ok) throw new Error(data.error || "Bet failed");
       if (typeof data.balance === "number") setBalance(data.balance);
       setTicketMsg(
-        `Ticket in · pot ${chips(data.potential)} · settles after kick-off`
+        `Bet placed · potential ${chips(data.potential)} · watch for kick-off`
       );
       setPicks([]);
+      sfxBet();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -261,6 +430,15 @@ export default function VirtualPage() {
       </main>
     );
   }
+
+  const showAnim =
+    (round?.phase === "live" || round?.phase === "result") &&
+    (round.results?.length ?? 0) > 0 &&
+    !animDone;
+  const showFinal =
+    animDone ||
+    (round?.phase === "result" && skipAnim) ||
+    (round?.phase === "result" && animDone);
 
   return (
     <main className="mx-auto min-h-[100dvh] max-w-lg bg-bg pb-48 text-ink">
@@ -296,7 +474,6 @@ export default function VirtualPage() {
         </Link>
       </header>
 
-      {/* League tabs */}
       <div className="flex gap-1 overflow-x-auto border-b border-ink-muted/10 px-2 py-2">
         {VIRTUAL_LEAGUES.map((lg) => (
           <button
@@ -314,84 +491,99 @@ export default function VirtualPage() {
         ))}
       </div>
 
-      {err && (
-        <p className="mx-3 mt-2 rounded-xl bg-red-500/10 px-3 py-2 text-center text-xs font-semibold text-red-600">
-          {err}
-        </p>
-      )}
       {ticketMsg && (
-        <p className="mx-3 mt-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-center text-xs font-semibold text-emerald-700">
+        <p className="mx-3 mt-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-center text-xs font-semibold text-emerald-800">
           {ticketMsg}
         </p>
       )}
       {settleInfo?.summary && (
-        <p className="mx-3 mt-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-center text-xs font-semibold text-emerald-700">
+        <p className="mx-3 mt-2 rounded-xl bg-brand/10 px-3 py-2 text-center text-xs font-semibold text-brand">
           {settleInfo.summary}
         </p>
       )}
-
-      {/* Results strip when not betting */}
-      {round?.phase !== "betting" && round?.results && (
-        <div className="mx-2 mt-3 space-y-2">
-          <p className="px-1 text-[10px] font-bold uppercase text-ink-muted">
-            Scores
-          </p>
-          {matches.map((m) => {
-            const r = round.results!.find((x) => x.matchId === m.id);
-            if (!r) return null;
-            return (
-              <div
-                key={m.id}
-                className="rounded-xl border border-ink-muted/12 bg-surface px-3 py-2"
-              >
-                <div className="flex items-center justify-between text-sm font-bold">
-                  <span className="truncate">{m.home}</span>
-                  <span className="tabular-nums">
-                    {r.homeGoals} – {r.awayGoals}
-                  </span>
-                  <span className="truncate text-right">{m.away}</span>
-                </div>
-                {r.goals.length > 0 && (
-                  <p className="mt-1 text-[10px] text-ink-muted">
-                    {r.goals
-                      .map(
-                        (g) =>
-                          `${g.minute}' ${g.side === "home" ? m.home : m.away}`
-                      )
-                      .join(" · ")}
-                  </p>
-                )}
-              </div>
-            );
-          })}
-        </div>
+      {err && (
+        <p className="mx-3 mt-2 text-center text-xs font-medium text-red-600">
+          {err}
+        </p>
       )}
 
-      {/* Board */}
-      <div className="px-2 pt-2">
-        <div className="mb-1 flex items-center px-1 text-[10px] font-bold uppercase tracking-wide text-ink-muted">
-          <span className="flex-1">Match</span>
-          <span className="w-[4.5rem] text-center">1</span>
-          <span className="w-[4.5rem] text-center">X</span>
-          <span className="w-[4.5rem] text-center">2</span>
-        </div>
-        {busy && !round && (
-          <p className="py-10 text-center text-sm text-ink-muted">Loading…</p>
+      {/* Goal-by-goal animation during live */}
+      {showAnim && round?.results && (
+        <>
+          <GoalAnimation
+            matches={round.matches}
+            results={round.results}
+            skip={skipAnim}
+            onDone={() => setAnimDone(true)}
+          />
+          {!skipAnim && !animDone && (
+            <div className="mx-3 mt-2">
+              <button
+                type="button"
+                onClick={() => setSkipAnim(true)}
+                className="w-full rounded-xl border border-ink-muted/20 bg-surface py-2.5 text-sm font-bold text-ink"
+              >
+                Skip to result
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Final scores after animation or on result phase */}
+      {(animDone || (round?.phase === "result" && round.results)) &&
+        round?.results && (
+          <div className="mx-3 mt-3 rounded-2xl border border-ink-muted/15 bg-surface p-3">
+            <p className="mb-2 text-xs font-bold uppercase text-ink-muted">
+              Full time
+            </p>
+            <div className="flex flex-col gap-2">
+              {round.results
+                .filter((r) => {
+                  const m = round.matches.find((x) => x.id === r.matchId);
+                  return m?.league === league;
+                })
+                .map((r) => {
+                  const m = round.matches.find((x) => x.id === r.matchId);
+                  return (
+                    <div
+                      key={r.matchId}
+                      className="flex items-center justify-between rounded-xl bg-bg px-3 py-2 text-sm"
+                    >
+                      <span className="min-w-0 flex-1 truncate font-semibold">
+                        {m?.home ?? "Home"}
+                      </span>
+                      <span className="mx-2 shrink-0 font-display text-base font-extrabold tabular-nums">
+                        {r.homeGoals} - {r.awayGoals}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-right font-semibold">
+                        {m?.away ?? "Away"}
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
         )}
-        <div className="flex flex-col gap-2">
+
+      {/* Markets — betting open */}
+      {round?.phase === "betting" && (
+        <div className="mt-2 flex flex-col gap-1 px-2">
           {matches.map((m) => {
             const open = expanded === m.id;
-            const sel = picks.find((p) => p.matchId === m.id);
             const locked = round?.phase !== "betting";
+            const sel = picks.find((p) => p.matchId === m.id);
             return (
               <div
                 key={m.id}
-                className="overflow-hidden rounded-2xl border border-ink-muted/12 bg-surface"
+                className="overflow-hidden rounded-2xl border border-ink-muted/10 bg-surface"
               >
-                <div className="flex items-stretch">
+                <div className="flex">
                   <button
                     type="button"
-                    onClick={() => setExpanded(open ? null : m.id)}
+                    onClick={() =>
+                      setExpanded((e) => (e === m.id ? null : m.id))
+                    }
                     className="min-w-0 flex-1 px-3 py-2.5 text-left"
                   >
                     <p className="truncate text-sm font-bold">
@@ -479,9 +671,8 @@ export default function VirtualPage() {
             );
           })}
         </div>
-      </div>
+      )}
 
-      {/* Footer */}
       {round?.phase === "betting" && (
         <div
           className="fixed inset-x-0 z-40 border-t border-ink-muted/15 bg-surface/95 px-2 pt-2 backdrop-blur"
@@ -491,12 +682,6 @@ export default function VirtualPage() {
           }}
         >
           <div className="mx-auto flex max-w-lg items-center gap-2">
-            <Link
-              href="/virtual/fair"
-              className="rounded-xl border border-ink-muted/20 px-2 py-2.5 text-[10px] font-bold text-ink-muted"
-            >
-              Fair
-            </Link>
             <input
               type="number"
               inputMode="numeric"
@@ -504,7 +689,9 @@ export default function VirtualPage() {
               max={CASINO_MAX_STAKE}
               value={stake}
               onChange={(e) => setStake(e.target.value)}
-              className="w-20 rounded-xl border border-ink-muted/20 bg-bg px-2 py-2.5 text-center text-sm font-bold tabular-nums outline-none focus:border-brand"
+              placeholder="Stake"
+              aria-label="Stake amount"
+              className="w-24 rounded-xl border border-ink-muted/20 bg-bg px-2 py-2.5 text-center text-sm font-bold tabular-nums outline-none focus:border-brand"
             />
             <button
               type="button"
@@ -520,18 +707,15 @@ export default function VirtualPage() {
           {picks.length > 0 && (
             <p className="mx-auto mt-1 max-w-lg px-1 text-[10px] text-ink-muted">
               {picks.length} pick{picks.length > 1 ? "s" : ""} · @
-              {totalOdds.toFixed(2)}{" "}
-              <button
-                type="button"
-                onClick={() => setPicks([])}
-                className="ml-1 font-semibold text-red-500"
-              >
-                Clear
-              </button>
+              {totalOdds.toFixed(2)}
             </p>
           )}
         </div>
       )}
+
+      {round == null && busy && (
+        <p className="mt-10 text-center text-sm text-ink-muted">Loading…</p>
+      )}
     </main>
   );
-}
+    }
