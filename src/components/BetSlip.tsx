@@ -139,11 +139,14 @@ export function BetSlip() {
 
   const activeBalance = fundMode === "promo" ? promo : balance;
   const overBalance = stake !== "" && stakeNum > activeBalance;
+  const oddsTooHigh = totalOdds > 2000;
   const stakeValid =
     stake !== "" &&
     stakeNum >= MINIMUM_STAKE &&
     !overBalance &&
     items.length > 0 &&
+    items.length <= 15 &&
+    !oddsTooHigh &&
     (fundMode === "cash" || promoCanCover);
   const modeLabel = items.length <= 1 ? "Single" : "Multiple";
 
@@ -582,6 +585,17 @@ export function BetSlip() {
                     {fundMode === "promo"
                       ? "Not enough promo points"
                       : "Balance not enough"}
+                  </p>
+                )}
+
+                {oddsTooHigh && (
+                  <p className="mt-1 text-xs font-medium text-rose-600">
+                    Unable to bet. Odds are above 2,000. Remove some selections.
+                  </p>
+                )}
+                {items.length >= 15 && (
+                  <p className="mt-1 text-xs font-medium text-ink-muted">
+                    Maximum 15 selections reached.
                   </p>
                 )}
 
