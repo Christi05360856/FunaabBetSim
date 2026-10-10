@@ -1,12 +1,27 @@
 import "server-only";
 import { createHash, createHmac } from "crypto";
 
-/** Server secret for virtual + casino fairness. Set VIRTUAL_FAIR_SECRET in env. */
+/**
+ * Server secret for virtual + casino fairness. Set VIRTUAL_FAIR_SECRET in
+ * your hosting environment: a long random string (32+ characters), used for
+ * nothing else. Anyone who knows it can predict every round, so in production
+ * we refuse to run without it instead of falling back to a value in the code.
+ */
 export function fairSecret(): string {
   const s = process.env.VIRTUAL_FAIR_SECRET?.trim();
-  if (s && s.length >= 16) return s;
-  // Dev fallback — production MUST set VIRTUAL_FAIR_SECRET
-  return process.env.CRON_SECRET?.trim() || "funaab-dev-fair-secret-change-me";
+  if (s && s.length >= 32) return s;
+
+  // `next build` only collects route info; nothing real is generated then.
+  if (process.env.NEXT_PHASE === "phase-production-build") {
+    return "build-phase-placeholder-secret-not-used-at-runtime";
+  }
+  const inProduction =
+    process.env.NODE_ENV === "production" ||
+    process.env.VERCEL_ENV === "production";
+  if (inProduction) {
+    throw new Error("VIRTUAL_FAIR_SECRET is missing or shorter than 32 characters");
+  }
+  return "dev-only-fair-secret-never-use-in-production-0000";
 }
 
 export function sha256Hex(input: string): string {
