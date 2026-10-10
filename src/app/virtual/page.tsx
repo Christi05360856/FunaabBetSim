@@ -534,5 +534,4 @@ export default function VirtualPage() {
       )}
     </main>
   );
-          }
-          ,
+}
