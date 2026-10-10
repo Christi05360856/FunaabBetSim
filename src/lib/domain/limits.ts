@@ -66,10 +66,10 @@ export function checkBetLimits(input: {
     return `Maximum stake per bet is ₦${lim.maxStake}.`;
   }
   if (input.legCount > lim.maxLegs) {
-    return `A ticket can have at most ${lim.maxLegs} selections.`;
+    return `Unable to bet. Maximum ${lim.maxLegs} selections per ticket. Remove some selections.`;
   }
   if (input.combinedOdds > lim.maxCombinedOdds) {
-    return `Combined odds are capped at ${lim.maxCombinedOdds}. Remove a selection and try again.`;
+    return `Unable to bet. Odds are above ${lim.maxCombinedOdds}. Remove some selections.`;
   }
   return null;
 }
