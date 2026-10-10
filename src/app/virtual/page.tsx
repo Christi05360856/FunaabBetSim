@@ -104,7 +104,7 @@ export default function VirtualPage() {
   }, []);
 
   useEffect(() => {
-    if (!round) return;
+    if (!round || round.endsAt === undefined) return;
     if (now >= round.endsAt) {
       void loadRound();
     }
@@ -173,8 +173,8 @@ export default function VirtualPage() {
     round == null
       ? 0
       : round.phase === "betting"
-        ? Math.max(0, round.kickoffAt - now)
-        : Math.max(0, round.endsAt - now);
+        ? Math.max(0, (round.kickoffAt ?? now) - now)
+        : Math.max(0, (round.endsAt ?? now) - now);
 
   function togglePick(m: VirtualMatchPublic, leg: Omit<PickLeg, "home" | "away">) {
     if (round?.phase !== "betting") return;
@@ -534,5 +534,5 @@ export default function VirtualPage() {
       )}
     </main>
   );
-      }
-            
+          }
+          ,
