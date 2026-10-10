@@ -17,7 +17,6 @@ export type CasinoGameId =
   | "wheel"
   | "crash"
   | "thimbles"
-  | "campus-crash"
   | "penalty"
   | "plinko"
   | "hilo"
@@ -38,7 +37,6 @@ export const CASINO_GAMES: CasinoGameMeta[] = [
   { id: "wheel", name: "Wheel", blurb: "Spin for a multiplier", playReady: true },
   { id: "crash", name: "Crash Lite", blurb: "Cash out before it crashes", playReady: true },
   { id: "thimbles", name: "Thimbles", blurb: "Find the ball under 3 cups", playReady: true },
-  { id: "campus-crash", name: "Campus Crash", blurb: "Cash out before the bus crashes", playReady: true },
   { id: "penalty", name: "Penalty", blurb: "One shot — beat the keeper", playReady: true },
   { id: "plinko", name: "Plinko", blurb: "Drop the ball, hit a multiplier", playReady: true },
   { id: "hilo", name: "Hi-Lo", blurb: "Higher or lower than the card", playReady: true },
@@ -120,4 +118,5 @@ export const PENALTY_SERIES_SHOTS = 5;
 
 export function isCasinoGameId(v: string): v is CasinoGameId {
   return (CASINO_GAMES as { id: string }[]).some((g) => g.id === v);
-}
+  }
+2
