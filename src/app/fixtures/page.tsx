@@ -205,6 +205,11 @@ export default function FixturesPage() {
     market: Market,
     selection: { id: string; label: string; odds: number }
   ) {
+    // Preserve scroll position — selecting odds used to jump the list back to top
+    const scrollY =
+      typeof window !== "undefined"
+        ? window.scrollY || document.documentElement.scrollTop
+        : 0;
     const home = teams[match.homeTeamId];
     const away = teams[match.awayTeamId];
     const { market: marketName, pick } = resolveSelection(
@@ -220,6 +225,10 @@ export default function FixturesPage() {
       homeTeamName: home?.name ?? "Home",
       awayTeamName: away?.name ?? "Away",
       marketName,
+    });
+    requestAnimationFrame(() => {
+      window.scrollTo(0, scrollY);
+      requestAnimationFrame(() => window.scrollTo(0, scrollY));
     });
   }
 
