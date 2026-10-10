@@ -1,35 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { verifyRequest } from "@/lib/auth/verifyRequest";
-import { adminDb } from "@/lib/firebase/admin";
 import { ensureCasinoDemoWallet } from "@/lib/casino/demoWallet";
 import { buildCurrentRound, buildRoundByIndex } from "@/lib/virtual/currentRound";
 import {
   getOpenBetsForRound,
-  markBetSettled,
+  settleVirtualBetAtomic,
 } from "@/lib/virtual/bets";
 import { selectionWins } from "@/lib/virtual/engine";
+import { phaseAt } from "@/lib/virtual/schedule";
 import type { VirtualSelection } from "@/types/virtual";
 
 export const dynamic = "force-dynamic";
 
-/** Credit demo chips after stake was already held at bet time. */
-async function creditChips(uid: string, amount: number): Promise<number> {
-  const ref = adminDb.collection("casino_wallets").doc(uid);
-  return adminDb.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const bal = snap.exists
-      ? Number((snap.data() as { balance?: number }).balance) || 0
-      : 0;
-    const next = Math.floor((bal + amount) * 100) / 100;
-    tx.set(
-      ref,
-      { uid, balance: next, updatedAt: Date.now() },
-      { merge: true }
-    );
-    return next;
-  });
-}
-
+/**
+ * POST { roundId? } — settle the caller's open bets for a finished round.
+ * Safe to call as often as you like: each bet is settled once, inside its own
+ * transaction, so repeat or parallel calls cannot pay twice.
+ */
 export async function POST(request: NextRequest) {
   const decoded = await verifyRequest(request);
   if (!decoded) {
@@ -40,21 +27,24 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    /* optional */
+    /* roundId is optional */
   }
 
-  const current = buildCurrentRound();
-  let round = current.public;
-  let internal = current.internal;
+  const now = Date.now();
+  const currentIndex = phaseAt(now).index;
+  let built = buildCurrentRound(now);
 
-  if (body.roundId && body.roundId !== current.public.id) {
-    const idx = Number(String(body.roundId).replace("VR-", ""));
-    if (Number.isFinite(idx)) {
-      const built = buildRoundByIndex(idx);
-      round = built.public;
-      internal = built.internal;
+  if (body.roundId && body.roundId !== built.public.id) {
+    const match = /^VR-(\d{1,9})$/.exec(String(body.roundId));
+    const idx = match ? Number(match[1]) : NaN;
+    if (!Number.isInteger(idx) || idx < 0 || idx > currentIndex) {
+      return NextResponse.json({ error: "Unknown round" }, { status: 400 });
     }
+    built = buildRoundByIndex(idx, now);
   }
+
+  const round = built.public;
+  const internal = built.internal;
 
   if (round.phase === "betting") {
     return NextResponse.json(
@@ -84,8 +74,7 @@ export async function POST(request: NextRequest) {
     payout: number;
     profit: number;
   }> = [];
-
-  let balance = (await ensureCasinoDemoWallet(decoded.uid)).balance;
+  let balance: number | null = null;
 
   for (const bet of open) {
     let allWon = true;
@@ -95,10 +84,7 @@ export async function POST(request: NextRequest) {
         allWon = false;
         break;
       }
-      const sel = {
-        market: leg.market,
-        pick: leg.pick,
-      } as VirtualSelection;
+      const sel = { market: leg.market, pick: leg.pick } as VirtualSelection;
       if (
         !selectionWins(
           { homeGoals: res.homeGoals, awayGoals: res.awayGoals },
@@ -114,11 +100,15 @@ export async function POST(request: NextRequest) {
       : 0;
     const status = allWon ? ("won" as const) : ("lost" as const);
 
-    if (payout > 0) {
-      balance = await creditChips(decoded.uid, payout);
-    }
+    const done = await settleVirtualBetAtomic({
+      betId: bet.id,
+      uid: decoded.uid,
+      status,
+      payout,
+    });
+    if (!done.ok) continue; // already settled by another request
 
-    await markBetSettled(bet.id, status, payout);
+    balance = done.balanceAfter;
     settledOut.push({
       betId: bet.id,
       status,
@@ -127,6 +117,10 @@ export async function POST(request: NextRequest) {
         ? Math.floor((payout - bet.stake) * 100) / 100
         : -bet.stake,
     });
+  }
+
+  if (balance === null) {
+    balance = (await ensureCasinoDemoWallet(decoded.uid)).balance;
   }
 
   return NextResponse.json({
