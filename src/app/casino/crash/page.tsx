@@ -11,206 +11,218 @@ import {
   chips,
 } from "@/components/casino/CasinoShell";
 
-type PlayRes = {
-  ok?: boolean;
-  error?: string;
-  crashPoint?: number;
-  cashoutAt?: number;
-  won?: boolean;
-  multiplier?: number;
-  profit?: number;
-  payout?: number;
-  balanceAfter?: number;
+type Snapshot = {
+  index: number;
+  phase: "betting" | "flying" | "crashed";
+  flyAt: number;
+  endsAt: number;
+  crashPoint: number | null;
+  growth: number;
+  /** server time minus this phone's clock, so phases match the server */
+  offset: number;
 };
+
+type Mine = {
+  joined: boolean;
+  stake?: number;
+  cashedOut?: boolean;
+  cashoutMult?: number | null;
+  payout?: number | null;
+};
+
+function vibrate(ms: number) {
+  try {
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      navigator.vibrate(ms);
+    }
+  } catch {
+    /* not supported */
+  }
+}
 
 export default function CrashPage() {
   const { user } = useAuth();
+  const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [mine, setMine] = useState<Mine>({ joined: false });
   const [balance, setBalance] = useState<number | null>(null);
   const [stake, setStake] = useState(100);
-  const [cashoutAt, setCashoutAt] = useState(2);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [last, setLast] = useState<PlayRes | null>(null);
-  const [history, setHistory] = useState<number[]>([]);
-  const [displayX, setDisplayX] = useState(1);
-  const [flying, setFlying] = useState(false);
-  const [crashed, setCrashed] = useState(false);
-  /** Locked target for the in-flight round (ignores slider moves during fly). */
-  const lockedCashout = useRef(2);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [won, setWon] = useState<boolean | null>(null);
+  const [tick, setTick] = useState(0);
+  const lastIndex = useRef<number | null>(null);
 
-  const loadBal = useCallback(async () => {
-    if (!user) return;
+  const load = useCallback(
+    async (withMine: boolean) => {
+      if (!user) return;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(
+          `/api/casino/crash-round${withMine ? "?mine=1" : ""}`,
+          { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+        );
+        const data = await res.json();
+        if (!res.ok) return;
+        setSnap({
+          index: data.index,
+          phase: data.phase,
+          flyAt: data.flyAt,
+          endsAt: data.endsAt,
+          crashPoint: data.crashPoint,
+          growth: data.growth,
+          offset: data.serverNow - Date.now(),
+        });
+        if (withMine) {
+          if (typeof data.balance === "number") setBalance(data.balance);
+          if (data.mine) setMine(data.mine as Mine);
+        }
+      } catch {
+        /* keep the last known state */
+      }
+    },
+    [user]
+  );
+
+  // First load, with the player's own stake and chips.
+  useEffect(() => {
+    void load(true);
+  }, [load]);
+
+  // Cheap clock-only poll. Faster while the multiplier is climbing.
+  useEffect(() => {
+    const fast = snap?.phase === "flying";
+    const id = setInterval(() => void load(false), fast ? 500 : 1000);
+    return () => clearInterval(id);
+  }, [load, snap?.phase]);
+
+  // Smooth animation between polls.
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 100);
+    return () => clearInterval(id);
+  }, []);
+
+  // A new round started: reset the banner and fetch this round's stake.
+  useEffect(() => {
+    if (!snap) return;
+    if (lastIndex.current !== null && lastIndex.current !== snap.index) {
+      setBanner(null);
+      setWon(null);
+      setErr(null);
+      void load(true);
+    }
+    lastIndex.current = snap.index;
+  }, [snap, load]);
+
+  // Reading `tick` keeps the display moving.
+  void tick;
+  const serverNow = Date.now() + (snap?.offset ?? 0);
+  let phase: "betting" | "flying" | "crashed" = snap?.phase ?? "betting";
+  let multiplier = 1;
+  if (snap) {
+    if (snap.phase === "crashed" && snap.crashPoint != null) {
+      multiplier = snap.crashPoint;
+    } else if (serverNow >= snap.flyAt) {
+      phase = "flying";
+      multiplier = Math.exp(snap.growth * ((serverNow - snap.flyAt) / 1000));
+    } else {
+      phase = "betting";
+    }
+  }
+  const secondsToFly = snap ? Math.max(0, Math.ceil((snap.flyAt - serverNow) / 1000)) : 0;
+
+  async function post(body: Record<string, unknown>) {
+    if (!user) throw new Error("Sign in required");
     const token = await user.getIdToken();
-    const res = await fetch("/api/casino/balance", {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
+    const res = await fetch("/api/casino/crash-cashout", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
     });
     const data = await res.json();
-    if (res.ok && typeof data.balance === "number") setBalance(data.balance);
-  }, [user]);
+    if (!res.ok) throw new Error(data.error || "Request failed");
+    return data;
+  }
 
-  useEffect(() => {
-    void loadBal();
-  }, [loadBal]);
-
-  const planeBottom = Math.min(85, 8 + Math.log2(Math.max(1, displayX)) * 22);
-
-  async function play() {
-    if (!user || busy) return;
-    const target = Math.floor(cashoutAt * 100) / 100;
-    lockedCashout.current = target;
-
+  async function join() {
+    if (!snap || busy) return;
     setBusy(true);
     setErr(null);
-    setLast(null);
-    setDisplayX(1);
-    setFlying(true);
-    setCrashed(false);
     try {
-      const token = await user.getIdToken();
-      const res = await fetch("/api/casino/play", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          game: "crash",
-          stake,
-          cashoutAt: target,
-        }),
-      });
-      const data = (await res.json()) as PlayRes;
-      if (!res.ok) throw new Error(data.error || "Play failed");
-
-      const end = data.crashPoint ?? 1;
-      const steps = 28;
-      for (let i = 1; i <= steps; i++) {
-        await new Promise((r) => setTimeout(r, 35));
-        setDisplayX(1 + (end - 1) * (i / steps));
-      }
-      setDisplayX(end);
-      setCrashed(true);
-      setFlying(false);
-      setLast(data);
-      if (typeof data.balanceAfter === "number") setBalance(data.balanceAfter);
-      if (typeof data.crashPoint === "number") {
-        setHistory((h) => [data.crashPoint!, ...h].slice(0, 10));
-      }
+      const data = await post({ action: "join", stake, roundIndex: snap.index });
+      setMine({ joined: true, stake: data.stake, cashedOut: false });
+      if (typeof data.balance === "number") setBalance(data.balance);
+      vibrate(20);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Play failed");
-      setFlying(false);
+      setErr(e instanceof Error ? e.message : "Failed");
     } finally {
       setBusy(false);
     }
   }
 
-  const potential = Math.floor(stake * cashoutAt * 100) / 100;
-  const resultText =
-    last != null && typeof last.crashPoint === "number"
-      ? last.won
-        ? `Crashed ${last.crashPoint.toFixed(2)}x · Cashed ${Number(last.cashoutAt).toFixed(2)}x · Payout ${chips(last.payout ?? Math.floor(stake * Number(last.cashoutAt) * 100) / 100)}`
-        : `Crashed ${last.crashPoint.toFixed(2)}x before ${Number(last.cashoutAt ?? lockedCashout.current).toFixed(2)}x · Lost ${chips(stake)}`
-      : null;
+  async function cashout() {
+    if (!snap || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const data = await post({ action: "cashout", roundIndex: snap.index });
+      setMine((m) => ({
+        ...m,
+        cashedOut: true,
+        cashoutMult: data.multiplier,
+        payout: data.payout,
+      }));
+      setWon(true);
+      setBanner(`Cashed out at ${data.multiplier}x · +${chips(data.profit ?? 0)}`);
+      if (typeof data.balance === "number") setBalance(data.balance);
+      vibrate(40);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed");
+      void load(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const lost = phase === "crashed" && mine.joined && !mine.cashedOut;
 
   return (
-    <CasinoShell title="Crash Lite" balance={balance}>
-      <ResultBanner won={last?.won ?? null} text={resultText} />
-
-      {history.length > 0 && (
-        <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1">
-          {history.map((x, i) => (
-            <span
-              key={`${x}-${i}`}
-              className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-bold tabular-nums ${
-                x >= 2
-                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                  : x >= 1.5
-                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                    : "bg-red-500/15 text-red-700 dark:text-red-300"
-              }`}
-            >
-              {x.toFixed(2)}x
-            </span>
-          ))}
-        </div>
-      )}
-
-      <div className="relative mb-4 h-48 overflow-hidden rounded-2xl border border-ink-muted/15 bg-gradient-to-b from-sky-200/40 via-surface to-surface dark:from-sky-900/20">
-        <div className="absolute bottom-3 left-4 right-4 h-px bg-ink-muted/20" />
-        <div
-          className={`absolute left-1/2 text-3xl transition-all duration-75 ${
-            crashed ? "opacity-40" : "opacity-100"
+    <CasinoShell title="Crash" balance={balance}>
+      <div className="mb-4 flex h-44 flex-col items-center justify-center rounded-2xl border border-ink-muted/12 bg-surface">
+        <p className="text-[10px] font-bold uppercase text-ink-muted">
+          Round #{snap?.index ?? "—"} ·{" "}
+          {phase === "betting"
+            ? `starts in ${secondsToFly}s`
+            : phase === "flying"
+              ? "flying"
+              : "crashed"}
+        </p>
+        <p
+          className={`mt-2 text-5xl font-extrabold tabular-nums ${
+            phase === "crashed" ? "text-red-500" : "text-brand"
           }`}
-          style={{
-            bottom: `${planeBottom}%`,
-            transform: crashed
-              ? "translateX(-50%) rotate(35deg)"
-              : flying
-                ? "translateX(-50%) rotate(-12deg)"
-                : "translateX(-50%) rotate(0deg)",
-          }}
-          aria-hidden
         >
-          ✈️
-        </div>
-        <div className="absolute inset-0 flex flex-col items-center justify-center pt-4">
-          <p
-            className={`text-4xl font-black tabular-nums tracking-tight ${
-              last?.won === false
-                ? "text-red-500"
-                : last?.won === true
-                  ? "text-emerald-500"
-                  : "text-ink"
-            }`}
-          >
-            {displayX.toFixed(2)}x
+          {multiplier.toFixed(2)}x
+        </p>
+        {phase === "crashed" && snap?.crashPoint != null && (
+          <p className="mt-1 text-xs text-ink-muted">
+            Crashed at {snap.crashPoint.toFixed(2)}x
           </p>
+        )}
+        {mine.joined && (
           <p className="mt-1 text-[11px] font-semibold text-ink-muted">
-            {busy
-              ? `Cash out locked at ${lockedCashout.current.toFixed(2)}x`
-              : `Will cash out at ${cashoutAt.toFixed(2)}x`}
+            Your stake: {chips(mine.stake ?? 0)}
+            {mine.cashedOut && mine.cashoutMult
+              ? ` · cashed at ${mine.cashoutMult}x`
+              : ""}
           </p>
-        </div>
+        )}
       </div>
 
-      <div className="mb-3 rounded-2xl border border-ink-muted/15 bg-surface p-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-ink-muted">
-            Auto cash out
-          </span>
-          <span className="text-sm font-extrabold tabular-nums">
-            {cashoutAt.toFixed(2)}x
-          </span>
-        </div>
-        <input
-          type="range"
-          min={1.01}
-          max={10}
-          step={0.01}
-          value={cashoutAt}
-          disabled={busy}
-          onChange={(e) => setCashoutAt(Number(e.target.value))}
-          className="mt-2 w-full accent-emerald-600 disabled:opacity-50"
-        />
-        <div className="mt-2 flex gap-2">
-          {[1.5, 2, 3, 5].map((v) => (
-            <button
-              key={v}
-              type="button"
-              disabled={busy}
-              onClick={() => setCashoutAt(v)}
-              className={`flex-1 rounded-lg py-1.5 text-xs font-bold disabled:opacity-50 ${
-                Math.abs(cashoutAt - v) < 0.001
-                  ? "bg-brand text-white"
-                  : "bg-ink-muted/10 text-ink"
-              }`}
-            >
-              {v}x
-            </button>
-          ))}
-        </div>
-      </div>
+      <ResultBanner won={lost ? false : won} text={lost ? "Crashed — stake lost" : banner} />
 
       <StakeBar
         stake={stake}
@@ -218,22 +230,41 @@ export default function CrashPage() {
         balance={balance}
         min={CASINO_MIN_STAKE}
         max={CASINO_MAX_STAKE}
-        potentialLabel={`Win ${chips(potential)} if plane passes ${cashoutAt.toFixed(2)}x`}
       />
 
       {err && (
         <p className="mt-3 text-center text-xs font-medium text-red-600">{err}</p>
       )}
 
-      <PrimaryBtn
-        busy={busy}
-        disabled={
-          balance == null || balance < stake || stake < CASINO_MIN_STAKE
-        }
-        label="Place bet"
-        busyLabel="Flying…"
-        onClick={() => void play()}
-      />
+      {phase === "betting" && !mine.joined && (
+        <PrimaryBtn
+          busy={busy}
+          disabled={balance == null || balance < stake || stake < CASINO_MIN_STAKE}
+          label="Join round"
+          busyLabel="Joining…"
+          onClick={() => void join()}
+        />
+      )}
+      {phase === "betting" && mine.joined && (
+        <p className="mt-4 text-center text-xs font-semibold text-emerald-600">
+          You are in. Cash out before it crashes.
+        </p>
+      )}
+      {phase === "flying" && mine.joined && !mine.cashedOut && (
+        <PrimaryBtn
+          busy={busy}
+          disabled={multiplier < 1.01}
+          label={`Cash out · ${multiplier.toFixed(2)}x`}
+          busyLabel="…"
+          onClick={() => void cashout()}
+        />
+      )}
+      {phase === "flying" && !mine.joined && (
+        <p className="mt-4 text-center text-xs text-ink-muted">
+          Round in progress. You can join the next one.
+        </p>
+      )}
     </CasinoShell>
   );
-}
+            }
+      
