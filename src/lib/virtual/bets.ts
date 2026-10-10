@@ -1,3 +1,4 @@
+
 import "server-only";
 import { randomBytes } from "crypto";
 import { adminDb } from "@/lib/firebase/admin";
@@ -164,3 +165,63 @@ export async function getOpenBetsForRound(
     .get();
   return snap.docs.map((d) => d.data() as StoredVirtualBet);
 }
+
+/* ------------------------------------------------------------------
+ * Legacy helpers, kept ONLY so an older bet/settle route still compiles
+ * if files are committed one at a time. They are not atomic. The current
+ * routes use placeVirtualBetAtomic / settleVirtualBetAtomic above.
+ * ------------------------------------------------------------------ */
+
+/** @deprecated use placeVirtualBetAtomic */
+export async function placeVirtualBet(input: {
+  uid: string;
+  roundId: string;
+  roundIndex: number;
+  stake: number;
+  legs: VirtualBetLeg[];
+  combinedOdds: number;
+}): Promise<StoredVirtualBet> {
+  const id = "VB-" + randomBytes(6).toString("hex").toUpperCase();
+  const doc: StoredVirtualBet = {
+    id,
+    uid: input.uid,
+    roundId: input.roundId,
+    roundIndex: input.roundIndex,
+    stake: input.stake,
+    legs: input.legs,
+    combinedOdds: input.combinedOdds,
+    status: "open",
+    payout: 0,
+    createdAt: Date.now(),
+    settledAt: null,
+  };
+  await adminDb.collection(COL).doc(id).set(doc);
+  return doc;
+}
+
+/** @deprecated use settleVirtualBetAtomic */
+export async function markBetSettled(
+  id: string,
+  status: "won" | "lost",
+  payout: number
+): Promise<void> {
+  await adminDb.collection(COL).doc(id).update({
+    status,
+    payout,
+    settledAt: Date.now(),
+  });
+}
+
+export async function getRecentBets(
+  uid: string,
+  limit = 20
+): Promise<StoredVirtualBet[]> {
+  const snap = await adminDb
+    .collection(COL)
+    .where("uid", "==", uid)
+    .orderBy("createdAt", "desc")
+    .limit(limit)
+    .get();
+  return snap.docs.map((d) => d.data() as StoredVirtualBet);
+}
+  
