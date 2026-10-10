@@ -1,12 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { verifyRequest } from "@/lib/auth/verifyRequest";
 import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
-import { settleCasinoPlay } from "@/lib/casino/demoWallet";
 import { CASINO_MAX_STAKE, CASINO_MIN_STAKE } from "@/types/casino";
 import { buildCurrentRound } from "@/lib/virtual/currentRound";
-import { lookupOdds, selectionWins } from "@/lib/virtual/engine";
-import { placeVirtualBet } from "@/lib/virtual/bets";
-import type { VirtualBetLeg, VirtualSelection } from "@/types/virtual";
+import { lookupOdds } from "@/lib/virtual/engine";
+import { placeVirtualBetAtomic } from "@/lib/virtual/bets";
+import type { VirtualBetLeg } from "@/types/virtual";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +24,7 @@ export async function POST(request: NextRequest) {
 
   const ip = clientIp(request);
   const limited = await enforceRateLimit(
-    "book_code",
+    "casino_play",
     `virt_bet:${decoded.uid}:${ip}`
   );
   if (limited) return limited;
@@ -119,27 +118,8 @@ export async function POST(request: NextRequest) {
   combined = Math.round(combined * 10000) / 10000;
   const stakeR = Math.floor(stake * 100) / 100;
 
-  // Hold stake immediately (payout 0 until settle after kickoff)
-  const held = await settleCasinoPlay({
-    uid: decoded.uid,
-    game: "virtual-football",
-    stake: stakeR,
-    payout: 0,
-    meta: {
-      phase: "stake_hold",
-      roundId: round.id,
-      legs,
-      combinedOdds: combined,
-    },
-  });
-  if (!held.ok) {
-    return NextResponse.json(
-      { error: held.error, code: held.code },
-      { status: 400 }
-    );
-  }
-
-  const bet = await placeVirtualBet({
+  // Stake is taken and the bet saved in one transaction.
+  const placed = await placeVirtualBetAtomic({
     uid: decoded.uid,
     roundId: round.id,
     roundIndex: round.index ?? 0,
@@ -147,6 +127,13 @@ export async function POST(request: NextRequest) {
     legs,
     combinedOdds: combined,
   });
+  if (!placed.ok) {
+    return NextResponse.json(
+      { error: placed.error, code: placed.code },
+      { status: 400 }
+    );
+  }
+  const bet = placed.bet;
 
   return NextResponse.json({
     ok: true,
@@ -155,7 +142,7 @@ export async function POST(request: NextRequest) {
     stake: stakeR,
     combinedOdds: combined,
     potential: Math.floor(stakeR * combined * 100) / 100,
-    balance: held.balanceAfter,
+    balance: placed.balanceAfter,
     kickoffAt: round.kickoffAt ?? Date.now(),
   });
 }
