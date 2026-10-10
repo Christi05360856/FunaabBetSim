@@ -277,4 +277,3 @@ export function resolveScore(
   return resolveScoreFromRand(makePrng(seed), hs, as);
 }
 
-        
