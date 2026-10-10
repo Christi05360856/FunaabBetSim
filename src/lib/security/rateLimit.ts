@@ -12,7 +12,8 @@ export type RateLimitBucket =
   | "auth_fail"
   | "support_ticket"
   | "match_chat"
-  | "match_predict";
+  | "match_predict"
+  | "casino_play";
 
 type LimitConfig = { max: number; windowMs: number };
 
@@ -35,6 +36,7 @@ const LIMITS: Record<RateLimitBucket, LimitConfig> = {
   deposit_init: { max: 10, windowMs: 60 * 60 * 1000 },
   withdraw_request: { max: 8, windowMs: 24 * 60 * 60 * 1000 },
   book_code: { max: 30, windowMs: 60 * 60 * 1000 },
+  casino_play: { max: 150, windowMs: 60 * 1000 },
   verify_ticket: { max: 40, windowMs: 60 * 60 * 1000 },
   auth_fail: { max: 20, windowMs: 15 * 60 * 1000 },
   support_ticket: { max: 8, windowMs: 24 * 60 * 60 * 1000 },
