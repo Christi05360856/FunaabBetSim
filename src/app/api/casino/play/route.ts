@@ -8,7 +8,6 @@ import { resolveWheelRound, validateWheelInput } from "@/lib/casino/wheel";
 import { resolveCrashRound, validateCrashInput } from "@/lib/casino/crash";
 import { resolveThimblesRound, validateThimblesInput } from "@/lib/casino/thimbles";
 import { resolvePenaltyRound, validatePenaltyInput } from "@/lib/casino/penalty";
-import { resolveCampusCrashRound, validateCampusCrashInput } from "@/lib/casino/campusCrash";
 import { resolvePlinkoRound, validatePlinkoInput } from "@/lib/casino/plinko";
 import { resolveHiloRound, validateHiloInput } from "@/lib/casino/hilo";
 import { resolveKenoRound, validateKenoInput } from "@/lib/casino/keno";
@@ -394,56 +393,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (game === "campus-crash") {
-      const parsed = validateCampusCrashInput(body);
-      if (!parsed.ok) {
-        return NextResponse.json({ error: parsed.error }, { status: 400 });
-      }
-      if (!stakeOk(parsed.stake)) {
-        return NextResponse.json(
-          {
-            error: `Stake must be between ${CASINO_MIN_STAKE} and ${CASINO_MAX_STAKE}`,
-          },
-          { status: 400 }
-        );
-      }
-      const round = resolveCampusCrashRound({
-        stake: parsed.stake,
-        cashoutAt: parsed.cashoutAt,
-      });
-      const settled = await settleCasinoPlay({
-        uid: decoded.uid,
-        game: "campus-crash",
-        stake: parsed.stake,
-        payout: round.payout,
-        meta: {
-          cashoutAt: round.cashoutAt,
-          crashPoint: round.crashPoint,
-          won: round.won,
-          multiplier: round.multiplier,
-        },
-      });
-      if (!settled.ok) {
-        return NextResponse.json(
-          { error: settled.error, code: settled.code },
-          { status: 400 }
-        );
-      }
-      return NextResponse.json({
-        ok: true,
-        game: "campus-crash",
-        stake: parsed.stake,
-        cashoutAt: round.cashoutAt,
-        crashPoint: round.crashPoint,
-        won: round.won,
-        multiplier: round.multiplier,
-        payout: round.payout,
-        profit: round.profit,
-        balanceAfter: settled.balanceAfter,
-        playId: settled.playId,
-      });
-    }
-
 
     if (game === "plinko") {
       const parsed = validatePlinkoInput(body);
@@ -657,4 +606,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Play failed" }, { status: 500 });
   }
         }
-      
+
+        
