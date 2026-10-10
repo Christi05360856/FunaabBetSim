@@ -56,9 +56,15 @@ export function BetSlipProvider({ children }: { children: React.ReactNode }) {
     }
   }, [items, hydrated]);
 
+  const MAX_LEGS = 15;
+
   const addItem = useCallback((newItem: SlipItem) => {
     setItems((prev) => {
       const filtered = prev.filter((i) => i.matchId !== newItem.matchId);
+      // Replacing same match is always allowed; new match only if under cap
+      if (filtered.length === prev.length && prev.length >= MAX_LEGS) {
+        return prev;
+      }
       return [...filtered, newItem];
     });
   }, []);
@@ -74,10 +80,14 @@ export function BetSlipProvider({ children }: { children: React.ReactNode }) {
         // Unpick
         return prev.filter((i) => i.matchId !== newItem.matchId);
       }
-      // Replace any other pick on this match
-      return [...prev.filter((i) => i.matchId !== newItem.matchId), newItem];
+      const withoutMatch = prev.filter((i) => i.matchId !== newItem.matchId);
+      // New match would exceed max legs — refuse quietly
+      if (withoutMatch.length === prev.length && prev.length >= MAX_LEGS) {
+        return prev;
+      }
+      return [...withoutMatch, newItem];
     });
-  }, []);
+  }, []);s
 
   const removeItem = useCallback((matchId: string) => {
     setItems((prev) => prev.filter((i) => i.matchId !== matchId));
