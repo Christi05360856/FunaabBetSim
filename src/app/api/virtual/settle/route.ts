@@ -6,16 +6,18 @@ import {
   getOpenBetsForRound,
   settleVirtualBetAtomic,
 } from "@/lib/virtual/bets";
-import { selectionWins } from "@/lib/virtual/engine";
+import { resolveRoundResults, selectionWins } from "@/lib/virtual/engine";
 import { phaseAt } from "@/lib/virtual/schedule";
 import type { VirtualSelection } from "@/types/virtual";
 
 export const dynamic = "force-dynamic";
 
 /**
- * POST { roundId? } — settle the caller's open bets for a finished round.
- * Safe to call as often as you like: each bet is settled once, inside its own
- * transaction, so repeat or parallel calls cannot pay twice.
+ * POST { roundId?, kickoff?: boolean }
+ * - Normal settle after shared clock goes live/result
+ * - kickoff: true → user pressed "Kick Off": reveal deterministic results
+ *   and settle even while the shared board is still in "betting"
+ *   (Sporty-style: user starts play, no forced wait)
  */
 export async function POST(request: NextRequest) {
   const decoded = await verifyRequest(request);
@@ -23,11 +25,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { roundId?: string } = {};
+  let body: { roundId?: string; kickoff?: boolean } = {};
   try {
     body = await request.json();
   } catch {
-    /* roundId is optional */
+    /* optional body */
   }
 
   const now = Date.now();
@@ -45,16 +47,19 @@ export async function POST(request: NextRequest) {
 
   const round = built.public;
   const internal = built.internal;
+  const kickoff = body.kickoff === true;
 
-  if (round.phase === "betting") {
+  // Results are always derivable from the round seed (provably fair).
+  // We only expose them on kickoff or after the shared clock leaves betting.
+  if (round.phase === "betting" && !kickoff) {
     return NextResponse.json(
-      { error: "Round still open for betting" },
+      { error: "Round still open — press Kick Off to play" },
       { status: 400 }
     );
   }
-  if (!round.results) {
-    return NextResponse.json({ error: "Results not ready" }, { status: 400 });
-  }
+
+  const results =
+    round.results ?? resolveRoundResults(built.seed, internal);
 
   const open = await getOpenBetsForRound(decoded.uid, round.id);
   if (open.length === 0) {
@@ -62,12 +67,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       settled: [],
-      results: round.results,
+      results,
+      matches: internal.map((m) => ({
+        id: m.id,
+        home: m.home,
+        away: m.away,
+        league: m.league,
+      })),
       balance: wallet.balance,
     });
   }
 
-  const resultMap = new Map(round.results.map((r) => [r.matchId, r]));
+  const resultMap = new Map(results.map((r) => [r.matchId, r]));
   const settledOut: Array<{
     betId: string;
     status: "won" | "lost";
@@ -106,7 +117,7 @@ export async function POST(request: NextRequest) {
       status,
       payout,
     });
-    if (!done.ok) continue; // already settled by another request
+    if (!done.ok) continue;
 
     balance = done.balanceAfter;
     settledOut.push({
@@ -126,7 +137,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     settled: settledOut,
-    results: round.results,
+    results,
     matches: internal.map((m) => ({
       id: m.id,
       home: m.home,
@@ -136,3 +147,4 @@ export async function POST(request: NextRequest) {
     balance,
   });
 }
+  
