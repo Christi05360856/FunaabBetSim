@@ -69,11 +69,19 @@ export async function POST(request: NextRequest) {
 
   const parsed = placeBetBodySchema.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid request body" },
-      { status: 400 }
-    );
-  }
+    const issue = parsed.error.issues[0];
+    let msg = issue?.message ?? "Invalid request body";
+    if (
+      msg.includes("at most") ||
+      msg.includes("too_big") ||
+      (issue?.path?.includes("legs") && issue?.code === "too_big")
+    ) {
+      msg = "Unable to bet. Maximum 15 selections per ticket. Remove some selections.";
+    } else if (msg.includes("Array") || msg.includes("element")) {
+      msg = "Unable to bet. Remove some selections and try again.";
+    }
+    return NextResponse.json({ error: msg }, { status: 400 });
+  },
 
   let legs: LegInput[];
   let stake: number;
