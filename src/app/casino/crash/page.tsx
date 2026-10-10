@@ -10,6 +10,12 @@ import {
   StakeBar,
   chips,
 } from "@/components/casino/CasinoShell";
+import {
+  sfxBet,
+  sfxCashout,
+  sfxCrash,
+  sfxFlyTick,
+} from "@/lib/casino/sounds";
 
 type Snapshot = {
   index: number;
@@ -18,7 +24,6 @@ type Snapshot = {
   endsAt: number;
   crashPoint: number | null;
   growth: number;
-  /** server time minus this phone's clock, so phases match the server */
   offset: number;
 };
 
@@ -52,6 +57,8 @@ export default function CrashPage() {
   const [won, setWon] = useState<boolean | null>(null);
   const [tick, setTick] = useState(0);
   const lastIndex = useRef<number | null>(null);
+  const lastFlySfx = useRef(0);
+  const crashSfxPlayed = useRef(false);
 
   const load = useCallback(
     async (withMine: boolean) => {
@@ -78,43 +85,41 @@ export default function CrashPage() {
           if (data.mine) setMine(data.mine as Mine);
         }
       } catch {
-        /* keep the last known state */
+        /* keep last known state */
       }
     },
     [user]
   );
 
-  // First load, with the player's own stake and chips.
   useEffect(() => {
     void load(true);
   }, [load]);
 
-  // Cheap clock-only poll. Faster while the multiplier is climbing.
+  // Poll: faster while flying/crashed so next round appears quickly (HTTP only, no Firestore listeners)
   useEffect(() => {
-    const fast = snap?.phase === "flying";
-    const id = setInterval(() => void load(false), fast ? 500 : 1000);
+    const fast = snap?.phase === "flying" || snap?.phase === "crashed";
+    const id = setInterval(() => void load(false), fast ? 250 : 800);
     return () => clearInterval(id);
   }, [load, snap?.phase]);
 
-  // Smooth animation between polls.
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 100);
+    const id = setInterval(() => setTick((t) => t + 1), 50);
     return () => clearInterval(id);
   }, []);
 
-  // A new round started: reset the banner and fetch this round's stake.
   useEffect(() => {
     if (!snap) return;
     if (lastIndex.current !== null && lastIndex.current !== snap.index) {
       setBanner(null);
       setWon(null);
       setErr(null);
+      setMine({ joined: false });
+      crashSfxPlayed.current = false;
       void load(true);
     }
     lastIndex.current = snap.index;
   }, [snap, load]);
 
-  // Reading `tick` keeps the display moving.
   void tick;
   const serverNow = Date.now() + (snap?.offset ?? 0);
   let phase: "betting" | "flying" | "crashed" = snap?.phase ?? "betting";
@@ -125,11 +130,46 @@ export default function CrashPage() {
     } else if (serverNow >= snap.flyAt) {
       phase = "flying";
       multiplier = Math.exp(snap.growth * ((serverNow - snap.flyAt) / 1000));
+      if (snap.crashPoint != null && multiplier >= snap.crashPoint) {
+        multiplier = snap.crashPoint;
+        phase = "crashed";
+      }
     } else {
       phase = "betting";
     }
   }
-  const secondsToFly = snap ? Math.max(0, Math.ceil((snap.flyAt - serverNow) / 1000)) : 0;
+  const secondsToFly = snap
+    ? Math.max(0, Math.ceil((snap.flyAt - serverNow) / 1000))
+    : 0;
+
+  // Sparse fly ticks (not every frame)
+  useEffect(() => {
+    if (phase !== "flying") return;
+    const now = Date.now();
+    if (now - lastFlySfx.current > 400) {
+      lastFlySfx.current = now;
+      sfxFlyTick(multiplier);
+    }
+  }, [phase, multiplier]);
+
+  useEffect(() => {
+    if (phase === "crashed" && !crashSfxPlayed.current) {
+      crashSfxPlayed.current = true;
+      sfxCrash();
+    }
+  }, [phase]);
+
+  const cashoutValue =
+    mine.joined && mine.stake
+      ? Math.floor(mine.stake * multiplier * 100) / 100
+      : 0;
+
+  const planeProgress =
+    phase === "betting"
+      ? 0
+      : Math.min(1, Math.log(Math.max(1, multiplier)) / Math.log(100));
+  const planeBottom = 8 + planeProgress * 72;
+  const planeRight = 8 + planeProgress * 55;
 
   async function post(body: Record<string, unknown>) {
     if (!user) throw new Error("Sign in required");
@@ -155,6 +195,7 @@ export default function CrashPage() {
       const data = await post({ action: "join", stake, roundIndex: snap.index });
       setMine({ joined: true, stake: data.stake, cashedOut: false });
       if (typeof data.balance === "number") setBalance(data.balance);
+      sfxBet();
       vibrate(20);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
@@ -176,8 +217,13 @@ export default function CrashPage() {
         payout: data.payout,
       }));
       setWon(true);
-      setBanner(`Cashed out at ${data.multiplier}x · +${chips(data.profit ?? 0)}`);
+      const total =
+        typeof data.payout === "number"
+          ? data.payout
+          : Math.floor((mine.stake ?? 0) * (data.multiplier ?? 1) * 100) / 100;
+      setBanner(`Cashed out at ${data.multiplier}x · ${chips(total)}`);
       if (typeof data.balance === "number") setBalance(data.balance);
+      sfxCashout();
       vibrate(40);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
@@ -191,8 +237,41 @@ export default function CrashPage() {
 
   return (
     <CasinoShell title="Crash" balance={balance}>
-      <div className="mb-4 flex h-44 flex-col items-center justify-center rounded-2xl border border-ink-muted/12 bg-surface">
-        <p className="text-[10px] font-bold uppercase text-ink-muted">
+      <div className="relative mb-4 flex h-52 flex-col items-center justify-center overflow-hidden rounded-2xl border border-ink-muted/12 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
+        <div className="pointer-events-none absolute inset-0 opacity-40">
+          <div className="absolute left-[12%] top-[18%] h-1 w-1 rounded-full bg-white" />
+          <div className="absolute left-[70%] top-[28%] h-1.5 w-1.5 rounded-full bg-white/80" />
+          <div className="absolute left-[40%] top-[12%] h-1 w-1 rounded-full bg-white/60" />
+          <div className="absolute left-[85%] top-[55%] h-1 w-1 rounded-full bg-white/70" />
+        </div>
+
+        {(phase === "flying" || phase === "crashed") && (
+          <div
+            className="pointer-events-none absolute transition-all duration-100 ease-linear"
+            style={{
+              bottom: `${planeBottom}%`,
+              left: `${planeRight}%`,
+              transform:
+                phase === "crashed"
+                  ? "rotate(45deg) scale(0.85)"
+                  : "rotate(-12deg)",
+              opacity: phase === "crashed" ? 0.35 : 1,
+            }}
+            aria-hidden
+          >
+            <span className="text-4xl drop-shadow-lg">✈️</span>
+          </div>
+        )}
+        {phase === "betting" && (
+          <div
+            className="pointer-events-none absolute bottom-4 left-6 text-3xl opacity-70"
+            aria-hidden
+          >
+            ✈️
+          </div>
+        )}
+
+        <p className="relative z-10 text-[10px] font-bold uppercase tracking-wide text-white/60">
           Round #{snap?.index ?? "—"} ·{" "}
           {phase === "betting"
             ? `starts in ${secondsToFly}s`
@@ -201,19 +280,19 @@ export default function CrashPage() {
               : "crashed"}
         </p>
         <p
-          className={`mt-2 text-5xl font-extrabold tabular-nums ${
-            phase === "crashed" ? "text-red-500" : "text-brand"
+          className={`relative z-10 mt-2 text-5xl font-extrabold tabular-nums ${
+            phase === "crashed" ? "text-red-400" : "text-emerald-400"
           }`}
         >
           {multiplier.toFixed(2)}x
         </p>
         {phase === "crashed" && snap?.crashPoint != null && (
-          <p className="mt-1 text-xs text-ink-muted">
+          <p className="relative z-10 mt-1 text-xs text-white/50">
             Crashed at {snap.crashPoint.toFixed(2)}x
           </p>
         )}
         {mine.joined && (
-          <p className="mt-1 text-[11px] font-semibold text-ink-muted">
+          <p className="relative z-10 mt-1 text-[11px] font-semibold text-white/70">
             Your stake: {chips(mine.stake ?? 0)}
             {mine.cashedOut && mine.cashoutMult
               ? ` · cashed at ${mine.cashoutMult}x`
@@ -222,7 +301,10 @@ export default function CrashPage() {
         )}
       </div>
 
-      <ResultBanner won={lost ? false : won} text={lost ? "Crashed — stake lost" : banner} />
+      <ResultBanner
+        won={lost ? false : won}
+        text={lost ? "Crashed — stake lost" : banner}
+      />
 
       <StakeBar
         stake={stake}
@@ -239,7 +321,9 @@ export default function CrashPage() {
       {phase === "betting" && !mine.joined && (
         <PrimaryBtn
           busy={busy}
-          disabled={balance == null || balance < stake || stake < CASINO_MIN_STAKE}
+          disabled={
+            balance == null || balance < stake || stake < CASINO_MIN_STAKE
+          }
           label="Join round"
           busyLabel="Joining…"
           onClick={() => void join()}
@@ -251,13 +335,17 @@ export default function CrashPage() {
         </p>
       )}
       {phase === "flying" && mine.joined && !mine.cashedOut && (
-        <PrimaryBtn
-          busy={busy}
-          disabled={multiplier < 1.01}
-          label={`Cash out · ${multiplier.toFixed(2)}x`}
-          busyLabel="…"
+        <button
+          type="button"
+          disabled={busy || multiplier < 1.01}
           onClick={() => void cashout()}
-        />
+          className="mt-4 w-full rounded-2xl bg-amber-500 py-4 text-center text-base font-extrabold text-white shadow-lg transition active:scale-[0.98] disabled:opacity-50"
+        >
+          {busy ? "…" : `Cash out · ${chips(cashoutValue)}`}
+          <span className="mt-0.5 block text-xs font-semibold opacity-90">
+            {multiplier.toFixed(2)}x
+          </span>
+        </button>
       )}
       {phase === "flying" && !mine.joined && (
         <p className="mt-4 text-center text-xs text-ink-muted">
@@ -266,5 +354,5 @@ export default function CrashPage() {
       )}
     </CasinoShell>
   );
-            }
-      
+        }
+            
