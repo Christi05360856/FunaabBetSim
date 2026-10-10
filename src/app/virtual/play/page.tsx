@@ -1,10 +1,15 @@
 "use client";
 
 /**
- * Match simulation — pitch + scores + Skip to result (Sporty-style).
+ * Quick Games (live pitch + scoreboard) → Results, like the Instant Virtuals
+ * reference.
+ *
+ * The server already settled the ticket at Kick Off, so this screen is a
+ * passive playback: a match clock runs 0→90 (with a half-time pause), the
+ * canvas plays the precomputed ball track, and every score is derived from
+ * the goal minutes. "Skip to Result" jumps straight to the final screen.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   clearResult,
@@ -12,25 +17,130 @@ import {
   loadResult,
   loadTicket,
   type StoredResult,
+  type StoredTicket,
 } from "@/lib/virtual/ticketStore";
-import { sfxGoal, sfxLose, sfxWin, bindGlobalAudioUnlock } from "@/lib/casino/sounds";
+import {
+  legWins,
+  MARKET_TITLE,
+  scoreAt,
+  type GoalEvent,
+} from "@/lib/virtual/markets";
+import {
+  buildPitchTimeline,
+  HALF_TIME_PAUSE_MS,
+  MS_PER_MINUTE,
+} from "@/lib/virtual/pitchSim";
+import { teamCode, VIRTUAL_LEAGUES } from "@/lib/virtual/teamPool";
+import { balanceText, money } from "@/lib/virtual/format";
+import {
+  bindGlobalAudioUnlock,
+  sfxGoal,
+  sfxLose,
+  sfxWin,
+} from "@/lib/casino/sounds";
+import PitchCanvas from "@/components/virtual/PitchCanvas";
+import Crest from "@/components/virtual/Crest";
+import LeagueFlag from "@/components/virtual/LeagueFlag";
 
-function chips(n: number) {
-  return n.toLocaleString("en-NG");
+const PURPLE = "#51489b";
+const CARD = "#e6e6e6";
+
+type MatchInfo = { id: string; home: string; away: string; league: string };
+type Overlay = { kind: "goal" | "ht" | "ft"; key: number } | null;
+
+function Ball({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" aria-hidden>
+      <circle cx="10" cy="10" r="9" fill="#2b2b2b" />
+      <path
+        d="M10 5.5 14 8.4 12.5 13H7.5L6 8.4z"
+        fill="#fff"
+        opacity="0.9"
+      />
+    </svg>
+  );
+}
+
+function Trophy() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill={PURPLE} aria-hidden>
+      <path d="M6 3h12v3h3v2a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 15v2h3v3H8v-3h3v-2a5 5 0 0 1-3.7-3H7a4 4 0 0 1-4-4V6h3zM5 8a2 2 0 0 0 1.4 1.9A9 9 0 0 1 6 8zm14 0h-1.4a9 9 0 0 1-.4 1.9A2 2 0 0 0 19 8z" />
+    </svg>
+  );
+}
+
+/** Grey fixture card with half-clipped crests on both edges. */
+function MatchCard({
+  m,
+  h,
+  a,
+  live,
+  expandable,
+  expanded,
+  onToggle,
+  children,
+}: {
+  m: MatchInfo;
+  h: number;
+  a: number;
+  live?: boolean;
+  expandable?: boolean;
+  expanded?: boolean;
+  onToggle?: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      className="relative overflow-hidden rounded-lg"
+      style={{ background: CARD }}
+    >
+      <div className="absolute -left-3 top-1/2 -translate-y-1/2">
+        <Crest team={m.home} size={52} />
+      </div>
+      <div className="absolute -right-3 top-1/2 -translate-y-1/2">
+        <Crest team={m.away} size={52} />
+      </div>
+      <button
+        type="button"
+        disabled={!expandable}
+        onClick={onToggle}
+        className="relative flex w-full flex-col items-center px-14 py-2"
+      >
+        {live && <Ball size={14} />}
+        <div className="flex items-center gap-4 text-[20px] text-neutral-700 tabular-nums">
+          <span>{teamCode(m.home)}</span>
+          <span>
+            {h} - {a}
+          </span>
+          <span>{teamCode(m.away)}</span>
+        </div>
+        {expandable && (
+          <span className="text-[14px] leading-none text-neutral-600">
+            {expanded ? "⌃" : "⌄"}
+          </span>
+        )}
+      </button>
+      {children}
+    </div>
+  );
 }
 
 export default function VirtualPlayPage() {
   const router = useRouter();
   const [data, setData] = useState<StoredResult | null>(null);
+  const [ticket, setTicket] = useState<StoredTicket | null>(null);
+  const [view, setView] = useState<"play" | "results">("play");
   const [minute, setMinute] = useState(0);
-  const [scores, setScores] = useState<Record<string, { h: number; a: number }>>(
-    {}
-  );
-  const [lastGoal, setLastGoal] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-  const [skip, setSkip] = useState(false);
-  const myIds = useRef<Set<string>>(new Set());
-  const playedSfx = useRef(false);
+  const [phase, setPhase] = useState<"live" | "ht" | "ft">("live");
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  const [hidePitch, setHidePitch] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [resultTab, setResultTab] = useState<string>("mine");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  const minuteRef = useRef(0);
+  const skippedRef = useRef(false);
+  const soundedRef = useRef(false);
 
   useEffect(() => {
     bindGlobalAudioUnlock();
@@ -40,289 +150,610 @@ export default function VirtualPlayPage() {
       router.replace("/virtual");
       return;
     }
-    if (t) {
-      t.legs.forEach((l) => myIds.current.add(l.matchId));
-    }
+    setTicket(t);
     setData(r);
   }, [router]);
 
-  const byId = useMemo(() => {
-    const m: Record<string, { home: string; away: string; league: string }> =
-      {};
-    (data?.matches || []).forEach((x) => {
-      m[x.id] = x;
+  const matchById = useMemo(() => {
+    const o: Record<string, MatchInfo> = {};
+    (data?.matches ?? []).forEach((x) => {
+      o[x.id] = x;
     });
-    return m;
+    return o;
   }, [data]);
 
-  const finals = useMemo(() => {
-    const f: Record<string, { h: number; a: number }> = {};
-    (data?.results || []).forEach((r) => {
-      f[r.matchId] = {
-        h: Math.min(6, Math.max(0, r.homeGoals)),
-        a: Math.min(6, Math.max(0, r.awayGoals)),
-      };
+  const goalsById = useMemo(() => {
+    const o: Record<string, GoalEvent[]> = {};
+    (data?.results ?? []).forEach((r) => {
+      o[r.matchId] = [...(r.goals ?? [])].sort((a, b) => a.minute - b.minute);
     });
-    return f;
+    return o;
   }, [data]);
 
-  const timeline = useMemo(() => {
-    const events: Array<{
-      minute: number;
-      matchId: string;
-      side: "home" | "away";
-    }> = [];
-    (data?.results || []).forEach((r) => {
-      const capH = finals[r.matchId]?.h ?? 0;
-      const capA = finals[r.matchId]?.a ?? 0;
-      let h = 0;
-      let a = 0;
-      const sorted = [...(r.goals || [])].sort((x, y) => x.minute - y.minute);
-      for (const g of sorted) {
-        if (g.side === "home") {
-          if (h >= capH) continue;
-          h++;
-        } else {
-          if (a >= capA) continue;
-          a++;
-        }
-        events.push({
-          minute: Math.min(90, Math.max(1, g.minute)),
-          matchId: r.matchId,
-          side: g.side,
-        });
-      }
-    });
-    events.sort((a, b) => a.minute - b.minute);
-    return events;
-  }, [data, finals]);
+  const myIds = useMemo(
+    () => new Set((ticket?.legs ?? []).map((l) => l.matchId)),
+    [ticket]
+  );
 
-  // Headline match = first of user's legs
   const headlineId = useMemo(() => {
-    for (const id of myIds.current) return id;
-    return data?.results?.[0]?.matchId;
-  }, [data]);
+    const first = ticket?.legs?.[0]?.matchId;
+    return first ?? data?.results?.[0]?.matchId ?? null;
+  }, [ticket, data]);
 
+  const ticks = useMemo(() => {
+    if (!data || !headlineId) return null;
+    return buildPitchTimeline(
+      `${data.roundId}:${headlineId}`,
+      goalsById[headlineId] ?? []
+    );
+  }, [data, headlineId, goalsById]);
+
+  const totalWon = useMemo(
+    () => (data?.settled ?? []).reduce((a, s) => a + (s.payout || 0), 0),
+    [data]
+  );
+
+  // ---- match clock -------------------------------------------------------
   useEffect(() => {
-    if (!data) return;
+    if (!data || view !== "play") return;
+    let raf = 0;
+    let last = performance.now();
+    let pausedUntil = 0;
+    let htDone = false;
+    let ftTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastHalf = -1;
+    const announced = new Set<string>();
+    let overlayKey = 0;
+    let overlayTimer: ReturnType<typeof setTimeout> | null = null;
+    let phaseIsHt = false;
+    const watchIds: string[] = myIds.size
+      ? Array.from(myIds)
+      : headlineId
+        ? [headlineId]
+        : [];
 
-    const init: Record<string, { h: number; a: number }> = {};
-    data.results.forEach((r) => {
-      init[r.matchId] = { h: 0, a: 0 };
-    });
+    const showOverlay = (kind: "goal" | "ht" | "ft", ms: number) => {
+      overlayKey += 1;
+      setOverlay({ kind, key: overlayKey });
+      if (overlayTimer) clearTimeout(overlayTimer);
+      if (kind !== "ft") {
+        overlayTimer = setTimeout(() => setOverlay(null), ms);
+      }
+    };
 
-    if (skip) {
-      setScores({ ...finals });
-      setMinute(90);
-      setDone(true);
-      return;
-    }
+    const step = (t: number) => {
+      const dt = Math.min(100, t - last);
+      last = t;
 
-    setScores(init);
-    setMinute(0);
-    setDone(false);
-
-    let m = 0;
-    let idx = 0;
-    const running: Record<string, { h: number; a: number }> = { ...init };
-
-    // ~8 seconds for full 90' (Sporty-feel, not endless)
-    const id = setInterval(() => {
-      m = Math.min(90, m + 5);
-      setMinute(m);
-      while (idx < timeline.length && timeline[idx]!.minute <= m) {
-        const ev = timeline[idx]!;
-        const cur = running[ev.matchId] ?? { h: 0, a: 0 };
-        const cap = finals[ev.matchId] ?? { h: 0, a: 0 };
-        if (ev.side === "home" && cur.h < cap.h) {
-          cur.h++;
-          const match = byId[ev.matchId];
-          setLastGoal(`⚽ ${match?.home ?? "Home"} ${ev.minute}'`);
-          sfxGoal();
-        } else if (ev.side === "away" && cur.a < cap.a) {
-          cur.a++;
-          const match = byId[ev.matchId];
-          setLastGoal(`⚽ ${match?.away ?? "Away"} ${ev.minute}'`);
-          sfxGoal();
+      if (!skippedRef.current) {
+        if (t < pausedUntil) {
+          // half-time pause: clock frozen
+        } else {
+          if (pausedUntil && phaseIsHt) {
+            phaseIsHt = false;
+            setPhase("live");
+          }
+          const next = Math.min(90, minuteRef.current + dt / MS_PER_MINUTE);
+          if (!htDone && next >= 45) {
+            minuteRef.current = 45;
+            htDone = true;
+            pausedUntil = t + HALF_TIME_PAUSE_MS;
+            phaseIsHt = true;
+            setPhase("ht");
+            showOverlay("ht", HALF_TIME_PAUSE_MS);
+          } else {
+            minuteRef.current = next;
+          }
         }
-        running[ev.matchId] = { ...cur };
-        setScores({ ...running });
-        idx++;
       }
+
+      const m = minuteRef.current;
+      const half = Math.floor(m * 2);
+      if (half !== lastHalf) {
+        lastHalf = half;
+        setMinute(m);
+
+        // Goals that just happened in the matches the player cares about.
+        let goalSound = false;
+        for (const id of watchIds) {
+          (goalsById[id] ?? []).forEach((g, i) => {
+            const key = `${id}:${i}`;
+            if (g.minute <= Math.floor(m) && !announced.has(key)) {
+              announced.add(key);
+              goalSound = true;
+              if (id === headlineId && Math.floor(m) < 90) {
+                showOverlay("goal", 2600);
+              }
+            }
+          });
+        }
+        if (goalSound) sfxGoal();
+      }
+
       if (m >= 90) {
-        clearInterval(id);
-        setScores({ ...finals });
-        setDone(true);
+        setMinute(90);
+        setPhase("ft");
+        showOverlay("ft", 0);
+        if (!soundedRef.current) {
+          soundedRef.current = true;
+          if (data.settled.length) {
+            if (data.settled.some((s) => s.status === "won")) sfxWin();
+            else sfxLose();
+          }
+        }
+        ftTimer = setTimeout(() => setView("results"), 3800);
+        return;
       }
-    }, 120);
+      raf = requestAnimationFrame(step);
+    };
 
-    return () => clearInterval(id);
-  }, [data, skip, timeline, finals, byId]);
+    raf = requestAnimationFrame(step);
+    return () => {
+      cancelAnimationFrame(raf);
+      if (ftTimer) clearTimeout(ftTimer);
+      if (overlayTimer) clearTimeout(overlayTimer);
+    };
+  }, [data, view, goalsById, myIds, headlineId]);
 
-  useEffect(() => {
-    if (!done || !data || playedSfx.current) return;
-    playedSfx.current = true;
-    const won = data.settled.some((s) => s.status === "won");
-    if (data.settled.length) {
-      if (won) sfxWin();
-      else sfxLose();
+  function skipToResult() {
+    skippedRef.current = true;
+    minuteRef.current = 90;
+    setMinute(90);
+    setPhase("ft");
+    if (data && !soundedRef.current) {
+      soundedRef.current = true;
+      if (data.settled.length) {
+        if (data.settled.some((s) => s.status === "won")) sfxWin();
+        else sfxLose();
+      }
     }
-  }, [done, data]);
+    setView("results");
+  }
+
+  function nextRound() {
+    clearTicket();
+    clearResult();
+    router.push("/virtual");
+  }
+
+  function toggleOne(id: string) {
+    setExpanded((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
 
   if (!data) {
     return (
-      <main className="mx-auto max-w-lg px-4 py-16 text-center text-sm text-ink-muted">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white text-sm text-neutral-500">
         Loading match…
-      </main>
+      </div>
     );
   }
 
-  const hl = headlineId ? byId[headlineId] : null;
-  const hlScore = headlineId
-    ? scores[headlineId] ?? { h: 0, a: 0 }
-    : { h: 0, a: 0 };
+  const finished = view === "results" || phase === "ft";
+  const shownBalance =
+    data.balance == null
+      ? null
+      : finished
+        ? data.balance
+        : data.balance - totalWon;
 
-  const myRows = data.results.filter((r) => myIds.current.has(r.matchId));
-  const otherRows = data.results.filter((r) => !myIds.current.has(r.matchId));
+  const scoreOf = (id: string) => {
+    const g = goalsById[id] ?? [];
+    return scoreAt(g, finished ? 90 : Math.floor(minute));
+  };
 
-  return (
-    <main className="mx-auto min-h-[100dvh] max-w-lg bg-bg pb-36 text-ink">
-      <header className="bg-brand px-3 py-3 text-white">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold">Instant Virtuals</span>
-          <span className="text-xs tabular-nums">
-            {done ? "Full time" : `${minute}'`}
-          </span>
-        </div>
-      </header>
+  const myResults = data.results.filter((r) => myIds.has(r.matchId));
+  const leagueGroups = VIRTUAL_LEAGUES.map((lg) => ({
+    lg,
+    rows: data.results.filter((r) => matchById[r.matchId]?.league === lg.id),
+  })).filter((g) => g.rows.length > 0);
 
-      {/* Pitch board */}
-      <div className="relative mx-3 mt-3 overflow-hidden rounded-2xl bg-emerald-800 px-4 py-8 text-center text-white shadow-lg">
-        <div className="pointer-events-none absolute inset-0 opacity-25">
-          <div className="absolute left-1/2 top-0 h-full w-px bg-white" />
-          <div className="absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white" />
-        </div>
-        <p className="relative text-[10px] font-bold uppercase tracking-wider opacity-80">
-          {done ? "Final time" : "Quick games"}
-        </p>
-        {hl && (
-          <div className="relative mt-3 flex items-center justify-center gap-3">
-            <span className="max-w-[30%] truncate text-sm font-bold">
-              {hl.home}
-            </span>
-            <span className="rounded-lg bg-black/40 px-4 py-2 font-display text-3xl font-extrabold tabular-nums">
-              {hlScore.h} - {hlScore.a}
-            </span>
-            <span className="max-w-[30%] truncate text-sm font-bold">
-              {hl.away}
-            </span>
-          </div>
-        )}
-        {lastGoal && !done && (
-          <p className="relative mt-3 text-xs font-semibold text-emerald-200">
-            {lastGoal}
-          </p>
-        )}
-      </div>
+  const head = headlineId ? matchById[headlineId] : null;
+  const headScore = headlineId ? scoreOf(headlineId) : { h: 0, a: 0 };
 
-      {myRows.length > 0 && (
-        <div className="mx-3 mt-4">
-          <p className="mb-1.5 text-[11px] font-bold uppercase text-ink-muted">
-            My events
-          </p>
-          <div className="flex flex-col gap-1.5">
-            {myRows.map((r) => {
-              const m = byId[r.matchId];
-              const sc = scores[r.matchId] ?? { h: 0, a: 0 };
-              return (
-                <div
-                  key={r.matchId}
-                  className="flex items-center justify-between rounded-xl border border-brand/25 bg-surface px-3 py-2.5 text-sm"
-                >
-                  <span className="min-w-0 flex-1 truncate font-semibold">
-                    {m?.home}
-                  </span>
-                  <span className="mx-2 font-display text-base font-extrabold tabular-nums">
-                    {sc.h} - {sc.a}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-right font-semibold">
-                    {m?.away}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {otherRows.length > 0 && (
-        <div className="mx-3 mt-4">
-          <p className="mb-1.5 text-[11px] font-bold uppercase text-ink-muted">
-            League
-          </p>
-          <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
-            {otherRows.slice(0, 12).map((r) => {
-              const m = byId[r.matchId];
-              const sc = scores[r.matchId] ?? { h: 0, a: 0 };
-              return (
-                <div
-                  key={r.matchId}
-                  className="flex items-center justify-between rounded-lg bg-surface px-3 py-2 text-sm"
-                >
-                  <span className="min-w-0 flex-1 truncate">{m?.home}</span>
-                  <span className="mx-2 font-bold tabular-nums">
-                    {sc.h}-{sc.a}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-right">
-                    {m?.away}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {done && data.summary && (
-        <p className="mx-3 mt-4 rounded-xl bg-brand/10 px-3 py-3 text-center text-sm font-bold text-brand">
-          {data.summary}
-        </p>
-      )}
-
-      <div
-        className="fixed inset-x-0 z-40 border-t border-ink-muted/15 bg-surface px-2 pt-2"
-        style={{
-          bottom: "calc(3.75rem + env(safe-area-inset-bottom, 0px))",
-          paddingBottom: "0.5rem",
-        }}
+  const header = (
+    <header className="flex shrink-0 items-center gap-4 bg-white px-4 py-4 shadow-sm">
+      <h1 className="flex-1 text-[22px] font-light text-neutral-600">
+        Instant Virtuals
+      </h1>
+      <span
+        className="relative rounded-full border px-4 py-1.5 text-[16px] tabular-nums"
+        style={{ borderColor: PURPLE, color: PURPLE }}
       >
-        <div className="mx-auto max-w-lg">
-          {!done ? (
+        {shownBalance == null ? "…" : balanceText(shownBalance)}
+        <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-500" />
+      </span>
+    </header>
+  );
+
+  // ======================= RESULTS ========================================
+  if (view === "results") {
+    const tabs = [
+      { id: "mine", label: "My Events" },
+      ...VIRTUAL_LEAGUES.map((l) => ({ id: l.id as string, label: l.label })),
+    ];
+    const rows =
+      resultTab === "mine"
+        ? myResults
+        : data.results.filter(
+            (r) => matchById[r.matchId]?.league === resultTab
+          );
+
+    return (
+      <div className="fixed inset-0 z-[60] bg-[#fafafa] text-neutral-800">
+        <div className="mx-auto flex h-full max-w-lg flex-col">
+          {header}
+          <nav className="flex shrink-0 items-center overflow-x-auto bg-white px-2 shadow-sm">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setResultTab(t.id)}
+                className="shrink-0 px-3 py-4 text-[19px]"
+                style={{
+                  color: resultTab === t.id ? PURPLE : "#8a8a8a",
+                  fontWeight: resultTab === t.id ? 500 : 400,
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-4 pb-4">
+            <div className="flex flex-col gap-3">
+              {rows.map((r) => {
+                const m = matchById[r.matchId];
+                if (!m) return null;
+                const goals = goalsById[r.matchId] ?? [];
+                const fh = scoreAt(goals, 45);
+                const legs = (ticket?.legs ?? []).filter(
+                  (l) => l.matchId === r.matchId
+                );
+                return (
+                  <div key={r.matchId} className="relative overflow-hidden rounded-lg" style={{ background: CARD }}>
+                    <div className="absolute -left-3 top-3">
+                      <Crest team={m.home} size={52} />
+                    </div>
+                    <div className="absolute -right-3 top-3">
+                      <Crest team={m.away} size={52} />
+                    </div>
+                    <div className="relative px-14 pt-3 pb-2 text-center">
+                      <div className="flex items-center justify-center gap-5 text-[21px] text-neutral-700 tabular-nums">
+                        <span>{teamCode(m.home)}</span>
+                        <span className="font-medium">
+                          {r.homeGoals}-{r.awayGoals}
+                        </span>
+                        <span>{teamCode(m.away)}</span>
+                      </div>
+                      <p className="mt-1 text-[12px] text-neutral-500">
+                        First Half {fh.h}-{fh.a}
+                      </p>
+                    </div>
+                    {legs.map((l) => {
+                      const won = legWins(
+                        { homeGoals: r.homeGoals, awayGoals: r.awayGoals },
+                        goals,
+                        l.market,
+                        l.pick
+                      );
+                      return (
+                        <div
+                          key={`${l.market}-${l.pick}`}
+                          className="relative mx-[18%] flex items-center border-t border-neutral-400/50 py-3 text-[17px] text-neutral-600"
+                        >
+                          <span className="w-[16%]">
+                            {won ? <Trophy /> : "Lost"}
+                          </span>
+                          <span className="flex-[1.1]">
+                            {ticket && ticket.legs.length > 1 ? "Multiple" : "Single"} 01
+                          </span>
+                          <span className="flex-1 text-center">
+                            {MARKET_TITLE[l.market]}
+                          </span>
+                          <span className="flex-[1.3] text-right">
+                            {l.label} @{l.odds.toFixed(2)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {legs.length > 0 && <div className="h-2" />}
+                  </div>
+                );
+              })}
+              {rows.length === 0 && (
+                <p className="py-10 text-center text-sm text-neutral-500">
+                  No matches here.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Ticket details sheet */}
+          {detailsOpen && ticket && (
+            <div className="absolute inset-0 z-10 flex flex-col justify-end bg-black/50">
+              <button
+                type="button"
+                aria-label="Close"
+                className="flex-1"
+                onClick={() => setDetailsOpen(false)}
+              />
+              <div className="max-h-[75%] overflow-y-auto rounded-t-2xl bg-white p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[18px] font-semibold">Ticket Details</span>
+                  <button
+                    type="button"
+                    onClick={() => setDetailsOpen(false)}
+                    className="text-2xl leading-none text-neutral-500"
+                  >
+                    ×
+                  </button>
+                </div>
+                {ticket.legs.map((l) => {
+                  const r = data.results.find((x) => x.matchId === l.matchId);
+                  const won = r
+                    ? legWins(
+                        { homeGoals: r.homeGoals, awayGoals: r.awayGoals },
+                        goalsById[l.matchId],
+                        l.market,
+                        l.pick
+                      )
+                    : false;
+                  return (
+                    <div
+                      key={`${l.matchId}-${l.market}`}
+                      className="mt-3 flex items-center justify-between border-b border-neutral-200 pb-3 text-[15px]"
+                    >
+                      <div>
+                        <p className="font-semibold">
+                          {l.label} @{l.odds.toFixed(2)}
+                        </p>
+                        <p className="text-neutral-500">
+                          {MARKET_TITLE[l.market]} · {teamCode(l.home)} vs{" "}
+                          {teamCode(l.away)}
+                          {r ? ` · ${r.homeGoals}-${r.awayGoals}` : ""}
+                        </p>
+                      </div>
+                      <span
+                        className="font-semibold"
+                        style={{ color: won ? "#15803d" : "#b91c1c" }}
+                      >
+                        {won ? "Won" : "Lost"}
+                      </span>
+                    </div>
+                  );
+                })}
+                <div className="mt-3 flex justify-between text-[15px]">
+                  <span className="text-neutral-500">Stake</span>
+                  <span className="font-semibold tabular-nums">{money(ticket.stake)}</span>
+                </div>
+                <div className="mt-1 flex justify-between text-[15px]">
+                  <span className="text-neutral-500">Total Won</span>
+                  <span className="font-semibold tabular-nums">{money(totalWon)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex h-[60px] shrink-0 text-[20px]">
             <button
               type="button"
-              onClick={() => setSkip(true)}
-              className="w-full rounded-xl border border-ink-muted/25 py-3.5 text-sm font-bold"
+              onClick={() => setDetailsOpen(true)}
+              className="flex flex-[0.85] items-center justify-center bg-[#d7d7d7] text-neutral-600"
             >
-              Skip to result
+              Ticket Details
             </button>
-          ) : (
             <button
               type="button"
-              onClick={() => {
-                clearTicket();
-                clearResult();
-                router.push("/virtual");
-              }}
-              className="w-full rounded-xl bg-brand py-3.5 text-sm font-bold text-white"
+              onClick={nextRound}
+              className="flex flex-1 flex-col items-center justify-center leading-tight text-white"
+              style={{ background: PURPLE }}
             >
-              Next round
-              <span className="mt-0.5 block text-[10px] font-semibold opacity-90">
-                {data.summary}
+              Next Round
+              <span className="text-[14px]">
+                Total Won: {balanceText(totalWon)}
               </span>
             </button>
-          )}
+          </div>
         </div>
       </div>
-    </main>
+    );
+  }
+
+  // ======================= QUICK GAMES ====================================
+  return (
+    <div className="fixed inset-0 z-[60] bg-[#fafafa] text-neutral-800">
+      <div className="mx-auto flex h-full max-w-lg flex-col">
+        {header}
+        <div className="shrink-0 border-b border-neutral-200 bg-white py-3 text-center text-[20px] text-neutral-600">
+          Quick Games
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {/* Live pitch */}
+          {!hidePitch && ticks && head && (
+            <div className="relative bg-black">
+              <div className="relative mx-auto aspect-[8/3] w-[90%]">
+                <PitchCanvas
+                  ticks={ticks}
+                  minuteRef={minuteRef}
+                  seed={`${data.roundId}:${headlineId}`}
+                />
+                {overlay && (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <div className="w-[78%] overflow-hidden rounded-xl shadow-lg">
+                      <div
+                        className="flex items-center justify-between px-4 py-2 text-white"
+                        style={{
+                          background:
+                            "linear-gradient(90deg,#c62828 0%,#6d3fa6 50%,#1e6bff 100%)",
+                        }}
+                      >
+                        <span className="text-[26px] font-light">
+                          {teamCode(head.home)}
+                        </span>
+                        <span className="text-[26px] font-light">
+                          {teamCode(head.away)}
+                        </span>
+                      </div>
+                      <div className="bg-black/60 px-3 py-2 text-center text-white backdrop-blur-sm">
+                        <div className="text-[44px] font-extralight leading-none tabular-nums">
+                          {headScore.h} - {headScore.a}
+                        </div>
+                        <div className="mt-1 text-[16px] tracking-wide opacity-80">
+                          {overlay.kind === "ft"
+                            ? "FINAL TIME"
+                            : overlay.kind === "ht"
+                              ? "HALF TIME"
+                              : "GOAL!"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="relative flex justify-center">
+            <button
+              type="button"
+              onClick={() => setHidePitch((v) => !v)}
+              className={`z-10 rounded-t-md bg-black/55 px-4 py-0.5 text-[15px] text-white ${
+                hidePitch ? "mt-2 rounded-md bg-black/70" : "-mt-6"
+              }`}
+            >
+              {hidePitch ? "Show ▾" : "Hide ▴"}
+            </button>
+          </div>
+
+          <div className="flex justify-center py-5">
+            <button
+              type="button"
+              onClick={() =>
+                setExpanded((prev) =>
+                  prev.size > 0
+                    ? new Set()
+                    : new Set(data.results.map((r) => r.matchId))
+                )
+              }
+              className="rounded border px-8 py-2.5 text-[19px]"
+              style={{ borderColor: PURPLE, color: PURPLE }}
+            >
+              {expanded.size > 0 ? "Collapse All" : "Expand All"}
+            </button>
+          </div>
+
+          <div className="px-3 pb-6">
+            {myResults.length > 0 && (
+              <>
+                <div className="mb-3 flex items-center gap-2 rounded-full bg-[#dcdcdc] py-1 pr-4 pl-1 text-[19px] text-neutral-600">
+                  <span className="flex h-9 w-9 items-center justify-center">
+                    <Ball size={26} />
+                  </span>
+                  My Events
+                </div>
+                <div className="mb-5 flex flex-col gap-2">
+                  {myResults.map((r) => {
+                    const m = matchById[r.matchId];
+                    if (!m) return null;
+                    const sc = scoreOf(r.matchId);
+                    const open = expanded.has(r.matchId);
+                    const goals = (goalsById[r.matchId] ?? []).filter(
+                      (g) => g.minute <= (finished ? 90 : Math.floor(minute))
+                    );
+                    return (
+                      <MatchCard
+                        key={r.matchId}
+                        m={m}
+                        h={sc.h}
+                        a={sc.a}
+                        live={!finished}
+                        expandable
+                        expanded={open}
+                        onToggle={() => toggleOne(r.matchId)}
+                      >
+                        {open && (
+                          <div className="relative border-t border-neutral-400/40 px-14 py-2 text-center text-[14px] text-neutral-600">
+                            {goals.length === 0
+                              ? "No goals yet"
+                              : goals.map((g, i) => (
+                                  <div key={i}>
+                                    {g.minute}&apos; ⚽{" "}
+                                    {teamCode(g.side === "home" ? m.home : m.away)}
+                                  </div>
+                                ))}
+                          </div>
+                        )}
+                      </MatchCard>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {leagueGroups.map(({ lg, rows }) => (
+              <div key={lg.id} className="mb-5">
+                <div className="mb-3 flex items-center gap-2 rounded-full bg-[#dcdcdc] py-1 pr-4 pl-1 text-[19px] text-neutral-600">
+                  <span className="flex h-9 w-9 items-center justify-center">
+                    <LeagueFlag league={lg.id} size={30} />
+                  </span>
+                  {lg.label}
+                </div>
+                <div className="flex flex-col gap-2">
+                  {rows
+                    .filter((r) => !myIds.has(r.matchId))
+                    .map((r) => {
+                      const m = matchById[r.matchId];
+                      if (!m) return null;
+                      const sc = scoreOf(r.matchId);
+                      const open = expanded.has(r.matchId);
+                      const goals = (goalsById[r.matchId] ?? []).filter(
+                        (g) => g.minute <= (finished ? 90 : Math.floor(minute))
+                      );
+                      return (
+                        <MatchCard
+                          key={r.matchId}
+                          m={m}
+                          h={sc.h}
+                          a={sc.a}
+                          expandable={expanded.size > 0 || open}
+                          expanded={open}
+                          onToggle={() => toggleOne(r.matchId)}
+                        >
+                          {open && (
+                            <div className="relative border-t border-neutral-400/40 px-14 py-2 text-center text-[14px] text-neutral-600">
+                              {goals.length === 0
+                                ? "No goals yet"
+                                : goals.map((g, i) => (
+                                    <div key={i}>
+                                      {g.minute}&apos; ⚽{" "}
+                                      {teamCode(g.side === "home" ? m.home : m.away)}
+                                    </div>
+                                  ))}
+                            </div>
+                          )}
+                        </MatchCard>
+                      );
+                    })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={skipToResult}
+          className="h-[60px] shrink-0 text-[21px] text-white"
+          style={{ background: PURPLE }}
+        >
+          Skip to Result
+        </button>
+      </div>
+    </div>
   );
 }
