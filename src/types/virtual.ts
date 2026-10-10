@@ -1,8 +1,9 @@
 /**
  * Shared Instant Virtual Football — demo chips, clock-scheduled rounds.
  */
+import type { MarketId } from "@/lib/virtual/markets";
 
-export const VIRTUAL_MATCHES_PER_LEAGUE = 6;
+export const VIRTUAL_MATCHES_PER_LEAGUE = 10;
 export const VIRTUAL_HOUSE_MARGIN = 0.06;
 export const VIRTUAL_MIN_ODDS = 1.15;
 export const VIRTUAL_MAX_ODDS = 50;
@@ -10,15 +11,12 @@ export const VIRTUAL_MAX_ODDS = 50;
 /** Legacy per-user board TTL (kept so old rounds.ts / play route still typecheck). */
 export const VIRTUAL_ROUND_TTL_MS = 10 * 60 * 1000;
 
-export type VirtualMarketId = "1x2" | "ou25" | "btts";
+export type { MarketId as VirtualMarketId } from "@/lib/virtual/markets";
 export type Virtual1x2Pick = "home" | "draw" | "away";
 export type VirtualOuPick = "over" | "under";
 export type VirtualBttsPick = "yes" | "no";
 
-export type VirtualSelection =
-  | { market: "1x2"; pick: Virtual1x2Pick }
-  | { market: "ou25"; pick: VirtualOuPick }
-  | { market: "btts"; pick: VirtualBttsPick };
+export type VirtualSelection = { market: MarketId; pick: string };
 
 export interface VirtualOdds1x2 {
   home: number;
@@ -36,6 +34,9 @@ export interface VirtualOddsBtts {
   no: number;
 }
 
+/** Odds per market per pick. 0 = suspended (price too short to offer safely). */
+export type VirtualMarketOdds = Record<MarketId, Record<string, number>>;
+
 export interface VirtualMatchPublic {
   id: string;
   league: string;
@@ -44,6 +45,11 @@ export interface VirtualMatchPublic {
   odds1x2: VirtualOdds1x2;
   oddsOu25: VirtualOddsOu;
   oddsBtts: VirtualOddsBtts;
+  /** Every market the board offers (1X2, 1UP, 2UP, DC, O/U lines, GG/NG). */
+  markets?: VirtualMarketOdds;
+  /** Form rating 1–5 shown as stars next to each team. */
+  homeStars?: number;
+  awayStars?: number;
 }
 
 /** Score + goal timeline (only after kickoff). */
@@ -82,7 +88,7 @@ export interface VirtualRoundPublic {
 
 export interface VirtualBetLeg {
   matchId: string;
-  market: VirtualMarketId;
+  market: MarketId;
   pick: string;
   odds: number;
 }
