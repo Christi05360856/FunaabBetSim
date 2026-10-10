@@ -1,10 +1,11 @@
 /** Client-only ticket handoff between /virtual pages. No Firestore. */
+import type { MarketId } from "./markets";
 
 export type StoredLeg = {
   matchId: string;
   home: string;
   away: string;
-  market: "1x2" | "ou25" | "btts";
+  market: MarketId;
   pick: string;
   odds: number;
   label: string;
@@ -12,6 +13,8 @@ export type StoredLeg = {
 
 export type StoredTicket = {
   roundId: string;
+  /** Server bet id (used to show a short numeric ticket id). */
+  betId?: string;
   stake: number;
   potential: number;
   legs: StoredLeg[];
