@@ -95,11 +95,12 @@ export async function POST(request: NextRequest) {
         allWon = false;
         break;
       }
-      const sel = { market: leg.market, pick: leg.pick } as VirtualSelection;
+      const sel: VirtualSelection = { market: leg.market, pick: leg.pick };
       if (
         !selectionWins(
           { homeGoals: res.homeGoals, awayGoals: res.awayGoals },
-          sel
+          sel,
+          res.goals
         )
       ) {
         allWon = false;
