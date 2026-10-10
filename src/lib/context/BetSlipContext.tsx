@@ -87,7 +87,7 @@ export function BetSlipProvider({ children }: { children: React.ReactNode }) {
       }
       return [...withoutMatch, newItem];
     });
-  }, []);s
+  }, []);
 
   const removeItem = useCallback((matchId: string) => {
     setItems((prev) => prev.filter((i) => i.matchId !== matchId));
