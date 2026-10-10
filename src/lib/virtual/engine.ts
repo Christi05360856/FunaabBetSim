@@ -99,14 +99,16 @@ function oddsBtts(hs: number, as: number): VirtualOddsBtts {
 }
 
 function poisson(rand: () => number, lambda: number): number {
-  const L = Math.exp(-lambda);
+  // Clamp lambda so virtual scores stay football-like (0–5 typical)
+  const lam = Math.min(3.2, Math.max(0.15, lambda));
+  const L = Math.exp(-lam);
   let k = 0;
   let p = 1;
   do {
     k++;
     p *= rand();
-  } while (p > L && k < 15);
-  return k - 1;
+  } while (p > L && k < 8);
+  return Math.min(6, k - 1);
 }
 
 function strength(rand: () => number): number {
@@ -170,9 +172,14 @@ export function resolveScoreFromRand(
   hs: number,
   as: number
 ): { homeGoals: number; awayGoals: number } {
-  const eh = 1.25 * hs * (1 / as);
-  const ea = 1.1 * as * (1 / hs);
-  return { homeGoals: poisson(rand, eh), awayGoals: poisson(rand, ea) };
+  // Strength ~0.55–1.55 → expected goals ~0.8–2.5 (real football range)
+  const ratio = Math.min(1.8, Math.max(0.55, hs / as));
+  const eh = 1.15 * ratio;
+  const ea = 1.0 / ratio;
+  return {
+    homeGoals: poisson(rand, eh),
+    awayGoals: poisson(rand, ea),
+  };
 }
 
 /** Full results + goal timeline for a seeded round. */
@@ -270,3 +277,4 @@ export function resolveScore(
   return resolveScoreFromRand(makePrng(seed), hs, as);
 }
 
+        
