@@ -16,6 +16,12 @@ import {
   StakeBar,
   chips,
 } from "@/components/casino/CasinoShell";
+import {
+  sfxBet,
+  sfxBomb,
+  sfxCashout,
+  sfxDiamond,
+} from "@/lib/casino/sounds";
 
 export default function MinesPage() {
   const { user } = useAuth();
@@ -80,6 +86,7 @@ export default function MinesPage() {
       setRevealed([]);
       setStatus("active");
       setMult(1);
+      sfxBet();
       if (typeof data.balance === "number") setBalance(data.balance);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
@@ -112,6 +119,7 @@ export default function MinesPage() {
       if (!res.ok) throw new Error(data.error || "Reveal failed");
       setRevealed(data.revealed || []);
       setMult(data.multiplier || 0);
+      if (!data.hit) sfxDiamond();
       if (data.hit) {
         setStatus("busted");
         setMines(data.mines || null);
@@ -120,6 +128,7 @@ export default function MinesPage() {
         }
         setWon(false);
         setBanner("Hit a mine");
+        sfxBomb();
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
@@ -151,6 +160,7 @@ export default function MinesPage() {
       setStatus("cashed");
       setWon(true);
       setBanner(`+${chips(data.profit ?? 0)} · ${data.multiplier}x`);
+      sfxCashout();
       setMines(data.mines || null);
       if (typeof data.seed === "string") {
         setFair(`Seed revealed: ${data.seed.slice(0, 16)}…`);
@@ -202,11 +212,11 @@ export default function MinesPage() {
                 isMine
                   ? "bg-red-500 text-white"
                   : rev
-                    ? "bg-emerald-500/20 text-emerald-700"
-                    : "border border-ink-muted/15 bg-surface"
+                    ? "bg-emerald-500/15 text-2xl"
+                    : "border border-ink-muted/15 bg-surface text-lg"
               }`}
             >
-              {isMine ? "💣" : rev ? "✓" : ""}
+              {isMine ? "💣" : rev ? "💎" : ""}
             </button>
           );
         })}
@@ -244,7 +254,7 @@ export default function MinesPage() {
           busy={busy}
           disabled={balance == null || balance < stake}
           label="Start"
-          busyLabel="…"
+          busyLabel="Starting…"
           onClick={() => void start()}
         />
       )}
