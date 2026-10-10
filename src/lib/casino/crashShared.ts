@@ -13,8 +13,10 @@ import { CASINO_HOUSE_EDGE } from "@/types/casino";
  * ends. A player who cashes out at ANY multiplier c wins with probability
  * 0.99 / c, so the return is 99% for every strategy.
  */
-export const CRASH_ROUND_MS = 30_000;
-export const CRASH_BETTING_MS = 8_000;
+/** Full cycle length. Shorter = snappier next-round after early crashes. */
+export const CRASH_ROUND_MS = 18_000;
+/** Betting window before plane takes off. */
+export const CRASH_BETTING_MS = 5_000;
 export const CRASH_MAX_POINT = 100;
 export const CRASH_MIN_CASHOUT = 1.01;
 const FLIGHT_MS = CRASH_ROUND_MS - CRASH_BETTING_MS;
