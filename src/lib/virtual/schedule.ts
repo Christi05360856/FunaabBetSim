@@ -1,11 +1,13 @@
-/** Shared virtual football schedule — pure clock math, no DB/cron. */
+/** Shared virtual football schedule — pure clock math, no DB/cron.
+ *  "Next Round" = when fixtures reshuffle. Kick Off is user-driven and
+ *  does not wait for this clock (see settle ?kickoff=true).
+ */
 
-export const VIRTUAL_ROUND_MS = 3 * 60 * 1000; // 3 minutes
-/** Betting open for first 2.5 minutes of the round. */
-export const VIRTUAL_BETTING_MS = 2 * 60 * 1000 + 30 * 1000;
-/** Animation / result window after kickoff. */
+/** Full fixture cycle (Next Round timer). */
+export const VIRTUAL_ROUND_MS = 90_000;
+/** Kept for compatibility; board stays open until user Kick Off or cycle ends. */
+export const VIRTUAL_BETTING_MS = 75_000;
 export const VIRTUAL_PLAY_MS = VIRTUAL_ROUND_MS - VIRTUAL_BETTING_MS;
-/** Season length for table (rolling). */
 export const VIRTUAL_SEASON_ROUNDS = 20;
 
 export type RoundPhase = "betting" | "live" | "result";
