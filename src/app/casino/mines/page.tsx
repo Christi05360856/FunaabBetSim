@@ -17,10 +17,12 @@ import {
   chips,
 } from "@/components/casino/CasinoShell";
 import {
+  bindGlobalAudioUnlock,
   sfxBet,
   sfxBomb,
   sfxCashout,
   sfxDiamond,
+  unlockAudio,
 } from "@/lib/casino/sounds";
 
 export default function MinesPage() {
@@ -55,8 +57,13 @@ export default function MinesPage() {
     void loadBal();
   }, [loadBal]);
 
+  useEffect(() => {
+    bindGlobalAudioUnlock();
+  }, []);
+
   async function start() {
     if (!user || busy) return;
+    unlockAudio();
     setBusy(true);
     setErr(null);
     setBanner(null);
@@ -86,8 +93,8 @@ export default function MinesPage() {
       setRevealed([]);
       setStatus("active");
       setMult(1);
-      sfxBet();
       if (typeof data.balance === "number") setBalance(data.balance);
+      sfxBet();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -98,6 +105,7 @@ export default function MinesPage() {
   async function reveal(tile: number) {
     if (!user || !sessionId || busy || status !== "active") return;
     if (revealed.includes(tile)) return;
+    unlockAudio();
     setBusy(true);
     setErr(null);
     try {
@@ -139,6 +147,7 @@ export default function MinesPage() {
 
   async function cashout() {
     if (!user || !sessionId || busy || status !== "active") return;
+    unlockAudio();
     setBusy(true);
     setErr(null);
     try {
@@ -260,4 +269,5 @@ export default function MinesPage() {
       )}
     </CasinoShell>
   );
-}
+  }
+                
