@@ -11,10 +11,12 @@ import {
   chips,
 } from "@/components/casino/CasinoShell";
 import {
+  bindGlobalAudioUnlock,
   sfxBet,
   sfxCashout,
   sfxCrash,
   sfxFlyTick,
+  unlockAudio,
 } from "@/lib/casino/sounds";
 
 type Snapshot = {
@@ -94,6 +96,11 @@ export default function CrashPage() {
   useEffect(() => {
     void load(true);
   }, [load]);
+
+  // Unlock Web Audio on first tap (required on mobile)
+  useEffect(() => {
+    bindGlobalAudioUnlock();
+  }, []);
 
   // Poll: faster while flying/crashed so next round appears quickly (HTTP only, no Firestore listeners)
   useEffect(() => {
@@ -189,6 +196,7 @@ export default function CrashPage() {
 
   async function join() {
     if (!snap || busy) return;
+    unlockAudio();
     setBusy(true);
     setErr(null);
     try {
@@ -206,6 +214,7 @@ export default function CrashPage() {
 
   async function cashout() {
     if (!snap || busy) return;
+    unlockAudio();
     setBusy(true);
     setErr(null);
     try {
@@ -354,5 +363,5 @@ export default function CrashPage() {
       )}
     </CasinoShell>
   );
-        }
-            
+          }
+      
