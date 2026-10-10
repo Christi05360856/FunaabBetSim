@@ -74,6 +74,7 @@ export function sfxCrash() {
 }
 
 export function sfxFlyTick(mult: number) {
+  // Soft rising blip; call sparsely from UI
   const f = 280 + Math.min(800, Math.log(Math.max(1, mult)) * 180);
   tone(f, 30, "sine", 0.025);
 }
