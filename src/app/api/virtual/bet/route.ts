@@ -3,7 +3,8 @@ import { verifyRequest } from "@/lib/auth/verifyRequest";
 import { clientIp, enforceRateLimit } from "@/lib/security/rateLimit";
 import { CASINO_MAX_STAKE, CASINO_MIN_STAKE } from "@/types/casino";
 import { buildCurrentRound } from "@/lib/virtual/currentRound";
-import { lookupOdds } from "@/lib/virtual/engine";
+import { lookupOdds, publicMatch } from "@/lib/virtual/engine";
+import { isMarketId } from "@/lib/virtual/markets";
 import { placeVirtualBetAtomic } from "@/lib/virtual/bets";
 import type { VirtualBetLeg } from "@/types/virtual";
 
@@ -83,15 +84,10 @@ export async function POST(request: NextRequest) {
     if (!m) {
       return NextResponse.json({ error: "Unknown match" }, { status: 400 });
     }
-    const pub = {
-      id: m.id,
-      league: m.league,
-      home: m.home,
-      away: m.away,
-      odds1x2: m.odds1x2,
-      oddsOu25: m.oddsOu25,
-      oddsBtts: m.oddsBtts,
-    };
+    if (!isMarketId(market)) {
+      return NextResponse.json({ error: "Unknown market/pick" }, { status: 400 });
+    }
+    const pub = publicMatch(m);
     const serverOdds = lookupOdds(pub, market, pick);
     if (serverOdds == null) {
       return NextResponse.json({ error: "Unknown market/pick" }, { status: 400 });
@@ -108,7 +104,7 @@ export async function POST(request: NextRequest) {
     }
     legs.push({
       matchId,
-      market: market as VirtualBetLeg["market"],
+      market,
       pick,
       odds: serverOdds,
     });
