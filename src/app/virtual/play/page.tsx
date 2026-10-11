@@ -42,8 +42,8 @@ import PitchCanvas from "@/components/virtual/PitchCanvas";
 import Crest from "@/components/virtual/Crest";
 import LeagueFlag from "@/components/virtual/LeagueFlag";
 
-const PURPLE = "#51489b";
-const CARD = "#e6e6e6";
+const PURPLE = "var(--color-brand)";
+const CARD = "color-mix(in srgb, var(--color-text-muted) 12%, var(--color-surface))";
 
 type MatchInfo = { id: string; home: string; away: string; league: string };
 type Overlay = { kind: "goal" | "ht" | "ft"; key: number } | null;
@@ -63,7 +63,7 @@ function Ball({ size = 14 }: { size?: number }) {
 
 function Trophy() {
   return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill={PURPLE} aria-hidden>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill={PURPLE} aria-hidden>
       <path d="M6 3h12v3h3v2a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 15v2h3v3H8v-3h3v-2a5 5 0 0 1-3.7-3H7a4 4 0 0 1-4-4V6h3zM5 8a2 2 0 0 0 1.4 1.9A9 9 0 0 1 6 8zm14 0h-1.4a9 9 0 0 1-.4 1.9A2 2 0 0 0 19 8z" />
     </svg>
   );
@@ -94,20 +94,20 @@ function MatchCard({
       className="relative overflow-hidden rounded-lg"
       style={{ background: CARD }}
     >
-      <div className="absolute -left-3 top-1/2 -translate-y-1/2">
-        <Crest team={m.home} size={52} />
+      <div className="absolute -left-2 top-1/2 -translate-y-1/2">
+        <Crest team={m.home} size={36} />
       </div>
-      <div className="absolute -right-3 top-1/2 -translate-y-1/2">
-        <Crest team={m.away} size={52} />
+      <div className="absolute -right-2 top-1/2 -translate-y-1/2">
+        <Crest team={m.away} size={36} />
       </div>
       <button
         type="button"
         disabled={!expandable}
         onClick={onToggle}
-        className="relative flex w-full flex-col items-center px-14 py-2"
+        className="relative flex w-full flex-col items-center px-9 py-2"
       >
-        {live && <Ball size={14} />}
-        <div className="flex items-center gap-4 text-[20px] text-neutral-700 tabular-nums">
+        {live && <Ball size={11} />}
+        <div className="flex items-center gap-2.5 text-[14px] text-ink tabular-nums">
           <span>{teamCode(m.home)}</span>
           <span>
             {h} - {a}
@@ -115,7 +115,7 @@ function MatchCard({
           <span>{teamCode(m.away)}</span>
         </div>
         {expandable && (
-          <span className="text-[14px] leading-none text-neutral-600">
+          <span className="text-[11px] leading-none text-ink-muted">
             {expanded ? "⌃" : "⌄"}
           </span>
         )}
@@ -327,7 +327,7 @@ export default function VirtualPlayPage() {
 
   if (!data) {
     return (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white text-sm text-neutral-500">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-surface text-sm text-ink-muted">
         Loading match…
       </div>
     );
@@ -356,12 +356,12 @@ export default function VirtualPlayPage() {
   const headScore = headlineId ? scoreOf(headlineId) : { h: 0, a: 0 };
 
   const header = (
-    <header className="flex shrink-0 items-center gap-4 bg-white px-4 py-4 shadow-sm">
-      <h1 className="flex-1 text-[22px] font-light text-neutral-600">
+    <header className="flex shrink-0 items-center gap-2.5 bg-surface px-3 py-2.5 shadow-card">
+      <h1 className="flex-1 text-[15px] font-light text-ink-muted">
         Instant Virtuals
       </h1>
       <span
-        className="relative rounded-full border px-4 py-1.5 text-[16px] tabular-nums"
+        className="relative rounded-full border px-3 py-1.5 text-[12px] tabular-nums"
         style={{ borderColor: PURPLE, color: PURPLE }}
       >
         {shownBalance == null ? "…" : balanceText(shownBalance)}
@@ -384,18 +384,18 @@ export default function VirtualPlayPage() {
           );
 
     return (
-      <div className="fixed inset-0 z-[60] bg-[#fafafa] text-neutral-800">
+      <div className="fixed inset-0 z-[60] bg-bg text-ink">
         <div className="mx-auto flex h-full max-w-lg flex-col">
           {header}
-          <nav className="flex shrink-0 items-center overflow-x-auto bg-white px-2 shadow-sm">
+          <nav className="flex shrink-0 items-center overflow-x-auto bg-surface px-2 shadow-card">
             {tabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => setResultTab(t.id)}
-                className="shrink-0 px-3 py-4 text-[19px]"
+                className="shrink-0 px-3 py-2.5 text-[13px]"
                 style={{
-                  color: resultTab === t.id ? PURPLE : "#8a8a8a",
+                  color: resultTab === t.id ? PURPLE : "var(--color-text-muted)",
                   fontWeight: resultTab === t.id ? 500 : 400,
                 }}
               >
@@ -416,21 +416,21 @@ export default function VirtualPlayPage() {
                 );
                 return (
                   <div key={r.matchId} className="relative overflow-hidden rounded-lg" style={{ background: CARD }}>
-                    <div className="absolute -left-3 top-3">
-                      <Crest team={m.home} size={52} />
+                    <div className="absolute -left-2 top-3">
+                      <Crest team={m.home} size={36} />
                     </div>
-                    <div className="absolute -right-3 top-3">
-                      <Crest team={m.away} size={52} />
+                    <div className="absolute -right-2 top-3">
+                      <Crest team={m.away} size={36} />
                     </div>
-                    <div className="relative px-14 pt-3 pb-2 text-center">
-                      <div className="flex items-center justify-center gap-5 text-[21px] text-neutral-700 tabular-nums">
+                    <div className="relative px-9 pt-3 pb-2 text-center">
+                      <div className="flex items-center justify-center gap-3 text-[14px] text-ink tabular-nums">
                         <span>{teamCode(m.home)}</span>
                         <span className="font-medium">
                           {r.homeGoals}-{r.awayGoals}
                         </span>
                         <span>{teamCode(m.away)}</span>
                       </div>
-                      <p className="mt-1 text-[12px] text-neutral-500">
+                      <p className="mt-1 text-[10px] text-ink-muted">
                         First Half {fh.h}-{fh.a}
                       </p>
                     </div>
@@ -444,7 +444,7 @@ export default function VirtualPlayPage() {
                       return (
                         <div
                           key={`${l.market}-${l.pick}`}
-                          className="relative mx-[18%] flex items-center border-t border-neutral-400/50 py-3 text-[17px] text-neutral-600"
+                          className="relative mx-[14%] flex items-center border-t border-ink-muted/20 py-2 text-[13px] text-ink-muted"
                         >
                           <span className="w-[16%]">
                             {won ? <Trophy /> : "Lost"}
@@ -466,7 +466,7 @@ export default function VirtualPlayPage() {
                 );
               })}
               {rows.length === 0 && (
-                <p className="py-10 text-center text-sm text-neutral-500">
+                <p className="py-10 text-center text-sm text-ink-muted">
                   No matches here.
                 </p>
               )}
@@ -482,13 +482,13 @@ export default function VirtualPlayPage() {
                 className="flex-1"
                 onClick={() => setDetailsOpen(false)}
               />
-              <div className="max-h-[75%] overflow-y-auto rounded-t-2xl bg-white p-4">
+              <div className="max-h-[75%] overflow-y-auto rounded-t-2xl bg-surface p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-[18px] font-semibold">Ticket Details</span>
+                  <span className="text-[13px] font-semibold">Ticket Details</span>
                   <button
                     type="button"
                     onClick={() => setDetailsOpen(false)}
-                    className="text-2xl leading-none text-neutral-500"
+                    className="text-2xl leading-none text-ink-muted"
                   >
                     ×
                   </button>
@@ -506,13 +506,13 @@ export default function VirtualPlayPage() {
                   return (
                     <div
                       key={`${l.matchId}-${l.market}`}
-                      className="mt-3 flex items-center justify-between border-b border-neutral-200 pb-3 text-[15px]"
+                      className="mt-3 flex items-center justify-between border-b border-ink-muted/15 pb-3 text-[12px]"
                     >
                       <div>
                         <p className="font-semibold">
                           {l.label} @{l.odds.toFixed(2)}
                         </p>
-                        <p className="text-neutral-500">
+                        <p className="text-ink-muted">
                           {MARKET_TITLE[l.market]} · {teamCode(l.home)} vs{" "}
                           {teamCode(l.away)}
                           {r ? ` · ${r.homeGoals}-${r.awayGoals}` : ""}
@@ -520,30 +520,30 @@ export default function VirtualPlayPage() {
                       </div>
                       <span
                         className="font-semibold"
-                        style={{ color: won ? "#15803d" : "#b91c1c" }}
+                        style={{ color: won ? "var(--color-win)" : "var(--color-loss)" }}
                       >
                         {won ? "Won" : "Lost"}
                       </span>
                     </div>
                   );
                 })}
-                <div className="mt-3 flex justify-between text-[15px]">
-                  <span className="text-neutral-500">Stake</span>
+                <div className="mt-3 flex justify-between text-[12px]">
+                  <span className="text-ink-muted">Stake</span>
                   <span className="font-semibold tabular-nums">{money(ticket.stake)}</span>
                 </div>
-                <div className="mt-1 flex justify-between text-[15px]">
-                  <span className="text-neutral-500">Total Won</span>
+                <div className="mt-1 flex justify-between text-[12px]">
+                  <span className="text-ink-muted">Total Won</span>
                   <span className="font-semibold tabular-nums">{money(totalWon)}</span>
                 </div>
               </div>
             </div>
           )}
 
-          <div className="flex h-[60px] shrink-0 text-[20px]">
+          <div className="flex h-12 shrink-0 text-[14px]">
             <button
               type="button"
               onClick={() => setDetailsOpen(true)}
-              className="flex flex-[0.85] items-center justify-center bg-[#d7d7d7] text-neutral-600"
+              className="flex flex-[0.85] items-center justify-center bg-ink-muted/15 text-ink-muted"
             >
               Ticket Details
             </button>
@@ -554,7 +554,7 @@ export default function VirtualPlayPage() {
               style={{ background: PURPLE }}
             >
               Next Round
-              <span className="text-[14px]">
+              <span className="text-[11px]">
                 Total Won: {balanceText(totalWon)}
               </span>
             </button>
@@ -566,10 +566,10 @@ export default function VirtualPlayPage() {
 
   // ======================= QUICK GAMES ====================================
   return (
-    <div className="fixed inset-0 z-[60] bg-[#fafafa] text-neutral-800">
+    <div className="fixed inset-0 z-[60] bg-bg text-ink">
       <div className="mx-auto flex h-full max-w-lg flex-col">
         {header}
-        <div className="shrink-0 border-b border-neutral-200 bg-white py-3 text-center text-[20px] text-neutral-600">
+        <div className="shrink-0 border-b border-ink-muted/15 bg-surface py-2 text-center text-[14px] text-ink-muted">
           Quick Games
         </div>
 
@@ -585,26 +585,26 @@ export default function VirtualPlayPage() {
                 />
                 {overlay && (
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                    <div className="w-[78%] overflow-hidden rounded-xl shadow-lg">
+                    <div className="w-[70%] overflow-hidden rounded-xl shadow-lg">
                       <div
-                        className="flex items-center justify-between px-4 py-2 text-white"
+                        className="flex items-center justify-between px-3 py-2 text-white"
                         style={{
                           background:
                             "linear-gradient(90deg,#c62828 0%,#6d3fa6 50%,#1e6bff 100%)",
                         }}
                       >
-                        <span className="text-[26px] font-light">
+                        <span className="text-[17px] font-light">
                           {teamCode(head.home)}
                         </span>
-                        <span className="text-[26px] font-light">
+                        <span className="text-[17px] font-light">
                           {teamCode(head.away)}
                         </span>
                       </div>
                       <div className="bg-black/60 px-3 py-2 text-center text-white backdrop-blur-sm">
-                        <div className="text-[44px] font-extralight leading-none tabular-nums">
+                        <div className="text-[28px] font-extralight leading-none tabular-nums">
                           {headScore.h} - {headScore.a}
                         </div>
-                        <div className="mt-1 text-[16px] tracking-wide opacity-80">
+                        <div className="mt-1 text-[12px] tracking-wide opacity-80">
                           {overlay.kind === "ft"
                             ? "FINAL TIME"
                             : overlay.kind === "ht"
@@ -622,7 +622,7 @@ export default function VirtualPlayPage() {
             <button
               type="button"
               onClick={() => setHidePitch((v) => !v)}
-              className={`z-10 rounded-t-md bg-black/55 px-4 py-0.5 text-[15px] text-white ${
+              className={`z-10 rounded-t-md bg-black/55 px-3 py-0.5 text-[12px] text-white ${
                 hidePitch ? "mt-2 rounded-md bg-black/70" : "-mt-6"
               }`}
             >
@@ -640,7 +640,7 @@ export default function VirtualPlayPage() {
                     : new Set(data.results.map((r) => r.matchId))
                 )
               }
-              className="rounded border px-8 py-2.5 text-[19px]"
+              className="rounded border px-6 py-2.5 text-[13px]"
               style={{ borderColor: PURPLE, color: PURPLE }}
             >
               {expanded.size > 0 ? "Collapse All" : "Expand All"}
@@ -650,9 +650,9 @@ export default function VirtualPlayPage() {
           <div className="px-3 pb-6">
             {myResults.length > 0 && (
               <>
-                <div className="mb-3 flex items-center gap-2 rounded-full bg-[#dcdcdc] py-1 pr-4 pl-1 text-[19px] text-neutral-600">
-                  <span className="flex h-9 w-9 items-center justify-center">
-                    <Ball size={26} />
+                <div className="mb-3 flex items-center gap-2 rounded-full bg-ink-muted/15 py-1 pr-4 pl-1 text-[13px] text-ink-muted">
+                  <span className="flex h-7 w-7 items-center justify-center">
+                    <Ball size={18} />
                   </span>
                   My Events
                 </div>
@@ -677,7 +677,7 @@ export default function VirtualPlayPage() {
                         onToggle={() => toggleOne(r.matchId)}
                       >
                         {open && (
-                          <div className="relative border-t border-neutral-400/40 px-14 py-2 text-center text-[14px] text-neutral-600">
+                          <div className="relative border-t border-ink-muted/20 px-9 py-2 text-center text-[11px] text-ink-muted">
                             {goals.length === 0
                               ? "No goals yet"
                               : goals.map((g, i) => (
@@ -697,9 +697,9 @@ export default function VirtualPlayPage() {
 
             {leagueGroups.map(({ lg, rows }) => (
               <div key={lg.id} className="mb-5">
-                <div className="mb-3 flex items-center gap-2 rounded-full bg-[#dcdcdc] py-1 pr-4 pl-1 text-[19px] text-neutral-600">
-                  <span className="flex h-9 w-9 items-center justify-center">
-                    <LeagueFlag league={lg.id} size={30} />
+                <div className="mb-3 flex items-center gap-2 rounded-full bg-ink-muted/15 py-1 pr-4 pl-1 text-[13px] text-ink-muted">
+                  <span className="flex h-7 w-7 items-center justify-center">
+                    <LeagueFlag league={lg.id} size={22} />
                   </span>
                   {lg.label}
                 </div>
@@ -725,7 +725,7 @@ export default function VirtualPlayPage() {
                           onToggle={() => toggleOne(r.matchId)}
                         >
                           {open && (
-                            <div className="relative border-t border-neutral-400/40 px-14 py-2 text-center text-[14px] text-neutral-600">
+                            <div className="relative border-t border-ink-muted/20 px-9 py-2 text-center text-[11px] text-ink-muted">
                               {goals.length === 0
                                 ? "No goals yet"
                                 : goals.map((g, i) => (
@@ -748,7 +748,7 @@ export default function VirtualPlayPage() {
         <button
           type="button"
           onClick={skipToResult}
-          className="h-[60px] shrink-0 text-[21px] text-white"
+          className="h-12 shrink-0 text-[14px] text-white"
           style={{ background: PURPLE }}
         >
           Skip to Result
