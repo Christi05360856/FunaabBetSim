@@ -18,7 +18,7 @@ import { teamCode } from "@/lib/virtual/teamPool";
 import { balanceText, money, ticketNumber } from "@/lib/virtual/format";
 import { unlockAudio } from "@/lib/casino/sounds";
 
-const PURPLE = "#51489b";
+const PURPLE = "var(--color-brand)";
 
 export default function VirtualTicketPage() {
   const { user } = useAuth();
@@ -104,7 +104,7 @@ export default function VirtualTicketPage() {
 
   if (!ticket) {
     return (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white text-sm text-neutral-500">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-surface text-sm text-ink-muted">
         Loading ticket…
       </div>
     );
@@ -113,23 +113,23 @@ export default function VirtualTicketPage() {
   const id = ticketNumber(ticket.betId, ticket.roundId + ticket.placedAt);
 
   return (
-    <div className="fixed inset-0 z-[60] bg-[#fafafa] text-neutral-800">
+    <div className="fixed inset-0 z-[60] bg-bg text-ink">
       <div className="mx-auto flex h-full max-w-lg flex-col">
         {/* Header */}
-        <header className="flex shrink-0 items-center gap-4 bg-white px-4 py-4 shadow-sm">
+        <header className="flex shrink-0 items-center gap-2.5 bg-surface px-3 py-2.5 shadow-card">
           <button
             type="button"
             aria-label="Back"
             onClick={() => router.push("/virtual")}
-            className="text-2xl leading-none text-neutral-700"
+            className="text-2xl leading-none text-ink"
           >
             ←
           </button>
-          <h1 className="flex-1 text-[22px] font-light text-neutral-600">
+          <h1 className="flex-1 text-[15px] font-light text-ink-muted">
             Instant Virtuals
           </h1>
           <span
-            className="relative rounded-full border px-4 py-1.5 text-[16px] tabular-nums"
+            className="relative rounded-full border px-3 py-1.5 text-[12px] tabular-nums"
             style={{ borderColor: PURPLE, color: PURPLE }}
           >
             {balance == null ? "…" : balanceText(balance)}
@@ -138,10 +138,10 @@ export default function VirtualTicketPage() {
         </header>
 
         {/* Open Bets bar */}
-        <div className="flex shrink-0 items-center gap-2 bg-white px-4 py-3">
-          <span className="text-[19px] text-neutral-600">Open Bets</span>
+        <div className="flex shrink-0 items-center gap-2 bg-surface px-3 py-2">
+          <span className="text-[13px] text-ink-muted">Open Bets</span>
           <span
-            className="flex h-7 w-7 items-center justify-center rounded-full text-[15px] font-semibold text-white"
+            className="flex h-5 w-5 items-center justify-center rounded-full text-[12px] font-semibold text-white"
             style={{ background: PURPLE }}
           >
             1
@@ -150,14 +150,14 @@ export default function VirtualTicketPage() {
 
         {/* Ticket */}
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-3">
-          <div className="rounded-2xl px-5 pt-5 pb-4" style={{ background: "#d9d6e8" }}>
-            <div className="flex items-baseline justify-between border-b border-neutral-400/40 pb-3">
-              <span className="text-[20px] text-neutral-700">
+          <div className="rounded-2xl px-3.5 pt-3 pb-4" style={{ background: "var(--color-surface-raised)" }}>
+            <div className="flex items-baseline justify-between border-b border-ink-muted/20 pb-3">
+              <span className="text-[14px] text-ink">
                 {ticket.legs.length > 1 ? "Multiple" : "Single"}
               </span>
-              <span className="text-[15px] text-neutral-500">
+              <span className="text-[12px] text-ink-muted">
                 Ticket ID{" "}
-                <span className="text-[19px] text-neutral-700">{id}</span>
+                <span className="text-[13px] text-ink">{id}</span>
               </span>
             </div>
 
@@ -165,7 +165,7 @@ export default function VirtualTicketPage() {
               ticket.legs.map((l) => (
                 <div
                   key={`${l.matchId}-${l.market}-${l.pick}`}
-                  className="border-b border-neutral-400/40 py-4 text-[19px] leading-8 text-neutral-700"
+                  className="border-b border-ink-muted/20 py-2.5 text-[13px] leading-8 text-ink"
                 >
                   <div>
                     {l.label} @{l.odds.toFixed(2)}
@@ -177,28 +177,28 @@ export default function VirtualTicketPage() {
                 </div>
               ))}
 
-            <div className="flex justify-end py-3">
+            <div className="flex justify-end py-2">
               <button
                 type="button"
                 aria-label={open ? "Collapse" : "Expand"}
                 onClick={() => setOpen((v) => !v)}
-                className="px-2 text-[14px]"
+                className="px-2 text-[11px]"
                 style={{ color: PURPLE }}
               >
                 {open ? "▲" : "▼"}
               </button>
             </div>
 
-            <div className="flex items-end justify-between text-neutral-500">
-              <span className="text-[16px]">
+            <div className="flex items-end justify-between text-ink-muted">
+              <span className="text-[12px]">
                 Stake{" "}
-                <span className="ml-1 text-[22px] text-neutral-700 tabular-nums">
+                <span className="ml-1 text-[15px] text-ink tabular-nums">
                   {money(ticket.stake)}
                 </span>
               </span>
-              <span className="text-[16px]">
+              <span className="text-[12px]">
                 Pot. Win{" "}
-                <span className="ml-1 text-[22px] text-neutral-700 tabular-nums">
+                <span className="ml-1 text-[15px] text-ink tabular-nums">
                   {money(ticket.potential)}
                 </span>
               </span>
@@ -213,11 +213,11 @@ export default function VirtualTicketPage() {
         </div>
 
         {/* Bottom bar */}
-        <div className="flex h-14 shrink-0 text-[20px]">
+        <div className="flex h-12 shrink-0 text-[14px]">
           <button
             type="button"
             onClick={() => router.push("/virtual")}
-            className="flex flex-[1.1] items-center justify-center bg-[#d7d7d7] text-neutral-600"
+            className="flex flex-[1.1] items-center justify-center bg-ink-muted/15 text-ink-muted"
           >
             Keep Betting
           </button>
