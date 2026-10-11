@@ -30,11 +30,11 @@ import { bindGlobalAudioUnlock, sfxBet, unlockAudio } from "@/lib/casino/sounds"
 import Crest from "@/components/virtual/Crest";
 import LeagueFlag from "@/components/virtual/LeagueFlag";
 
-const RED = "#e8192c";
-const RED_DARK = "#7a0613";
-const GREEN = "#12a038";
-const CELL = "#d8ebdb";
-const CELL_TEXT = "#1d6b2c";
+const BRAND = "var(--color-brand)";
+const BRAND_DARK = "var(--color-brand-dark)";
+const GREEN = "var(--color-brand)";
+const CELL = "color-mix(in srgb, var(--color-brand) 12%, var(--color-surface))";
+const CELL_TEXT = "var(--color-brand)";
 
 type PickLeg = StoredLeg;
 type TabId = "1x2" | "1up" | "2up" | "dc" | "ou" | "btts";
@@ -50,7 +50,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
 
 function Stars({ n }: { n: number }) {
   return (
-    <span className="flex gap-[1px] text-[11px] leading-none">
+    <span className="flex gap-[1px] text-[10px] leading-none">
       {[1, 2, 3, 4, 5].map((i) => (
         <span key={i} style={{ color: i <= n ? "#f5b301" : "#c9c9c9" }}>
           ★
@@ -263,14 +263,14 @@ export default function VirtualBoardPage() {
 
   if (!user) {
     return (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-surface">
         <div className="px-6 text-center">
-          <p className="text-lg font-bold text-neutral-900">Instant Football</p>
-          <p className="mt-2 text-sm text-neutral-500">Sign in to play for free.</p>
+          <p className="text-lg font-bold text-ink">Instant Football</p>
+          <p className="mt-2 text-sm text-ink-muted">Sign in to play for free.</p>
           <Link
             href="/login"
-            className="mt-6 inline-block rounded-md px-6 py-3 text-sm font-bold text-white"
-            style={{ background: RED }}
+            className="mt-6 inline-block rounded-md px-6 py-2 text-sm font-bold text-white"
+            style={{ background: BRAND }}
           >
             Sign in
           </Link>
@@ -284,27 +284,27 @@ export default function VirtualBoardPage() {
   const detailMatch = detail ? byId[detail] : null;
 
   return (
-    <div className="fixed inset-0 z-[60] bg-white text-neutral-900">
+    <div className="fixed inset-0 z-[60] bg-surface text-ink">
       <div className="mx-auto flex h-full max-w-lg flex-col">
         {/* Header */}
         <header
-          className="flex shrink-0 items-center gap-3 px-4 py-4 text-white"
-          style={{ background: RED }}
+          className="flex shrink-0 items-center gap-3 px-3 py-2.5 text-white"
+          style={{ background: BRAND }}
         >
           <Link href="/casino" aria-label="Back" className="text-2xl leading-none">
             ←
           </Link>
-          <h1 className="flex-1 text-[17px] font-normal">Instant Football</h1>
-          <span className="text-[15px] font-medium tabular-nums">
+          <h1 className="flex-1 text-[13px] font-normal">Instant Football</h1>
+          <span className="text-[12px] font-medium tabular-nums">
             {balance == null ? "…" : balanceText(balance)}
           </span>
           <button
             type="button"
             aria-label="Betslip"
             onClick={() => setSlipOpen(true)}
-            className="relative flex h-9 w-8 items-center justify-center"
+            className="relative flex h-7 w-7 items-center justify-center"
           >
-            <svg width="26" height="30" viewBox="0 0 26 30" fill="none">
+            <svg width="20" height="23" viewBox="0 0 26 30" fill="none">
               <path
                 d="M4 2h18v26l-3-2-3 2-3-2-3 2-3-2-3 2z"
                 stroke="#fff"
@@ -314,7 +314,7 @@ export default function VirtualBoardPage() {
               <path d="M8 9h10M8 14h10M8 19h6" stroke="#fff" strokeWidth="2" />
             </svg>
             {picks.length > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[11px] font-bold" style={{ color: RED }}>
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-surface px-1 text-[10px] font-bold" style={{ color: BRAND }}>
                 {picks.length}
               </span>
             )}
@@ -324,7 +324,7 @@ export default function VirtualBoardPage() {
         {/* League tabs */}
         <nav
           className="flex shrink-0 overflow-x-auto"
-          style={{ background: "#3b4046" }}
+          style={{ background: "var(--color-brand-dark)" }}
         >
           {VIRTUAL_LEAGUES.map((lg) => {
             const on = league === lg.id;
@@ -333,7 +333,7 @@ export default function VirtualBoardPage() {
                 key={lg.id}
                 type="button"
                 onClick={() => setLeague(lg.id)}
-                className="relative shrink-0 px-5 py-4 text-[17px]"
+                className="relative shrink-0 px-3.5 py-2.5 text-[13px]"
                 style={{
                   color: on ? "#fff" : "rgba(255,255,255,0.78)",
                   fontWeight: on ? 600 : 400,
@@ -342,7 +342,7 @@ export default function VirtualBoardPage() {
                 {lg.label}
                 {on && (
                   <span
-                    className="absolute inset-x-0 bottom-0 h-[3px]"
+                    className="absolute inset-x-0 bottom-0 h-[2px]"
                     style={{ background: GREEN }}
                   />
                 )}
@@ -352,7 +352,7 @@ export default function VirtualBoardPage() {
         </nav>
 
         {/* Market tabs */}
-        <div className="shrink-0 border-b border-neutral-200 bg-white">
+        <div className="shrink-0 border-b border-ink-muted/15 bg-surface">
           <div className="flex overflow-x-auto">
             {TABS.map((t) => {
               const on = tab === t.id;
@@ -361,13 +361,13 @@ export default function VirtualBoardPage() {
                   key={t.id}
                   type="button"
                   onClick={() => setTab(t.id)}
-                  className="relative shrink-0 px-5 py-4 text-[17px]"
-                  style={{ color: on ? "#222" : "#6b6b6b" }}
+                  className="relative shrink-0 px-3.5 py-2.5 text-[13px]"
+                  style={{ color: on ? "var(--color-text)" : "var(--color-text-muted)" }}
                 >
                   {t.label}
                   {on && (
                     <span
-                      className="absolute inset-x-3 bottom-0 h-[3px]"
+                      className="absolute inset-x-3 bottom-0 h-[2px]"
                       style={{ background: GREEN }}
                     />
                   )}
@@ -376,16 +376,16 @@ export default function VirtualBoardPage() {
             })}
           </div>
           {tab === "ou" && (
-            <div className="flex gap-2 px-4 pb-3">
+            <div className="flex gap-2 px-3 pb-3">
               {OU_LINES.map((l) => (
                 <button
                   key={l.id}
                   type="button"
                   onClick={() => setOuId(l.id)}
-                  className="rounded-full px-4 py-1 text-sm font-semibold"
+                  className="rounded-full px-3 py-1 text-sm font-semibold"
                   style={{
-                    background: ouId === l.id ? GREEN : "#eceeed",
-                    color: ouId === l.id ? "#fff" : "#444",
+                    background: ouId === l.id ? GREEN : "color-mix(in srgb, var(--color-text-muted) 14%, var(--color-surface))",
+                    color: ouId === l.id ? "#fff" : "var(--color-text)",
                   }}
                 >
                   {l.line}
@@ -398,16 +398,16 @@ export default function VirtualBoardPage() {
         {/* League bar with column heads */}
         <div
           className="flex shrink-0 items-center px-3 py-2"
-          style={{ background: "#f0f1f0" }}
+          style={{ background: "color-mix(in srgb, var(--color-text-muted) 10%, var(--color-surface))" }}
         >
-          <div className="flex flex-1 items-center gap-2 text-[17px] text-neutral-800">
-            <LeagueFlag league={league} />
+          <div className="flex flex-1 items-center gap-2 text-[13px] text-ink">
+            <LeagueFlag league={league} size={20} />
             <span>{leagueLabel}</span>
-            <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-neutral-500 text-[12px] font-bold text-white">
+            <span className="flex h-[14px] w-[14px] items-center justify-center rounded-full bg-ink-muted text-[10px] font-bold text-white">
               i
             </span>
           </div>
-          <div className="flex w-[58%] gap-1 pr-0.5 text-center text-[15px] text-neutral-500">
+          <div className="flex w-[54%] gap-1 pr-0.5 text-center text-[12px] text-ink-muted">
             {picksForTab.map((p) => (
               <span key={p} className="flex-1">
                 {pickColumn(marketId, p)}
@@ -423,26 +423,26 @@ export default function VirtualBoardPage() {
         )}
 
         {/* Fixtures */}
-        <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-surface">
           {round == null && (
-            <p className="mt-10 text-center text-sm text-neutral-500">Loading…</p>
+            <p className="mt-10 text-center text-sm text-ink-muted">Loading…</p>
           )}
           {matches.map((m) => (
             <div
               key={m.id}
-              className="flex items-stretch border-b border-neutral-200 px-1 py-3"
+              className="flex items-stretch border-b border-ink-muted/15 px-1 py-2"
             >
               <div className="flex min-w-0 flex-1 flex-col justify-between pl-1">
                 <div className="flex items-center gap-1.5">
-                  <Crest team={m.home} size={30} />
-                  <span className="text-[17px] text-neutral-800">
+                  <Crest team={m.home} size={22} />
+                  <span className="text-[13px] text-ink">
                     {teamCode(m.home)}
                   </span>
-                  <span className="text-[15px] text-neutral-400">vs</span>
-                  <span className="text-[17px] text-neutral-800">
+                  <span className="text-[12px] text-ink-muted/70">vs</span>
+                  <span className="text-[13px] text-ink">
                     {teamCode(m.away)}
                   </span>
-                  <Crest team={m.away} size={30} />
+                  <Crest team={m.away} size={22} />
                 </div>
                 <div className="mt-1 flex items-center justify-between pr-2">
                   <Stars n={m.homeStars ?? 3} />
@@ -451,12 +451,12 @@ export default function VirtualBoardPage() {
                 <button
                   type="button"
                   onClick={() => setDetail(m.id)}
-                  className="mt-1 self-start text-[14px] text-neutral-400"
+                  className="mt-1 self-start text-[11px] text-ink-muted/70"
                 >
                   +{offerCount(m)} &gt;
                 </button>
               </div>
-              <div className="flex w-[58%] items-center gap-1 pr-1">
+              <div className="flex w-[54%] items-center gap-1 pr-1">
                 {picksForTab.map((p) => {
                   const od = oddsOf(m, marketId, p);
                   const on = isOn(m.id, marketId, p);
@@ -467,10 +467,10 @@ export default function VirtualBoardPage() {
                       type="button"
                       disabled={off}
                       onClick={() => toggle(m, marketId, p)}
-                      className="flex h-[58px] flex-1 items-center justify-center rounded-[3px] text-[20px] tabular-nums"
+                      className="flex h-[36px] flex-1 items-center justify-center rounded-[3px] text-[14px] tabular-nums"
                       style={{
-                        background: on ? GREEN : off ? "#ececec" : CELL,
-                        color: on ? "#fff" : off ? "#b5b5b5" : CELL_TEXT,
+                        background: on ? GREEN : off ? "color-mix(in srgb, var(--color-text-muted) 14%, var(--color-surface))" : CELL,
+                        color: on ? "#fff" : off ? "var(--color-text-muted)" : CELL_TEXT,
                         fontWeight: on ? 700 : 400,
                       }}
                     >
@@ -484,15 +484,15 @@ export default function VirtualBoardPage() {
         </div>
 
         {/* Bottom bar */}
-        <div className="flex h-14 shrink-0 text-[19px] text-white">
+        <div className="flex h-12 shrink-0 text-[13px] text-white">
           <button
             type="button"
             onClick={() => void loadRound(false)}
             className="flex flex-1 flex-col items-center justify-center leading-tight"
-            style={{ background: "#2b2f33" }}
+            style={{ background: "var(--color-brand-dark)" }}
           >
             Next Round
-            <span className="text-[11px] tabular-nums opacity-60">
+            <span className="text-[10px] tabular-nums opacity-60">
               {fmtMs(msToNext)}
             </span>
           </button>
@@ -515,12 +515,12 @@ export default function VirtualBoardPage() {
               className="flex-1"
               onClick={() => setDetail(null)}
             />
-            <div className="max-h-[80%] overflow-y-auto rounded-t-2xl bg-white pb-4">
+            <div className="max-h-[80%] overflow-y-auto rounded-t-2xl bg-surface pb-4">
               <div
-                className="sticky top-0 flex items-center justify-between px-4 py-3 text-white"
-                style={{ background: RED_DARK }}
+                className="sticky top-0 flex items-center justify-between px-3 py-2 text-white"
+                style={{ background: BRAND_DARK }}
               >
-                <span className="text-[16px] font-semibold">
+                <span className="text-[12px] font-semibold">
                   {teamCode(detailMatch.home)} vs {teamCode(detailMatch.away)}
                 </span>
                 <button
@@ -533,7 +533,7 @@ export default function VirtualBoardPage() {
               </div>
               {MARKET_IDS.map((mid) => (
                 <div key={mid} className="px-3 pt-3">
-                  <p className="mb-1 text-[13px] font-semibold uppercase text-neutral-500">
+                  <p className="mb-1 text-[11px] font-semibold uppercase text-ink-muted">
                     {MARKET_TITLE[mid]}
                     {mid.startsWith("ou")
                       ? ` ${OU_LINES.find((l) => l.id === mid)?.line}`
@@ -550,14 +550,14 @@ export default function VirtualBoardPage() {
                           type="button"
                           disabled={off}
                           onClick={() => toggle(detailMatch, mid, p)}
-                          className="flex h-12 flex-1 flex-col items-center justify-center rounded-[3px] text-[13px]"
+                          className="flex h-10 flex-1 flex-col items-center justify-center rounded-[3px] text-[11px]"
                           style={{
-                            background: on ? GREEN : off ? "#ececec" : CELL,
-                            color: on ? "#fff" : off ? "#b5b5b5" : CELL_TEXT,
+                            background: on ? GREEN : off ? "color-mix(in srgb, var(--color-text-muted) 14%, var(--color-surface))" : CELL,
+                            color: on ? "#fff" : off ? "var(--color-text-muted)" : CELL_TEXT,
                           }}
                         >
                           <span className="opacity-80">{pickText(mid, p)}</span>
-                          <span className="text-[16px] font-semibold tabular-nums">
+                          <span className="text-[12px] font-semibold tabular-nums">
                             {off ? "–" : od.toFixed(2)}
                           </span>
                         </button>
@@ -579,15 +579,15 @@ export default function VirtualBoardPage() {
               className="flex-1"
               onClick={() => setSlipOpen(false)}
             />
-            <div className="flex max-h-[85%] flex-col rounded-t-2xl bg-white">
+            <div className="flex max-h-[85%] flex-col rounded-t-2xl bg-surface">
               <div
-                className="flex items-center justify-between rounded-t-2xl px-4 py-3 text-white"
-                style={{ background: "#2b2f33" }}
+                className="flex items-center justify-between rounded-t-2xl px-3 py-2 text-white"
+                style={{ background: "var(--color-brand-dark)" }}
               >
-                <span className="text-[17px] font-semibold">
+                <span className="text-[13px] font-semibold">
                   Betslip ({picks.length})
                 </span>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2.5">
                   {picks.length > 0 && (
                     <button
                       type="button"
@@ -609,14 +609,14 @@ export default function VirtualBoardPage() {
 
               <div className="min-h-0 flex-1 overflow-y-auto">
                 {picks.length === 0 && (
-                  <p className="px-4 py-10 text-center text-sm text-neutral-500">
+                  <p className="px-3 py-10 text-center text-sm text-ink-muted">
                     Tap odds to add selections.
                   </p>
                 )}
                 {picks.map((p) => (
                   <div
                     key={p.matchId}
-                    className="flex items-center gap-3 border-b border-neutral-200 px-4 py-3"
+                    className="flex items-center gap-3 border-b border-ink-muted/15 px-3 py-2"
                   >
                     <button
                       type="button"
@@ -626,21 +626,21 @@ export default function VirtualBoardPage() {
                           prev.filter((x) => x.matchId !== p.matchId)
                         )
                       }
-                      className="text-xl leading-none text-neutral-400"
+                      className="text-xl leading-none text-ink-muted/70"
                     >
                       ×
                     </button>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[15px] font-semibold">
+                      <p className="text-[12px] font-semibold">
                         {p.label}
                       </p>
-                      <p className="text-[13px] text-neutral-500">
+                      <p className="text-[11px] text-ink-muted">
                         {MARKET_TITLE[p.market]} · {teamCode(p.home)} vs{" "}
                         {teamCode(p.away)}
                       </p>
                     </div>
                     <span
-                      className="text-[17px] font-bold tabular-nums"
+                      className="text-[13px] font-bold tabular-nums"
                       style={{ color: CELL_TEXT }}
                     >
                       {p.odds.toFixed(2)}
@@ -649,9 +649,9 @@ export default function VirtualBoardPage() {
                 ))}
               </div>
 
-              <div className="shrink-0 border-t border-neutral-200 px-4 py-3">
+              <div className="shrink-0 border-t border-ink-muted/15 px-3 py-2">
                 <div className="flex items-center gap-3">
-                  <span className="text-[15px] text-neutral-600">Stake</span>
+                  <span className="text-[12px] text-ink-muted">Stake</span>
                   <input
                     type="number"
                     inputMode="decimal"
@@ -660,7 +660,7 @@ export default function VirtualBoardPage() {
                     value={stake}
                     onChange={(e) => setStake(e.target.value)}
                     aria-label="Stake amount"
-                    className="min-w-0 flex-1 rounded border border-neutral-300 px-3 py-2 text-right text-[18px] font-semibold tabular-nums outline-none focus:border-green-600"
+                    className="min-w-0 flex-1 rounded border border-ink-muted/25 px-3 py-2 text-right text-[13px] font-semibold tabular-nums outline-none focus:border-green-600"
                   />
                 </div>
                 <div className="mt-2 flex gap-2">
@@ -669,20 +669,20 @@ export default function VirtualBoardPage() {
                       key={v}
                       type="button"
                       onClick={() => setStake(String((Number(stake) || 0) + v))}
-                      className="flex-1 rounded bg-neutral-100 py-1.5 text-sm font-semibold text-neutral-700"
+                      className="flex-1 rounded bg-ink-muted/10 py-1.5 text-sm font-semibold text-ink"
                     >
                       +{v.toLocaleString("en-NG")}
                     </button>
                   ))}
                 </div>
-                <div className="mt-3 flex justify-between text-[15px]">
-                  <span className="text-neutral-600">Total Odds</span>
+                <div className="mt-3 flex justify-between text-[12px]">
+                  <span className="text-ink-muted">Total Odds</span>
                   <span className="font-semibold tabular-nums">
                     {picks.length ? totalOdds.toFixed(2) : "—"}
                   </span>
                 </div>
-                <div className="mt-1 flex justify-between text-[15px]">
-                  <span className="text-neutral-600">Potential Win</span>
+                <div className="mt-1 flex justify-between text-[12px]">
+                  <span className="text-ink-muted">Potential Win</span>
                   <span className="font-bold tabular-nums" style={{ color: CELL_TEXT }}>
                     {money(picks.length ? potential : 0)}
                   </span>
@@ -696,7 +696,7 @@ export default function VirtualBoardPage() {
                   type="button"
                   disabled={busy || picks.length === 0}
                   onClick={() => void placeBet()}
-                  className="mt-3 w-full rounded py-3.5 text-[18px] font-semibold text-white disabled:opacity-40"
+                  className="mt-3 w-full rounded py-2.5 text-[13px] font-semibold text-white disabled:opacity-40"
                   style={{ background: GREEN }}
                 >
                   {busy ? "Placing…" : "Place Bet"}
