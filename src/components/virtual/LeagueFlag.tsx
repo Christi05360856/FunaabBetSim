@@ -3,7 +3,7 @@
 /** Small league flag: England cross drawn as SVG, others as emoji. */
 export default function LeagueFlag({
   league,
-  size = 26,
+  size = 20,
 }: {
   league: string;
   size?: number;
