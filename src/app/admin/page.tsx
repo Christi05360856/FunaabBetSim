@@ -14,6 +14,7 @@ import FixturesTab from "@/components/admin/FixturesTab";
 import ImportTab from "@/components/admin/ImportTab";
 import DangerTab from "@/components/admin/DangerTab";
 import WithdrawalsTab from "@/components/admin/WithdrawalsTab";
+import DepositsTab from "@/components/admin/DepositsTab";
 import PlatformTab from "@/components/admin/PlatformTab";
 import TicketsTab from "@/components/admin/TicketsTab";
 import ComplianceTab from "@/components/admin/ComplianceTab";
@@ -172,6 +173,7 @@ function AdminApp() {
           />
         )}
         {tab === "withdrawals" && <WithdrawalsTab />}
+        {tab === "deposits" && <DepositsTab />}
         {tab === "promos" && <PromosTab />}
         {tab === "sponsors" && <SponsorsTab />}
         {tab === "tickets" && <TicketsTab />}
@@ -183,4 +185,5 @@ function AdminApp() {
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </>
   );
-          }
+            }
+      
