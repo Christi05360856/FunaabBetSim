@@ -14,9 +14,21 @@ import { POINTS_PER_NAIRA } from "@/types/domain";
 import { betLimits } from "@/lib/domain/limits";
 import type { Deposit, Wallet } from "@/types/domain";
 
+function metaUid(meta: Record<string, unknown> | null | undefined): string | null {
+  if (!meta || typeof meta !== "object") return null;
+  const raw = meta.uid ?? meta.userId ?? meta.user_id;
+  if (typeof raw !== "string") return null;
+  const uid = raw.trim();
+  return uid.length >= 8 ? uid : null;
+}
+
 /**
  * Idempotent credit after Flutterwave verify success.
  * Applies welcome promo in the same transaction when eligible.
+ *
+ * Recovery: if deposits/{txRef} was wiped (e.g. Danger reset mid-checkout) but
+ * FLW confirms payment, rebuild the deposit from recoveryUid (FLW meta.uid)
+ * and credit once. Still amount-checked and idempotent on success status.
  */
 export async function creditVerifiedDeposit(input: {
   txRef: string;
@@ -24,26 +36,91 @@ export async function creditVerifiedDeposit(input: {
   flwRef: string;
   amountNgn: number;
   currency: string;
+  /** From FLW verify/webhook meta — used only when deposit doc is missing */
+  recoveryUid?: string | null;
+  recoveryPromoCode?: string | null;
+  /** Full meta bag from FLW (optional) */
+  meta?: Record<string, unknown> | null;
 }): Promise<{
   credited: boolean;
   points: number;
   promoPoints?: number;
   reason?: string;
   uid?: string;
+  recovered?: boolean;
 }> {
   if (String(input.currency).toUpperCase() !== "NGN") {
     return { credited: false, points: 0, reason: "currency_not_ngn" };
   }
 
-  const depositRef = adminDb.collection("deposits").doc(input.txRef);
+  const txRef = String(input.txRef ?? "").trim();
+  if (!txRef) {
+    return { credited: false, points: 0, reason: "missing_tx_ref" };
+  }
+
+  const paid = Math.round(Number(input.amountNgn));
+  if (!Number.isFinite(paid) || paid < 1) {
+    return { credited: false, points: 0, reason: "invalid_amount" };
+  }
+
+  const recoveryUid =
+    (input.recoveryUid && String(input.recoveryUid).trim()) ||
+    metaUid(input.meta ?? undefined) ||
+    null;
+
+  const depositRef = adminDb.collection("deposits").doc(txRef);
 
   return adminDb.runTransaction(async (tx) => {
     // ---- ALL READS FIRST ----
     const depSnap = await tx.get(depositRef);
+    let deposit: Deposit;
+    let recovered = false;
+
     if (!depSnap.exists) {
-      return { credited: false, points: 0, reason: "deposit_not_found" };
+      // Recovery path — only with a trusted uid from FLW meta
+      if (!recoveryUid) {
+        return { credited: false, points: 0, reason: "deposit_not_found" };
+      }
+
+      const walletRefProbe = adminDb.collection("wallets").doc(recoveryUid);
+      const walletProbe = await tx.get(walletRefProbe);
+      if (!walletProbe.exists) {
+        return {
+          credited: false,
+          points: 0,
+          reason: "deposit_not_found_wallet_missing",
+        };
+      }
+
+      const points = Math.round(paid * POINTS_PER_NAIRA);
+      const now = Date.now();
+      const promoCode =
+        (input.recoveryPromoCode && String(input.recoveryPromoCode).trim()) ||
+        null;
+
+      deposit = {
+        id: txRef,
+        txRef,
+        uid: recoveryUid,
+        amountNgn: paid,
+        points,
+        promoCode,
+        status: "pending",
+        flwTransactionId: null,
+        flwRef: null,
+        createdAt: now,
+        completedAt: null,
+      };
+      // Create in this transaction so credit can proceed atomically
+      tx.set(depositRef, {
+        ...deposit,
+        recovered: true,
+        recoveredAt: now,
+      });
+      recovered = true;
+    } else {
+      deposit = depSnap.data() as Deposit;
     }
-    const deposit = depSnap.data() as Deposit;
 
     if (deposit.status === "success") {
       return {
@@ -51,26 +128,32 @@ export async function creditVerifiedDeposit(input: {
         points: deposit.points,
         reason: "already_credited",
         uid: deposit.uid,
+        recovered: false,
       };
     }
     if (deposit.status !== "initiated" && deposit.status !== "pending") {
-      return { credited: false, points: 0, reason: `status_${deposit.status}` };
+      return {
+        credited: false,
+        points: 0,
+        reason: `status_${deposit.status}`,
+        uid: deposit.uid,
+      };
     }
 
-    const paid = Math.round(Number(input.amountNgn));
     const expected = Math.round(Number(deposit.amountNgn));
     if (paid !== expected) {
       return {
         credited: false,
         points: 0,
         reason: `amount_mismatch_${paid}_vs_${expected}`,
+        uid: deposit.uid,
       };
     }
 
     const walletRef = adminDb.collection("wallets").doc(deposit.uid);
     const walletSnap = await tx.get(walletRef);
     if (!walletSnap.exists) {
-      return { credited: false, points: 0, reason: "wallet_missing" };
+      return { credited: false, points: 0, reason: "wallet_missing", uid: deposit.uid };
     }
 
     const codeRaw = String(deposit.promoCode ?? "").trim();
@@ -109,7 +192,6 @@ export async function creditVerifiedDeposit(input: {
       promo: before.promo,
       reservedStake: before.reservedStake,
       reservedWithdrawal: before.reservedWithdrawal,
-      // Deposits must be played through before they can be withdrawn.
       turnoverRequired:
         (before.turnoverRequired ?? 0) +
         Math.round(points * betLimits().turnoverMultiplier),
@@ -125,6 +207,7 @@ export async function creditVerifiedDeposit(input: {
       flwTransactionId: input.flwTransactionId,
       flwRef: input.flwRef,
       completedAt: now,
+      ...(recovered ? { recovered: true, recoveredAt: now } : {}),
     });
 
     const ledgerRef = adminDb.collection("ledger").doc();
@@ -143,6 +226,7 @@ export async function creditVerifiedDeposit(input: {
           flwTransactionId: input.flwTransactionId,
           flwRef: input.flwRef,
           amountNgn: expected,
+          recovered,
         },
         now,
       })
@@ -194,6 +278,7 @@ export async function creditVerifiedDeposit(input: {
       promoPoints,
       reason: promoReason,
       uid: deposit.uid,
+      recovered,
     };
   });
-  }
+                                }
