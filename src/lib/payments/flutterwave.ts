@@ -86,6 +86,8 @@ export type FlwVerifyData = {
   currency: string;
   status: string;
   charged_amount?: number;
+  /** Echo of meta we sent at payment init (uid, points). */
+  meta?: Record<string, unknown>;
 };
 
 export async function flutterwaveVerifyTransaction(
@@ -263,4 +265,5 @@ export async function flutterwaveGetTransfer(
   }
   return body.data;
 }
-  
+
+    
