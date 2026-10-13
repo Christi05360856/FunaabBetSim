@@ -12,6 +12,7 @@ import { depositEmailHtml } from "@/lib/email/templates";
 /**
  * Flutterwave webhook. Always re-verify via API; never trust payload alone.
  * Idempotent credit via deposits/{tx_ref}.status === success.
+ * Passes FLW meta for deposit recovery when the doc was wiped mid-checkout.
  */
 export async function POST(request: NextRequest) {
   const verif = request.headers.get("verif-hash");
@@ -26,7 +27,6 @@ export async function POST(request: NextRequest) {
 
   const data = (payload as { data?: Record<string, unknown> }).data;
   if (!data) {
-    // Acknowledge unknown shapes so Flutterwave does not retry forever
     return NextResponse.json({ ok: true, ignored: true });
   }
 
@@ -42,7 +42,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, status });
   }
 
-  // Audit every successful-looking webhook hit (idempotent key = FLW id)
   const eventRef = adminDb.collection("webhook_events").doc(`flw_${id}`);
   try {
     const prev = await eventRef.get();
@@ -72,28 +71,39 @@ export async function POST(request: NextRequest) {
     const verified = await flutterwaveVerifyTransaction(id as number | string);
     const check = evaluateFlutterwavePayment(verified, txRef);
     if (!check.ok) {
-      return NextResponse.json({ ok: true, verified: false, reason: check.reason });
+      return NextResponse.json({
+        ok: true,
+        verified: false,
+        reason: check.reason,
+      });
     }
+
+    const meta =
+      verified.meta && typeof verified.meta === "object"
+        ? (verified.meta as Record<string, unknown>)
+        : data.meta && typeof data.meta === "object"
+          ? (data.meta as Record<string, unknown>)
+          : null;
+    const recoveryUid =
+      meta && typeof meta.uid === "string" ? String(meta.uid) : null;
 
     const result = await creditVerifiedDeposit({
       txRef: verified.tx_ref,
       flwTransactionId: String(verified.id),
-      flwRef: verified.flw_ref,
+      flwRef: String(verified.flw_ref ?? ""),
       amountNgn: check.amountNgn,
       currency: "NGN",
+      recoveryUid,
+      meta,
     });
 
-    // P1: notify user (never block webhook success on email failure)
-    if (result.credited) {
+    if (result.credited && result.uid) {
       try {
-        const depSnap = await adminDb.collection("deposits").doc(verified.tx_ref).get();
-        const uid = depSnap.exists ? String(depSnap.data()?.uid ?? "") : "";
-        const email = uid ? await resolveUserEmail(uid) : null;
+        const email = await resolveUserEmail(result.uid);
         if (email) {
-          const amountNgn = check.amountNgn;
           const tpl = depositEmailHtml({
             points: result.points,
-            amountNgn,
+            amountNgn: check.amountNgn,
             promoPoints: result.promoPoints,
             txRef: verified.tx_ref,
           });
@@ -117,6 +127,7 @@ export async function POST(request: NextRequest) {
           credited: result.credited,
           creditReason: result.reason ?? null,
           points: result.points ?? null,
+          recovered: result.recovered ?? false,
         },
         { merge: true }
       );
@@ -127,7 +138,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     console.error("flutterwave webhook error", err);
-    // 500 → Flutterwave retries
-    return NextResponse.json({ error: "Webhook processing failed" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Webhook processing failed" },
+      { status: 500 }
+    );
   }
 }
