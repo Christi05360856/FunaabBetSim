@@ -12,6 +12,7 @@ import { depositEmailHtml } from "@/lib/email/templates";
 /**
  * Browser redirect after checkout.
  * Always re-verify via Flutterwave API before crediting.
+ * Passes FLW meta.uid so credit can recover if deposit doc was wiped.
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -25,7 +26,6 @@ export async function GET(request: NextRequest) {
   const dash = (q: string) =>
     NextResponse.redirect(`${origin}/dashboard?${q}`);
 
-  // User cancelled
   if (status === "cancelled" || status === "canceled") {
     return dash(
       `deposit=failed&reason=${encodeURIComponent("cancelled")}&ref=${encodeURIComponent(txRef ?? "")}`
@@ -37,7 +37,6 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Prefer verify by id; fall back to tx_ref (some test redirects omit id)
     let verified;
     if (transactionId) {
       verified = await flutterwaveVerifyTransaction(transactionId);
@@ -53,16 +52,24 @@ export async function GET(request: NextRequest) {
     }
     const amountNgn = check.amountNgn;
 
+    const meta =
+      verified.meta && typeof verified.meta === "object"
+        ? (verified.meta as Record<string, unknown>)
+        : null;
+    const recoveryUid =
+      meta && typeof meta.uid === "string" ? String(meta.uid) : null;
+
     const result = await creditVerifiedDeposit({
       txRef: String(verified.tx_ref),
       flwTransactionId: String(verified.id),
       flwRef: String(verified.flw_ref ?? ""),
       amountNgn,
       currency: "NGN",
+      recoveryUid,
+      meta,
     });
 
     if (result.credited || result.reason === "already_credited") {
-      // Email on browser callback (webhook may never fire in test)
       if (result.credited && result.uid) {
         try {
           const email = await resolveUserEmail(result.uid);
