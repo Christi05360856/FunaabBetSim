@@ -47,12 +47,19 @@ export async function POST(request: NextRequest) {
         throw new Error(`Already ${w.status}`);
       }
       // H-04: cannot reject while provider transfer may be in flight
+      // processing: money may be in flight at FLW — do not release yet
       if (w.status === "processing") {
         throw new Error(
-          "Withdrawal is processing a payout. Wait for completion or payment_failed before rejecting."
+          "Withdrawal is processing a payout. Use Reconcile; if provider failed, status becomes payment_failed, then Reject to release funds."
         );
       }
-      if (w.status !== "pending_review" && w.status !== "requested" && w.status !== "approved") {
+      // payment_failed: transfer never landed — safe to release reserved amount
+      if (
+        w.status !== "pending_review" &&
+        w.status !== "requested" &&
+        w.status !== "approved" &&
+        w.status !== "payment_failed"
+      ) {
         throw new Error(`Cannot reject status ${w.status}`);
       }
 
