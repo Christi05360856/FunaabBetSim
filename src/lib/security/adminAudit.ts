@@ -4,6 +4,7 @@ import { adminDb } from "@/lib/firebase/admin";
 export type AdminAuditAction =
   | "withdrawal_approve"
   | "withdrawal_reject"
+  | "deposit_recover"
   | "kyc_verify"
   | "kyc_reject"
   | "platform_danger"
