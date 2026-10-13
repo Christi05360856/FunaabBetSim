@@ -81,19 +81,16 @@ export async function POST(request: NextRequest) {
   const body = bodyEarly as Record<string, unknown>;
   const scopeEarly = String(body.scope ?? "");
 
-  // Phase 0: destructive scopes blocked in production unless explicitly allowed
-  const destructive = ["all", "platform", "financial_cutover", "bets_wallets"].includes(
-    scopeEarly
-  );
+  // All Danger scopes blocked in production unless ALLOW_PROD_RESET=true.
+  // bets_tx / external / funaab / manual can also destroy live data or lock stakes.
   if (
-    destructive &&
     process.env.VERCEL_ENV === "production" &&
     process.env.ALLOW_PROD_RESET !== "true"
   ) {
     return NextResponse.json(
       {
         error:
-          "Destructive reset blocked in production. Set ALLOW_PROD_RESET=true only when intentional.",
+          "Danger reset is blocked in production. Set ALLOW_PROD_RESET=true only for intentional cleanup, then remove it.",
       },
       { status: 403 }
     );
@@ -402,7 +399,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
   }
-
-
-
-      
