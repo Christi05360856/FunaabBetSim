@@ -5,16 +5,17 @@ import type { DecodedIdToken } from "firebase-admin/auth";
 
 /**
  * Verifies the Firebase ID token sent as `Authorization: Bearer <token>`.
- * Returns null if missing/invalid — callers must treat that as unauthenticated.
- * The client is never trusted to assert its own identity.
+ * checkRevoked=true so disabled / revoked sessions fail closed on money routes.
  */
-export async function verifyRequest(request: NextRequest): Promise<DecodedIdToken | null> {
+export async function verifyRequest(
+  request: NextRequest
+): Promise<DecodedIdToken | null> {
   const header = request.headers.get("authorization") ?? "";
   const [scheme, token] = header.split(" ");
   if (scheme !== "Bearer" || !token) return null;
 
   try {
-    return await adminAuth.verifyIdToken(token);
+    return await adminAuth.verifyIdToken(token, true);
   } catch {
     return null;
   }
