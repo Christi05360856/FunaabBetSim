@@ -183,7 +183,40 @@ export async function POST(request: NextRequest) {
   await clearPinAttempts(uid);
 
   try {
-    const result = await adminDb.runTransaction(async (tx) => {
+    
+  // Hold after recent successful deposit (chargeback window). Default 24h.
+  {
+    const holdHours = Math.max(
+      0,
+      Number(process.env.WITHDRAWAL_HOLD_HOURS ?? "24") || 0
+    );
+    if (holdHours > 0) {
+      const since = Date.now() - holdHours * 60 * 60 * 1000;
+      const depSnap = await adminDb
+        .collection("deposits")
+        .where("uid", "==", uid)
+        .where("status", "==", "success")
+        .limit(30)
+        .get();
+      let latest = 0;
+      depSnap.forEach((d) => {
+        const c = Number(d.data().completedAt ?? d.data().createdAt) || 0;
+        if (c > latest) latest = c;
+      });
+      if (latest > since) {
+        const waitMs = latest + holdHours * 60 * 60 * 1000 - Date.now();
+        const waitH = Math.max(1, Math.ceil(waitMs / (60 * 60 * 1000)));
+        return NextResponse.json(
+          {
+            error: `For security, withdrawals open ${holdHours}h after a deposit. Try again in about ${waitH} hour(s).`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+  }
+
+  const result = await adminDb.runTransaction(async (tx) => {
       const walletRef = adminDb.collection("wallets").doc(uid);
       const walletSnap = await tx.get(walletRef);
       if (!walletSnap.exists) throw new Error("Wallet not found");
@@ -195,6 +228,8 @@ export async function POST(request: NextRequest) {
           `Play through ₦${Math.ceil(owed).toLocaleString("en-NG")} more in bets before withdrawing. Deposits must be wagered first.`
         );
       }
+
+
 
       const free = withdrawableBalance(wallet);
       if (amount > free) {
@@ -305,4 +340,4 @@ export async function POST(request: NextRequest) {
       { status }
     );
   }
-                                      }
+               }
