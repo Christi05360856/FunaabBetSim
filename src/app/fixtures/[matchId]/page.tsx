@@ -26,6 +26,23 @@ const CS_HOME_WIN = CORRECT_SCORES.slice(0, 10);
 const CS_DRAW = CORRECT_SCORES.slice(10, 15);
 const CS_AWAY_WIN = CORRECT_SCORES.slice(15, 25);
 
+
+/** 1 → 1st, 2 → 2nd, 3 → 3rd, 4 → 4th … so ranks are never read as scores. */
+function ordinal(n: number): string {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return n + "th";
+  switch (n % 10) {
+    case 1:
+      return n + "st";
+    case 2:
+      return n + "nd";
+    case 3:
+      return n + "rd";
+    default:
+      return n + "th";
+  }
+}
+
 export default function MatchDetailPage({
   params,
 }: {
@@ -223,6 +240,12 @@ export default function MatchDetailPage({
         ? match.awayScore
         : null;
 
+  /** External pre-match: show table rank in the score boxes (not for FUNAAB/manual). */
+  const showRank =
+    match.source === "external" &&
+    homeGoals == null &&
+    awayGoals == null;
+
   const periodTag =
     clock.phase === "first_half"
       ? "1H"
@@ -280,8 +303,8 @@ export default function MatchDetailPage({
           </button>
         </div>
 
-        {/* Kick-off / live clock pill */}
-        <div className="px-3 pb-2">
+        {/* Kick-off / live clock pill · RANK label when showing table positions */}
+        <div className="flex items-center justify-between gap-2 px-3 pb-2">
           <div className="inline-flex items-center gap-2 rounded-lg bg-black/25 px-2.5 py-1">
             {isLive && (
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
@@ -290,6 +313,11 @@ export default function MatchDetailPage({
               {clockLine}
             </span>
           </div>
+          {showRank && (
+            <span className="rounded-lg bg-black/25 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white/80">
+              Rank
+            </span>
+          )}
         </div>
 
         {/* Team cards on dark rails */}
@@ -301,13 +329,19 @@ export default function MatchDetailPage({
             </p>
             <span
               className={
-                "flex h-8 min-w-[2.25rem] items-center justify-center rounded-md px-2 font-display text-base font-bold tabular-nums " +
+                "flex h-8 min-w-[2.5rem] items-center justify-center rounded-md px-1.5 font-display font-bold tabular-nums " +
                 (homeGoals != null
-                  ? "bg-emerald-400 text-ink"
-                  : "bg-black/40 text-white/45")
+                  ? "bg-emerald-400 text-base text-ink"
+                  : showRank && home?.tablePosition != null
+                    ? "bg-black/40 text-[11px] text-white"
+                    : "bg-black/40 text-base text-white/45")
               }
             >
-              {homeGoals != null ? homeGoals : "–"}
+              {homeGoals != null
+                ? homeGoals
+                : showRank && home?.tablePosition != null
+                  ? ordinal(home.tablePosition)
+                  : "–"}
             </span>
           </div>
           <div className="flex items-center gap-2.5 rounded-lg bg-black/30 px-3 py-2.5">
@@ -317,13 +351,19 @@ export default function MatchDetailPage({
             </p>
             <span
               className={
-                "flex h-8 min-w-[2.25rem] items-center justify-center rounded-md px-2 font-display text-base font-bold tabular-nums " +
+                "flex h-8 min-w-[2.5rem] items-center justify-center rounded-md px-1.5 font-display font-bold tabular-nums " +
                 (awayGoals != null
-                  ? "bg-emerald-400 text-ink"
-                  : "bg-black/40 text-white/45")
+                  ? "bg-emerald-400 text-base text-ink"
+                  : showRank && away?.tablePosition != null
+                    ? "bg-black/40 text-[11px] text-white"
+                    : "bg-black/40 text-base text-white/45")
               }
             >
-              {awayGoals != null ? awayGoals : "–"}
+              {awayGoals != null
+                ? awayGoals
+                : showRank && away?.tablePosition != null
+                  ? ordinal(away.tablePosition)
+                  : "–"}
             </span>
           </div>
         </div>
