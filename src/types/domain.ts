@@ -80,6 +80,8 @@ export interface Team {
   name: string;
   shortName: string;
   logoUrl?: string;
+  /** League table position (1-based). External leagues only; from football-data standings. */
+  tablePosition?: number | null;
   createdAt: number;
   updatedAt: number;
 }
