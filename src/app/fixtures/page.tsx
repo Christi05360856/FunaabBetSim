@@ -7,6 +7,7 @@ import { deriveClockState, isBettingOpen } from "@/lib/domain/matchClock";
 import { groupFixturesForBrowsing } from "@/lib/domain/fixtureDisplay";
 import { OU_LINES } from "@/lib/domain/oddsModel";
 import { LiveClockBadge } from "@/components/LiveClock";
+import TeamCrest from "@/components/TeamCrest";
 import { useBetSlip } from "@/lib/context/BetSlipContext";
 import { resolveSelection } from "@/lib/domain/selectionLabel";
 
@@ -304,13 +305,22 @@ export default function FixturesPage() {
 
         {/* Teams + odds */}
         <div className="mt-2 flex items-center gap-2">
-          <Link href={"/fixtures/" + match.id} className="min-w-0 flex-1">
-            <p className="truncate text-[15px] font-semibold leading-snug">
-              {home?.name ?? "Unknown team"}
-            </p>
-            <p className="truncate text-[15px] font-semibold leading-snug">
-              {away?.name ?? "Unknown team"}
-            </p>
+          <Link
+            href={"/fixtures/" + match.id}
+            className="flex min-w-0 flex-1 items-center gap-2"
+          >
+            <div className="flex shrink-0 flex-col gap-1">
+              <TeamCrest team={home} size="sm" />
+              <TeamCrest team={away} size="sm" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[14px] font-semibold leading-snug text-ink">
+                {home?.name ?? "Unknown team"}
+              </p>
+              <p className="truncate text-[14px] font-semibold leading-snug text-ink">
+                {away?.name ?? "Unknown team"}
+              </p>
+            </div>
           </Link>
 
           {showScore ? (
