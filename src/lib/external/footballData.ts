@@ -134,3 +134,28 @@ export function competitionName(code: string): string {
   const hit = FD_LEAGUES.find((l) => l.code === code);
   return hit ? hit.name : code;
 }
+
+
+/** TOTAL table positions keyed by football-data team id. */
+export async function fetchCompetitionStandings(
+  code: FdCompetitionCode | string
+): Promise<Map<number, number>> {
+  const data = await fdFetch<{
+    standings?: Array<{
+      type?: string;
+      table?: Array<{ position: number; team: { id: number } }>;
+    }>;
+  }>("/competitions/" + code + "/standings");
+
+  const map = new Map<number, number>();
+  const rows =
+    data.standings?.find((s) => s.type === "TOTAL")?.table ??
+    data.standings?.[0]?.table ??
+    [];
+  for (const row of rows) {
+    if (row?.team?.id != null && typeof row.position === "number") {
+      map.set(row.team.id, row.position);
+    }
+  }
+  return map;
+}
