@@ -11,6 +11,7 @@ import {
   matchDocId,
   teamDocId,
   type FdMatch,
+  fetchCompetitionStandings,
 } from "@/lib/external/footballData";
 import {
   DEFAULT_1X2,
@@ -138,6 +139,30 @@ export async function POST(request: NextRequest) {
       }
     } catch (e) {
       errors.push(e instanceof Error ? e.message : "fetch failed");
+    }
+
+    // League table positions (TOTAL) — external teams only
+    try {
+      const positions = await fetchCompetitionStandings(code);
+      let ranked = 0;
+      for (const [fdTeamId, position] of positions) {
+        const tid = teamDocId(fdTeamId);
+        await adminDb
+          .collection("teams")
+          .doc(tid)
+          .set(
+            { tablePosition: position, updatedAt: now },
+            { merge: true }
+          );
+        ranked++;
+      }
+      if (ranked === 0) {
+        errors.push("standings: empty table");
+      }
+    } catch (e) {
+      errors.push(
+        "standings: " + (e instanceof Error ? e.message : "fail")
+      );
     }
 
     summary.push({ code, upserted, finished, errors });
