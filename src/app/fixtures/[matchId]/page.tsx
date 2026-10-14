@@ -20,6 +20,7 @@ import { useBetSlip } from "@/lib/context/BetSlipContext";
 import { resolveSelection } from "@/lib/domain/selectionLabel";
 import { useAuth } from "@/lib/auth/AuthContext";
 import MatchTalkPanel from "@/components/match/MatchTalkPanel";
+import TeamCrest from "@/components/TeamCrest";
 
 const CS_HOME_WIN = CORRECT_SCORES.slice(0, 10);
 const CS_DRAW = CORRECT_SCORES.slice(10, 15);
@@ -293,7 +294,8 @@ export default function MatchDetailPage({
 
         {/* Team cards on dark rails */}
         <div className="space-y-1.5 px-3 pb-3">
-          <div className="flex items-center gap-2 rounded-lg bg-black/30 px-3 py-2.5">
+          <div className="flex items-center gap-2.5 rounded-lg bg-black/30 px-3 py-2.5">
+            <TeamCrest team={home} size="md" light />
             <p className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-snug text-white">
               {home?.name ?? "Home"}
             </p>
@@ -308,7 +310,8 @@ export default function MatchDetailPage({
               {homeGoals != null ? homeGoals : "–"}
             </span>
           </div>
-          <div className="flex items-center gap-2 rounded-lg bg-black/30 px-3 py-2.5">
+          <div className="flex items-center gap-2.5 rounded-lg bg-black/30 px-3 py-2.5">
+            <TeamCrest team={away} size="md" light />
             <p className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-snug text-white">
               {away?.name ?? "Away"}
             </p>
