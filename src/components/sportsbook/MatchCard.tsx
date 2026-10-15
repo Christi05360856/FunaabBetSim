@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import type { Match, Selection } from "@/types/domain";
+import type { Match, Selection, Team } from "@/types/domain";
 import { LiveClockBadge } from "@/components/LiveClock";
+import TeamCrest from "@/components/TeamCrest";
 import { OddsButton } from "./OddsButton";
 
 export type MatchCardSelection = Selection & { marketId?: string };
@@ -11,6 +12,8 @@ type Props = {
   match: Match;
   homeName: string;
   awayName: string;
+  homeTeam?: Team | null;
+  awayTeam?: Team | null;
   competitionName?: string;
   /** Primary 1X2 selections (home / draw / away) when bettable */
   odds1x2?: MatchCardSelection[];
@@ -28,7 +31,11 @@ function statusTone(status: Match["status"]): string {
   ) {
     return "border-l-red-500";
   }
-  if (status === "finished" || status === "result_confirmed" || status === "settled") {
+  if (
+    status === "finished" ||
+    status === "result_confirmed" ||
+    status === "settled"
+  ) {
     return "border-l-ink-muted/40";
   }
   if (status === "postponed" || status === "voided" || status === "locked") {
@@ -41,6 +48,8 @@ export function MatchCard({
   match,
   homeName,
   awayName,
+  homeTeam,
+  awayTeam,
   competitionName,
   odds1x2,
   selectedIds,
@@ -52,39 +61,42 @@ export function MatchCard({
     match.status === "live" ||
     match.status === "halftime" ||
     match.status === "second_half";
-  const hasScore =
-    match.homeScore != null && match.awayScore != null;
+  const hasScore = match.homeScore != null && match.awayScore != null;
   const showOdds = canBet && odds1x2 && odds1x2.length > 0;
 
   return (
     <article
-      className={`overflow-hidden rounded-2xl border border-ink-muted/10 border-l-4 bg-surface shadow-card ${statusTone(
+      className={`overflow-hidden rounded-xl border border-ink-muted/10 border-l-4 bg-surface shadow-card ${statusTone(
         match.status
       )}`}
     >
       <Link
         href={`/fixtures/${match.id}`}
-        className="block px-3.5 pt-3 pb-2"
+        className="block px-3 pt-2.5 pb-2"
       >
-        <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
           <p className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
             {competitionName || "Match"}
           </p>
           <LiveClockBadge match={match} />
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex shrink-0 flex-col gap-1">
+            <TeamCrest team={homeTeam ?? undefined} size="sm" />
+            <TeamCrest team={awayTeam ?? undefined} size="sm" />
+          </div>
           <div className="min-w-0 flex-1">
             <p
               className={`truncate font-semibold text-ink ${
-                compact ? "text-sm" : "text-[15px]"
+                compact ? "text-[13px]" : "text-[14px]"
               }`}
             >
               {homeName}
             </p>
             <p
               className={`mt-0.5 truncate font-semibold text-ink ${
-                compact ? "text-sm" : "text-[15px]"
+                compact ? "text-[13px]" : "text-[14px]"
               }`}
             >
               {awayName}
@@ -98,14 +110,14 @@ export function MatchCard({
                   isLive ? "text-red-600" : "text-ink"
                 } ${compact ? "text-sm" : "text-base"}`}
               >
-                {match.homeScore}
+                {match.currentHomeScore ?? match.homeScore}
               </span>
               <span
                 className={`font-bold ${
                   isLive ? "text-red-600" : "text-ink"
                 } ${compact ? "text-sm" : "text-base"}`}
               >
-                {match.awayScore}
+                {match.currentAwayScore ?? match.awayScore}
               </span>
             </div>
           )}
@@ -132,7 +144,7 @@ export function MatchCard({
       )}
 
       {!showOdds && !isLive && (
-        <div className="border-t border-ink-muted/10 px-3.5 py-2">
+        <div className="border-t border-ink-muted/10 px-3 py-2">
           <Link
             href={`/fixtures/${match.id}`}
             className="text-[11px] font-semibold text-brand"
