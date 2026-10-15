@@ -276,12 +276,12 @@ export default function FixturesPage() {
     return (
       <div
         className={
-          "rounded-2xl bg-surface p-3.5 shadow-card " +
+          "rounded-xl bg-surface px-3 py-2.5 shadow-card " +
           (isLive ? "ring-1 ring-loss/25 " : "") +
-          (inSlip ? "ring-1 ring-brand/40 " : "")
+          (inSlip ? "ring-1 ring-brand/35 " : "")
         }
       >
-        {/* Header */}
+        {/* Header — league · kick-off (no noisy match id on list) */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             {isHot && (
@@ -289,18 +289,13 @@ export default function FixturesPage() {
                 HOT
               </span>
             )}
-            <p className="truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">
+            <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
               {match.competitionId
                 ? competitions[match.competitionId]?.name ?? "…"
                 : "…"}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="font-mono text-[10px] text-ink-muted">
-              ID {match.id.slice(0, 6).toUpperCase()}
-            </span>
-            <LiveClockBadge match={match} />
-          </div>
+          <LiveClockBadge match={match} />
         </div>
 
         {/* Teams + odds */}
@@ -484,6 +479,44 @@ export default function FixturesPage() {
           </button>
         ))}
       </div>
+
+      {/* Odds column legend (SportyBet-style 1 · X · 2) */}
+      {marketTab === "match_winner" && (
+        <div className="flex items-center justify-end gap-1 px-1">
+          <span className="w-[3.4rem] text-center text-[10px] font-bold text-ink-muted">
+            1
+          </span>
+          <span className="w-[3.4rem] text-center text-[10px] font-bold text-ink-muted">
+            X
+          </span>
+          <span className="w-[3.4rem] text-center text-[10px] font-bold text-ink-muted">
+            2
+          </span>
+        </div>
+      )}
+      {marketTab === "double_chance" && (
+        <div className="flex items-center justify-end gap-1 px-1">
+          <span className="w-[3.4rem] text-center text-[10px] font-bold text-ink-muted">
+            1X
+          </span>
+          <span className="w-[3.4rem] text-center text-[10px] font-bold text-ink-muted">
+            12
+          </span>
+          <span className="w-[3.4rem] text-center text-[10px] font-bold text-ink-muted">
+            X2
+          </span>
+        </div>
+      )}
+      {marketTab === "over_under" && (
+        <div className="flex items-center justify-end gap-1 px-1">
+          <span className="w-[3.4rem] text-center text-[10px] font-bold text-ink-muted">
+            O{ouLine}
+          </span>
+          <span className="w-[3.4rem] text-center text-[10px] font-bold text-ink-muted">
+            U{ouLine}
+          </span>
+        </div>
+      )}
 
       {/* O/U line picker */}
       {marketTab === "over_under" && (
