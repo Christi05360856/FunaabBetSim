@@ -201,6 +201,8 @@ export default function HomePage() {
         match={match}
         homeName={teamName(match.homeTeamId, "Home")}
         awayName={teamName(match.awayTeamId, "Away")}
+        homeTeam={teams[match.homeTeamId]}
+        awayTeam={teams[match.awayTeamId]}
         competitionName={compName(match.competitionId)}
         odds1x2={oddsFor(match)}
         selectedIds={selectedIds}
@@ -213,26 +215,35 @@ export default function HomePage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-28 pt-4">
-      {/* Quick actions */}
-      <div className="flex gap-2">
-        <Link
-          href="/fixtures?filter=live"
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-red-500/10 px-3 py-2.5 text-xs font-bold text-red-600"
-        >
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
-          Live
-        </Link>
+            {/* Feature strip — fixtures · casino · virtual · bets */}
+      <div className="grid grid-cols-4 gap-2">
         <Link
           href="/fixtures"
-          className="flex flex-1 items-center justify-center rounded-xl bg-brand/10 px-3 py-2.5 text-xs font-bold text-brand"
+          className="flex flex-col items-center gap-1 rounded-xl bg-brand px-1.5 py-2.5 text-white shadow-card active:opacity-90"
         >
-          All sports
+          <span className="text-lg leading-none">⚽</span>
+          <span className="text-[10px] font-bold">Fixtures</span>
+        </Link>
+        <Link
+          href="/casino"
+          className="flex flex-col items-center gap-1 rounded-xl bg-surface px-1.5 py-2.5 text-ink shadow-card active:bg-brand/5"
+        >
+          <span className="text-lg leading-none">🎰</span>
+          <span className="text-[10px] font-bold text-ink-muted">Casino</span>
         </Link>
         <Link
           href="/virtual"
-          className="flex flex-1 items-center justify-center rounded-xl bg-emerald-500/10 px-3 py-2.5 text-xs font-bold text-emerald-700 dark:text-emerald-400"
+          className="flex flex-col items-center gap-1 rounded-xl bg-surface px-1.5 py-2.5 text-ink shadow-card active:bg-brand/5"
         >
-          Virtual
+          <span className="text-lg leading-none">🎮</span>
+          <span className="text-[10px] font-bold text-ink-muted">Virtual</span>
+        </Link>
+        <Link
+          href="/bets"
+          className="flex flex-col items-center gap-1 rounded-xl bg-surface px-1.5 py-2.5 text-ink shadow-card active:bg-brand/5"
+        >
+          <span className="text-lg leading-none">🎫</span>
+          <span className="text-[10px] font-bold text-ink-muted">My Bets</span>
         </Link>
       </div>
 
